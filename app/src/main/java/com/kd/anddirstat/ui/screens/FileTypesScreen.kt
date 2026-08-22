@@ -375,9 +375,11 @@ fun FileTypesView(
         }
 
         // Main Categories List with Sub-File Types
+        val usedStorageTotal = if (overview.usedSpace > 0L) overview.usedSpace else overview.totalCapacity
+
         categoryGroups.forEach { category ->
             val isCatExpanded = expandedCategories.contains(category.id)
-            val catFraction = if (overview.totalCapacity > 0L) (category.totalSize.toDouble() / overview.totalCapacity.toDouble()).coerceIn(0.0, 1.0) else 0.0
+            val catFraction = if (usedStorageTotal > 0L) (category.totalSize.toDouble() / usedStorageTotal.toDouble()).coerceIn(0.0, 1.0) else 0.0
 
             item(key = "cat_${category.id}") {
                 ListItem(
