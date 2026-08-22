@@ -127,35 +127,36 @@ fun SettingsView(
             }
         }
 
-        // Pure Black toggle — only when dark/system, no card, no subtext, no icon
+        // Pure Black toggle — always visible, greyed out and disabled when in light theme
         item {
-            AnimatedVisibility(
-                visible = isDarkActive,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+            val textColor by animateColorAsState(
+                targetValue = if (isDarkActive) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                label = "pureBlackTextColor"
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = isDarkActive) { onTogglePureBlack(!pureBlack) }
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onTogglePureBlack(!pureBlack) }
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Use pure black",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                Text(
+                    text = "Use pure black",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = textColor
+                )
+                Switch(
+                    checked = pureBlack && isDarkActive,
+                    onCheckedChange = onTogglePureBlack,
+                    enabled = isDarkActive,
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
-                    Switch(
-                        checked = pureBlack,
-                        onCheckedChange = onTogglePureBlack,
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
+                )
             }
         }
 
