@@ -62,6 +62,7 @@ import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.MaterialSymbol
+import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
 import java.util.Locale
 
@@ -151,6 +152,15 @@ fun ExplorerView(
                 val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
                 val isApp = child.children?.any { it.name.startsWith("App Code") } == true
                 val appPkg = if (isApp) FileUtils.extractPackageName(child, row.path, context) else null
+                val isMedia = remember(child.name, child.isDirectory) {
+                    if (child.isDirectory) false
+                    else {
+                        val l = child.name.lowercase()
+                        l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+                        l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+                        l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp")
+                    }
+                }
                 val icon = FileUtils.getNodeIcon(child, isApp)
                 val isSelectable = remember(child) {
                     val n = child.name.trim().lowercase()
@@ -204,7 +214,16 @@ fun ExplorerView(
                                         } else Modifier
                                     )
                             ) {
-                                if (appPkg != null) {
+                                if (isMedia) {
+                                    MediaThumbnailView(
+                                        node = child,
+                                        path = row.path,
+                                        fallbackTint = childColor,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                } else if (appPkg != null) {
                                     AppIconView(
                                         packageName = appPkg,
                                         contentDescription = child.name,

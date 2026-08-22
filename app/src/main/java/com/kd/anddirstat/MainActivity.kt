@@ -24,8 +24,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +66,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -156,8 +160,8 @@ fun MainApp() {
         var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
         var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
         var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
-        var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", true)) }
-        var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", true)) }
+        var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", false)) }
+        var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", false)) }
         var showFilterMenu by remember { mutableStateOf(false) }
 
         var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
@@ -283,8 +287,8 @@ fun MainApp() {
         scope.launch {
             val freeSpacePref = prefs.getBoolean("show_free_space", true)
             val systemAppsPref = prefs.getBoolean("show_system_apps", true)
-            val hiddenFilesPref = prefs.getBoolean("show_hidden_files", true)
-            val systemOSPref = prefs.getBoolean("show_system_os", true)
+            val hiddenFilesPref = prefs.getBoolean("show_hidden_files", false)
+            val systemOSPref = prefs.getBoolean("show_system_os", false)
             showFreeSpace = freeSpacePref
             showSystemApps = systemAppsPref
             showHiddenFiles = hiddenFilesPref
@@ -364,8 +368,8 @@ fun MainApp() {
                 deviceTotalBytes = cached.size
                 val freeSpacePref = prefs.getBoolean("show_free_space", true)
                 val systemAppsPref = prefs.getBoolean("show_system_apps", true)
-                val hiddenFilesPref = prefs.getBoolean("show_hidden_files", true)
-                val systemOSPref = prefs.getBoolean("show_system_os", true)
+                val hiddenFilesPref = prefs.getBoolean("show_hidden_files", false)
+                val systemOSPref = prefs.getBoolean("show_system_os", false)
                 val filtered = withContext(Dispatchers.Default) {
                     StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, hiddenFilesPref, systemOSPref, cached.size)
                 }
@@ -417,6 +421,179 @@ fun MainApp() {
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         topBar = {
+            val renderHeaderActions: @Composable () -> Unit = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(end = 4.dp)
+                ) {
+                    Box {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showFilterMenu = true
+                            },
+                            enabled = !isLoading && hasStoragePermission && rawScannedNode != null
+                        ) {
+                            MaterialSymbol("filter_list", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
+                        }
+
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
+                            modifier = Modifier.width(280.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            tonalElevation = 3.dp,
+                            shadowElevation = 3.dp
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Show System & OS",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                leadingIcon = {
+                                    MaterialSymbol(
+                                        name = "settings",
+                                        active = showSystemOS,
+                                        size = 24.dp,
+                                        tint = if (showSystemOS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingIcon = {
+                                    Checkbox(
+                                        checked = showSystemOS,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val newVal = !showSystemOS
+                                    showSystemOS = newVal
+                                    prefs.edit().putBoolean("show_system_os", newVal).apply()
+                                    applyFilter(showFreeSpace, showSystemApps, showHiddenFiles, newVal)
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Show system applications",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                leadingIcon = {
+                                    MaterialSymbol(
+                                        name = "android",
+                                        active = showSystemApps,
+                                        size = 24.dp,
+                                        tint = if (showSystemApps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingIcon = {
+                                    Checkbox(
+                                        checked = showSystemApps,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val newVal = !showSystemApps
+                                    showSystemApps = newVal
+                                    prefs.edit().putBoolean("show_system_apps", newVal).apply()
+                                    applyFilter(showFreeSpace, newVal, showHiddenFiles, showSystemOS)
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Show free storage",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                leadingIcon = {
+                                    MaterialSymbol(
+                                        name = "storage",
+                                        active = showFreeSpace,
+                                        size = 24.dp,
+                                        tint = if (showFreeSpace) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingIcon = {
+                                    Checkbox(
+                                        checked = showFreeSpace,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val newVal = !showFreeSpace
+                                    showFreeSpace = newVal
+                                    prefs.edit().putBoolean("show_free_space", newVal).apply()
+                                    applyFilter(newVal, showSystemApps, showHiddenFiles, showSystemOS)
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Show hidden files",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                leadingIcon = {
+                                    MaterialSymbol(
+                                        name = "visibility",
+                                        active = showHiddenFiles,
+                                        size = 24.dp,
+                                        tint = if (showHiddenFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingIcon = {
+                                    Checkbox(
+                                        checked = showHiddenFiles,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val newVal = !showHiddenFiles
+                                    showHiddenFiles = newVal
+                                    prefs.edit().putBoolean("show_hidden_files", newVal).apply()
+                                    applyFilter(showFreeSpace, showSystemApps, newVal, showSystemOS)
+                                }
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            triggerScan()
+                        },
+                        enabled = !isLoading && hasStoragePermission
+                    ) {
+                        MaterialSymbol("refresh", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            context.startActivity(Intent(context, SettingsActivity::class.java))
+                        }
+                    ) {
+                        MaterialSymbol("settings", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+
             when (currentRoute) {
                 AppDestinations.TREE -> {
                     TopAppBar(
@@ -438,199 +615,7 @@ fun MainApp() {
                                 )
                             }
                         },
-                        actions = {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(end = 4.dp)
-                            ) {
-                                Box {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        IconButton(
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                showFilterMenu = true
-                                            },
-                                            enabled = !isLoading && hasStoragePermission && rawScannedNode != null,
-                                            modifier = Modifier.fillMaxSize()
-                                        ) {
-                                            MaterialSymbol("filter_list", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                        }
-                                    }
-
-                                    DropdownMenu(
-                                        expanded = showFilterMenu,
-                                        onDismissRequest = { showFilterMenu = false },
-                                        modifier = Modifier.width(280.dp),
-                                        shape = RoundedCornerShape(16.dp),
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                        tonalElevation = 3.dp,
-                                        shadowElevation = 3.dp
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = "Show System & OS",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            },
-                                            leadingIcon = {
-                                                MaterialSymbol(
-                                                    name = "settings",
-                                                    active = showSystemOS,
-                                                    size = 24.dp,
-                                                    tint = if (showSystemOS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            },
-                                            trailingIcon = {
-                                                Checkbox(
-                                                    checked = showSystemOS,
-                                                    onCheckedChange = null
-                                                )
-                                            },
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                val newVal = !showSystemOS
-                                                showSystemOS = newVal
-                                                prefs.edit().putBoolean("show_system_os", newVal).apply()
-                                                applyFilter(showFreeSpace, showSystemApps, showHiddenFiles, newVal)
-                                            }
-                                        )
-
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = "Show system applications",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            },
-                                            leadingIcon = {
-                                                MaterialSymbol(
-                                                    name = "android",
-                                                    active = showSystemApps,
-                                                    size = 24.dp,
-                                                    tint = if (showSystemApps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            },
-                                            trailingIcon = {
-                                                Checkbox(
-                                                    checked = showSystemApps,
-                                                    onCheckedChange = null
-                                                )
-                                            },
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                val newVal = !showSystemApps
-                                                showSystemApps = newVal
-                                                prefs.edit().putBoolean("show_system_apps", newVal).apply()
-                                                applyFilter(showFreeSpace, newVal, showHiddenFiles, showSystemOS)
-                                            }
-                                        )
-
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = "Show free storage",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            },
-                                            leadingIcon = {
-                                                MaterialSymbol(
-                                                    name = "storage",
-                                                    active = showFreeSpace,
-                                                    size = 24.dp,
-                                                    tint = if (showFreeSpace) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            },
-                                            trailingIcon = {
-                                                Checkbox(
-                                                    checked = showFreeSpace,
-                                                    onCheckedChange = null
-                                                )
-                                            },
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                val newVal = !showFreeSpace
-                                                showFreeSpace = newVal
-                                                prefs.edit().putBoolean("show_free_space", newVal).apply()
-                                                applyFilter(newVal, showSystemApps, showHiddenFiles, showSystemOS)
-                                            }
-                                        )
-
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = "Show hidden files",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            },
-                                            leadingIcon = {
-                                                MaterialSymbol(
-                                                    name = "visibility",
-                                                    active = showHiddenFiles,
-                                                    size = 24.dp,
-                                                    tint = if (showHiddenFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            },
-                                            trailingIcon = {
-                                                Checkbox(
-                                                    checked = showHiddenFiles,
-                                                    onCheckedChange = null
-                                                )
-                                            },
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                val newVal = !showHiddenFiles
-                                                showHiddenFiles = newVal
-                                                prefs.edit().putBoolean("show_hidden_files", newVal).apply()
-                                                applyFilter(showFreeSpace, showSystemApps, newVal, showSystemOS)
-                                            }
-                                        )
-                                    }
-                                }
-
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            triggerScan()
-                                        },
-                                        enabled = !isLoading && hasStoragePermission,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        MaterialSymbol("refresh", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                }
-
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            context.startActivity(Intent(context, SettingsActivity::class.java))
-                                        },
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        MaterialSymbol("settings", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                }
-                            }
-                        },
+                        actions = { renderHeaderActions() },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface,
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
@@ -646,9 +631,11 @@ fun MainApp() {
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             )
                         },
+                        actions = { renderHeaderActions() },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -855,20 +842,22 @@ fun MainApp() {
                                 alpha = if (currentRoute == AppDestinations.TREE) 1f else 0f
                             }
                     ) {
-                        TreemapCanvas(
-                            rootNode = rootNode!!,
-                            rootPath = rootNode!!.name,
-                            selectedNode = selectedNode,
-                            selectedNodes = selectedTreeNodes.keys,
-                            resetKey = resetZoomKey,
-                            isDark = isDark,
-                            pureBlack = pureBlack,
-                            onScaleChanged = { currentScale = it },
-                            onNodeSelected = { node, path ->
-                                selectedNode = node
-                                selectedPath = path
-                            },
-                        )
+                        if (currentRoute == AppDestinations.TREE) {
+                            TreemapCanvas(
+                                rootNode = rootNode!!,
+                                rootPath = rootNode!!.name,
+                                selectedNode = selectedNode,
+                                selectedNodes = selectedTreeNodes.keys,
+                                resetKey = resetZoomKey,
+                                isDark = isDark,
+                                pureBlack = pureBlack,
+                                onScaleChanged = { currentScale = it },
+                                onNodeSelected = { node, path ->
+                                    selectedNode = node
+                                    selectedPath = path
+                                },
+                            )
+                        }
 
                         // Floating Selection Bar for Treemap
                         AnimatedVisibility(
