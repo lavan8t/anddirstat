@@ -11,11 +11,9 @@ class CompactNode(
 
 object AppDestinations {
     const val TREE = "tree"
-    const val MAP = "tree"
     const val EXPLORER = "explorer"
     const val TYPES = "types"
     const val DISCOVER = "discover"
-    const val SETTINGS = "settings"
 }
 
 data class ExtensionStat(

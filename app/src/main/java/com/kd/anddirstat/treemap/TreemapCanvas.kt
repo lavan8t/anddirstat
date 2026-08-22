@@ -54,15 +54,6 @@ object TreemapBitmapCache {
     fun clear() { cache.evictAll() }
 }
 
-object TreemapTileMemoryCache {
-    private val cache = LruCache<String, Pair<List<TreemapTile>, SpatialTileGrid>>(16)
-
-    fun get(key: String) = cache.get(key)
-    fun put(key: String, value: Pair<List<TreemapTile>, SpatialTileGrid>) {
-        cache.put(key, value)
-    }
-}
-
 private fun renderTreemapToBitmap(
     tiles: List<TreemapTile>,
     width: Int,
@@ -254,76 +245,6 @@ fun computeTreemapTiles(
     return tiles
 }
 
-class IntArrayList(initialCapacity: Int = 8) {
-    var data = IntArray(initialCapacity)
-    var size = 0
-        private set
-
-    fun add(value: Int) {
-        if (size == data.size) {
-            data = data.copyOf(data.size * 2)
-        }
-        data[size++] = value
-    }
-
-    fun get(index: Int): Int = data[index]
-}
-
-class SpatialTileGrid(
-    val tiles: List<TreemapTile>,
-    val canvasWidth: Float,
-    val canvasHeight: Float,
-    val gridCols: Int = 64,
-    val gridRows: Int = 64
-) {
-    private val buckets: Array<IntArrayList?> = arrayOfNulls(gridCols * gridRows)
-    val nodeToTileMap: HashMap<CompactNode, TreemapTile> = HashMap(tiles.size)
-
-    init {
-        val invW = if (canvasWidth > 0f) gridCols / canvasWidth else 0f
-        val invH = if (canvasHeight > 0f) gridRows / canvasHeight else 0f
-
-        for (i in tiles.indices) {
-            val tile = tiles[i]
-            nodeToTileMap[tile.node] = tile
-
-            val minC = (tile.left * invW).toInt().coerceIn(0, gridCols - 1)
-            val maxC = ((tile.left + tile.width) * invW).toInt().coerceIn(0, gridCols - 1)
-            val minR = (tile.top * invH).toInt().coerceIn(0, gridRows - 1)
-            val maxR = ((tile.top + tile.height) * invH).toInt().coerceIn(0, gridRows - 1)
-
-            for (r in minR..maxR) {
-                val rowOffset = r * gridCols
-                for (c in minC..maxC) {
-                    val idx = rowOffset + c
-                    var list = buckets[idx]
-                    if (list == null) {
-                        list = IntArrayList(8)
-                        buckets[idx] = list
-                    }
-                    list.add(i)
-                }
-            }
-        }
-    }
-
-    fun findTileAt(x: Float, y: Float): TreemapTile? {
-        if (x < 0f || x > canvasWidth || y < 0f || y > canvasHeight) return null
-        val c = (x / canvasWidth * gridCols).toInt().coerceIn(0, gridCols - 1)
-        val r = (y / canvasHeight * gridRows).toInt().coerceIn(0, gridRows - 1)
-        val bucket = buckets[r * gridCols + c] ?: return null
-
-        for (k in bucket.size - 1 downTo 0) {
-            val tile = tiles[bucket.get(k)]
-            if (x >= tile.left && x <= tile.left + tile.width &&
-                y >= tile.top && y <= tile.top + tile.height) {
-                return tile
-            }
-        }
-        return null
-    }
-}
-
 @Composable
 fun TreemapCanvas(
     rootNode: CompactNode,
@@ -348,19 +269,16 @@ fun TreemapCanvas(
     val currentOffsetState = rememberUpdatedState(offset)
 
     val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_$isDark"
-    val (precalculatedTiles, spatialGrid) = remember(cacheKey) {
-        val cached = TreemapTileMemoryCache.get(cacheKey)
-        if (cached != null) {
-            cached
-        } else if (canvasSize.width > 0 && canvasSize.height > 0) {
-            val tiles = computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), canvasSize.height.toFloat(), isDark)
-            val grid = SpatialTileGrid(tiles, canvasSize.width.toFloat(), canvasSize.height.toFloat())
-            val pair = Pair(tiles, grid)
-            TreemapTileMemoryCache.put(cacheKey, pair)
-            pair
+    val precalculatedTiles = remember(cacheKey) {
+        if (canvasSize.width > 0 && canvasSize.height > 0) {
+            computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), canvasSize.height.toFloat(), isDark)
         } else {
-            Pair(emptyList(), null)
+            emptyList()
         }
+    }
+
+    val nodeToTileMap = remember(precalculatedTiles) {
+        precalculatedTiles.associateBy { it.node }
     }
 
     LaunchedEffect(resetKey) {
@@ -371,9 +289,8 @@ fun TreemapCanvas(
         }
     }
 
-    val selectedTile = remember(selectedNode, spatialGrid) {
-        if (selectedNode == null || spatialGrid == null) null
-        else spatialGrid.nodeToTileMap[selectedNode]
+    val selectedTile = remember(selectedNode, nodeToTileMap) {
+        if (selectedNode == null) null else nodeToTileMap[selectedNode]
     }
 
     val staticBitmap = remember(cacheKey, pureBlack, precalculatedTiles) {
@@ -438,7 +355,7 @@ fun TreemapCanvas(
                     }
                 }
             }
-            .pointerInput(spatialGrid) {
+            .pointerInput(precalculatedTiles) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val upOrCancel = waitForUpOrCancellation()
@@ -448,7 +365,10 @@ fun TreemapCanvas(
                         val touchX = (upOrCancel.position.x - curOffset.x) / curScale
                         val touchY = (upOrCancel.position.y - curOffset.y) / curScale
 
-                        val hit = spatialGrid?.findTileAt(touchX, touchY)
+                        val hit = precalculatedTiles.findLast {
+                            touchX >= it.left && touchX <= it.left + it.width &&
+                            touchY >= it.top && touchY <= it.top + it.height
+                        }
                         if (hit != null) {
                             triggerCrispHaptic(context)
                             onNodeSelected(hit.node, hit.path)
@@ -468,7 +388,7 @@ fun TreemapCanvas(
 
             // Draw marked selection highlights over cached snapshot
             for (node in selectedNodes) {
-                val tile = spatialGrid?.nodeToTileMap?.get(node) ?: continue
+                val tile = nodeToTileMap[node] ?: continue
                 val sLeft = tile.left
                 val sTop = tile.top
                 val drawW = maxOf(1f, tile.width)

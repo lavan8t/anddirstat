@@ -128,11 +128,16 @@ object FileUtils {
         return list
     }
 
-    fun formatFileSize(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
-        val pre = "KMGTPE"[exp - 1]
-        return String.format(Locale.US, "%.2f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
+    fun formatFileSize(bytes: Long, context: Context? = null): String {
+        if (context != null) return android.text.format.Formatter.formatShortFileSize(context, bytes)
+        val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
+        var size = bytes.toDouble()
+        var unitIdx = 0
+        while (size >= 1024.0 && unitIdx < units.size - 1) {
+            size /= 1024.0
+            unitIdx++
+        }
+        return if (unitIdx == 0) "$bytes B" else String.format(Locale.US, "%.2f %s", size, units[unitIdx])
     }
 
     fun resolveActualFile(path: String, context: Context? = null): File? {
