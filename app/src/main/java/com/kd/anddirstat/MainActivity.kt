@@ -21,6 +21,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -859,41 +861,66 @@ fun MainApp() {
                             )
                         }
 
-                        // Floating Selection Bar for Treemap
+                        // Floating Selection Bar for Treemap (Rich, expressive, sitting right above bottom navbar)
                         AnimatedVisibility(
                             visible = selectedTreeNodes.isNotEmpty() && currentRoute == AppDestinations.TREE,
-                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                            enter = slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessHigh)
+                            ) + fadeIn(
+                                animationSpec = tween(120, easing = FastOutSlowInEasing)
+                            ) + scaleIn(
+                                initialScale = 0.92f,
+                                animationSpec = spring(stiffness = Spring.StiffnessHigh)
+                            ),
+                            exit = slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = spring(stiffness = Spring.StiffnessHigh)
+                            ) + fadeOut(
+                                animationSpec = tween(100, easing = FastOutSlowInEasing)
+                            ) + scaleOut(
+                                targetScale = 0.92f,
+                                animationSpec = spring(stiffness = Spring.StiffnessHigh)
+                            ),
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 96.dp, start = 16.dp, end = 16.dp)
+                                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(24.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shadowElevation = 8.dp,
+                                shape = RoundedCornerShape(28.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                shadowElevation = 3.dp,
+                                tonalElevation = 2.dp,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(
-                                            onClick = { selectedTreeNodes = emptyMap() },
-                                            modifier = Modifier.size(32.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.surfaceContainer,
+                                            modifier = Modifier.size(36.dp)
                                         ) {
-                                            MaterialSymbol(
-                                                name = "close",
-                                                active = true,
-                                                size = 20.dp,
-                                                tint = MaterialTheme.colorScheme.onSurface
-                                            )
+                                            IconButton(
+                                                onClick = { selectedTreeNodes = emptyMap() },
+                                                modifier = Modifier.fillMaxSize()
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = "close",
+                                                    active = true,
+                                                    size = 18.dp,
+                                                    tint = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
                                         Column {
                                             Text(
                                                 text = "${selectedTreeNodes.size} selected",
@@ -902,8 +929,9 @@ fun MainApp() {
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = FileUtils.formatFileSize(selectedTreeNodes.keys.sumOf { it.size }),
+                                                text = FileUtils.formatFileSize(selectedTreeNodes.keys.sumOf { it.size }, context),
                                                 style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -911,7 +939,7 @@ fun MainApp() {
                                     Surface(
                                         shape = CircleShape,
                                         color = MaterialTheme.colorScheme.errorContainer,
-                                        modifier = Modifier.size(38.dp)
+                                        modifier = Modifier.size(42.dp)
                                     ) {
                                         IconButton(
                                             onClick = { showTreeDeleteDialog = true },
