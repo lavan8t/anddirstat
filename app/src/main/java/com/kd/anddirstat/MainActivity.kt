@@ -187,8 +187,8 @@ fun MainApp() {
     var scanPhase by remember { mutableStateOf("Analyzing storage...") }
     var scanDetail by remember { mutableStateOf("Starting scan...") }
 
-    var currentRoute by remember { mutableStateOf(AppDestinations.MAP) }
-    var previousRoute by remember { mutableStateOf(AppDestinations.MAP) }
+    var currentRoute by remember { mutableStateOf(AppDestinations.TREE) }
+    var previousRoute by remember { mutableStateOf(AppDestinations.TREE) }
 
     var explorerNode by remember { mutableStateOf<CompactNode?>(null) }
     var explorerPath by remember { mutableStateOf("Device Storage") }
@@ -349,7 +349,7 @@ fun MainApp() {
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         topBar = {
             when (currentRoute) {
-                AppDestinations.MAP -> {
+                AppDestinations.TREE -> {
                     TopAppBar(
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -472,23 +472,10 @@ fun MainApp() {
                                 }
                             }
                         },
-                        actions = {
-                            IconButton(
-                                onClick = { triggerScan() },
-                                enabled = !isLoading && hasStoragePermission
-                            ) {
-                                MaterialSymbol(
-                                    name = "refresh",
-                                    active = true,
-                                    size = 22.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -500,23 +487,9 @@ fun MainApp() {
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             )
                         },
-                        actions = {
-                            IconButton(
-                                onClick = { triggerScan() },
-                                enabled = !isLoading && hasStoragePermission
-                            ) {
-                                MaterialSymbol(
-                                    name = "refresh",
-                                    active = true,
-                                    size = 22.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -579,23 +552,9 @@ fun MainApp() {
                                 }
                             }
                         },
-                        actions = {
-                            IconButton(
-                                onClick = { triggerScan() },
-                                enabled = !isLoading && hasStoragePermission
-                            ) {
-                                MaterialSymbol(
-                                    name = "refresh",
-                                    active = true,
-                                    size = 22.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -607,7 +566,7 @@ fun MainApp() {
                 tonalElevation = 0.dp
             ) {
                 val destinations = listOf(
-                    Triple(AppDestinations.MAP, "grid_view", "Map"),
+                    Triple(AppDestinations.TREE, "grid_view", "Tree"),
                     Triple(
                         AppDestinations.EXPLORER,
                         if (currentRoute == AppDestinations.EXPLORER) "folder_open" else "folder",
@@ -659,7 +618,7 @@ fun MainApp() {
     ) { paddingValues ->
         val destIndexMap = remember {
             mapOf(
-                AppDestinations.MAP to 0,
+                AppDestinations.TREE to 0,
                 AppDestinations.EXPLORER to 1,
                 AppDestinations.TYPES to 2,
                 AppDestinations.DISCOVER to 3
@@ -706,7 +665,7 @@ fun MainApp() {
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                alpha = if (currentRoute == AppDestinations.MAP) 1f else 0f
+                                alpha = if (currentRoute == AppDestinations.TREE) 1f else 0f
                             }
                     ) {
                         TreemapCanvas(
@@ -782,7 +741,7 @@ fun MainApp() {
                         modifier = Modifier.fillMaxSize()
                     ) { route ->
                         when (route) {
-                            AppDestinations.MAP -> {
+                            AppDestinations.TREE -> {
                                 Spacer(modifier = Modifier.fillMaxSize())
                             }
                             AppDestinations.EXPLORER -> {

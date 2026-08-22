@@ -10,7 +10,8 @@ class CompactNode(
 )
 
 object AppDestinations {
-    const val MAP = "map"
+    const val TREE = "tree"
+    const val MAP = "tree"
     const val EXPLORER = "explorer"
     const val TYPES = "types"
     const val DISCOVER = "discover"

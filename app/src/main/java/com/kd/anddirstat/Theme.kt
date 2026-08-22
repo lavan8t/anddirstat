@@ -31,7 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
-import com.google.android.material.color.utilities.Scheme
+import com.google.android.material.color.utilities.Hct
+import com.google.android.material.color.utilities.SchemeVibrant
+import com.google.android.material.color.utilities.MaterialDynamicColors
 
 enum class AppTheme(val key: String, val title: String) {
     SYSTEM("system", "System"),
@@ -52,7 +54,13 @@ enum class AccentColor(
     TEAL("teal", "Teal", Color(0xFF009688)),
     NEON_GREEN("neon_green", "Neon Green", Color(0xFF39FF14)),
     NEON_PINK("neon_pink", "Neon Pink", Color(0xFFFF10F0)),
-    NEON_YELLOW("neon_yellow", "Neon Yellow", Color(0xFFFFFF00))
+    NEON_YELLOW("neon_yellow", "Neon Yellow", Color(0xFFFFFF00));
+
+    fun getActualColor(isDark: Boolean): Color {
+        val hct = Hct.fromInt(seed.toArgb())
+        val scheme = SchemeVibrant(hct, isDark, 0.0)
+        return Color(MaterialDynamicColors().primary().getArgb(scheme))
+    }
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -294,66 +302,79 @@ fun AndDirStatTheme(
         AppTheme.DARK -> true
     }
 
-    // Official Google material-color-utilities: generates full tonal palette from seed via HCT
+    // Official Google material-color-utilities: generates vibrant dynamic scheme
     val seed = accentColor.seed.toArgb()
-    val mdcScheme = if (isDark) Scheme.dark(seed) else Scheme.light(seed)
+    val hct = Hct.fromInt(seed)
+    val dynamicScheme = SchemeVibrant(hct, isDark, 0.0)
+    val dyn = MaterialDynamicColors()
+
     val base = if (isDark) {
         darkColorScheme(
-            primary = Color(mdcScheme.primary),
-            onPrimary = Color(mdcScheme.onPrimary),
-            primaryContainer = Color(mdcScheme.primaryContainer),
-            onPrimaryContainer = Color(mdcScheme.onPrimaryContainer),
-            secondary = Color(mdcScheme.secondary),
-            onSecondary = Color(mdcScheme.onSecondary),
-            secondaryContainer = Color(mdcScheme.secondaryContainer),
-            onSecondaryContainer = Color(mdcScheme.onSecondaryContainer),
-            tertiary = Color(mdcScheme.tertiary),
-            onTertiary = Color(mdcScheme.onTertiary),
-            tertiaryContainer = Color(mdcScheme.tertiaryContainer),
-            onTertiaryContainer = Color(mdcScheme.onTertiaryContainer),
-            error = Color(mdcScheme.error),
-            onError = Color(mdcScheme.onError),
-            errorContainer = Color(mdcScheme.errorContainer),
-            onErrorContainer = Color(mdcScheme.onErrorContainer),
-            background = Color(mdcScheme.background),
-            onBackground = Color(mdcScheme.onBackground),
-            surface = Color(mdcScheme.surface),
-            onSurface = Color(mdcScheme.onSurface),
-            surfaceVariant = Color(mdcScheme.surfaceVariant),
-            onSurfaceVariant = Color(mdcScheme.onSurfaceVariant),
-            outline = Color(mdcScheme.outline),
-            inverseSurface = Color(mdcScheme.inverseSurface),
-            inverseOnSurface = Color(mdcScheme.inverseOnSurface),
-            inversePrimary = Color(mdcScheme.inversePrimary),
+            primary = Color(dyn.primary().getArgb(dynamicScheme)),
+            onPrimary = Color(dyn.onPrimary().getArgb(dynamicScheme)),
+            primaryContainer = Color(dyn.primaryContainer().getArgb(dynamicScheme)),
+            onPrimaryContainer = Color(dyn.onPrimaryContainer().getArgb(dynamicScheme)),
+            secondary = Color(dyn.secondary().getArgb(dynamicScheme)),
+            onSecondary = Color(dyn.onSecondary().getArgb(dynamicScheme)),
+            secondaryContainer = Color(dyn.secondaryContainer().getArgb(dynamicScheme)),
+            onSecondaryContainer = Color(dyn.onSecondaryContainer().getArgb(dynamicScheme)),
+            tertiary = Color(dyn.tertiary().getArgb(dynamicScheme)),
+            onTertiary = Color(dyn.onTertiary().getArgb(dynamicScheme)),
+            tertiaryContainer = Color(dyn.tertiaryContainer().getArgb(dynamicScheme)),
+            onTertiaryContainer = Color(dyn.onTertiaryContainer().getArgb(dynamicScheme)),
+            error = Color(dyn.error().getArgb(dynamicScheme)),
+            onError = Color(dyn.onError().getArgb(dynamicScheme)),
+            errorContainer = Color(dyn.errorContainer().getArgb(dynamicScheme)),
+            onErrorContainer = Color(dyn.onErrorContainer().getArgb(dynamicScheme)),
+            background = Color(dyn.background().getArgb(dynamicScheme)),
+            onBackground = Color(dyn.onBackground().getArgb(dynamicScheme)),
+            surface = Color(dyn.surface().getArgb(dynamicScheme)),
+            onSurface = Color(dyn.onSurface().getArgb(dynamicScheme)),
+            surfaceVariant = Color(dyn.surfaceVariant().getArgb(dynamicScheme)),
+            onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
+            outline = Color(dyn.outline().getArgb(dynamicScheme)),
+            outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
+            surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
+            surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
+            surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
+            surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
+            inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
+            inverseOnSurface = Color(dyn.inverseOnSurface().getArgb(dynamicScheme)),
+            inversePrimary = Color(dyn.inversePrimary().getArgb(dynamicScheme)),
         )
     } else {
         lightColorScheme(
-            primary = Color(mdcScheme.primary),
-            onPrimary = Color(mdcScheme.onPrimary),
-            primaryContainer = Color(mdcScheme.primaryContainer),
-            onPrimaryContainer = Color(mdcScheme.onPrimaryContainer),
-            secondary = Color(mdcScheme.secondary),
-            onSecondary = Color(mdcScheme.onSecondary),
-            secondaryContainer = Color(mdcScheme.secondaryContainer),
-            onSecondaryContainer = Color(mdcScheme.onSecondaryContainer),
-            tertiary = Color(mdcScheme.tertiary),
-            onTertiary = Color(mdcScheme.onTertiary),
-            tertiaryContainer = Color(mdcScheme.tertiaryContainer),
-            onTertiaryContainer = Color(mdcScheme.onTertiaryContainer),
-            error = Color(mdcScheme.error),
-            onError = Color(mdcScheme.onError),
-            errorContainer = Color(mdcScheme.errorContainer),
-            onErrorContainer = Color(mdcScheme.onErrorContainer),
-            background = Color(mdcScheme.background),
-            onBackground = Color(mdcScheme.onBackground),
-            surface = Color(mdcScheme.surface),
-            onSurface = Color(mdcScheme.onSurface),
-            surfaceVariant = Color(mdcScheme.surfaceVariant),
-            onSurfaceVariant = Color(mdcScheme.onSurfaceVariant),
-            outline = Color(mdcScheme.outline),
-            inverseSurface = Color(mdcScheme.inverseSurface),
-            inverseOnSurface = Color(mdcScheme.inverseOnSurface),
-            inversePrimary = Color(mdcScheme.inversePrimary),
+            primary = Color(dyn.primary().getArgb(dynamicScheme)),
+            onPrimary = Color(dyn.onPrimary().getArgb(dynamicScheme)),
+            primaryContainer = Color(dyn.primaryContainer().getArgb(dynamicScheme)),
+            onPrimaryContainer = Color(dyn.onPrimaryContainer().getArgb(dynamicScheme)),
+            secondary = Color(dyn.secondary().getArgb(dynamicScheme)),
+            onSecondary = Color(dyn.onSecondary().getArgb(dynamicScheme)),
+            secondaryContainer = Color(dyn.secondaryContainer().getArgb(dynamicScheme)),
+            onSecondaryContainer = Color(dyn.onSecondaryContainer().getArgb(dynamicScheme)),
+            tertiary = Color(dyn.tertiary().getArgb(dynamicScheme)),
+            onTertiary = Color(dyn.onTertiary().getArgb(dynamicScheme)),
+            tertiaryContainer = Color(dyn.tertiaryContainer().getArgb(dynamicScheme)),
+            onTertiaryContainer = Color(dyn.onTertiaryContainer().getArgb(dynamicScheme)),
+            error = Color(dyn.error().getArgb(dynamicScheme)),
+            onError = Color(dyn.onError().getArgb(dynamicScheme)),
+            errorContainer = Color(dyn.errorContainer().getArgb(dynamicScheme)),
+            onErrorContainer = Color(dyn.onErrorContainer().getArgb(dynamicScheme)),
+            background = Color(dyn.background().getArgb(dynamicScheme)),
+            onBackground = Color(dyn.onBackground().getArgb(dynamicScheme)),
+            surface = Color(dyn.surface().getArgb(dynamicScheme)),
+            onSurface = Color(dyn.onSurface().getArgb(dynamicScheme)),
+            surfaceVariant = Color(dyn.surfaceVariant().getArgb(dynamicScheme)),
+            onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
+            outline = Color(dyn.outline().getArgb(dynamicScheme)),
+            outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
+            surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
+            surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
+            surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
+            surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
+            inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
+            inverseOnSurface = Color(dyn.inverseOnSurface().getArgb(dynamicScheme)),
+            inversePrimary = Color(dyn.inversePrimary().getArgb(dynamicScheme)),
         )
     }
 
@@ -370,15 +391,13 @@ fun AndDirStatTheme(
         )
     } else base
 
-    val animatedColorScheme = colorScheme.animated()
-
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window
             if (window != null) {
-                window.statusBarColor = animatedColorScheme.background.toArgb()
-                window.navigationBarColor = animatedColorScheme.surfaceContainer.toArgb()
+                window.statusBarColor = colorScheme.background.toArgb()
+                window.navigationBarColor = colorScheme.surfaceContainer.toArgb()
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.isAppearanceLightStatusBars = !isDark
                 controller.isAppearanceLightNavigationBars = !isDark
@@ -387,41 +406,9 @@ fun AndDirStatTheme(
     }
 
     MaterialTheme(
-        colorScheme = animatedColorScheme,
+        colorScheme = colorScheme,
         shapes = Material3Shapes,
         typography = Material3Typography,
         content = content
-    )
-}
-
-@Composable
-fun ColorScheme.animated(
-    animationSpec: AnimationSpec<Color> = tween(durationMillis = 250, easing = FastOutSlowInEasing)
-): ColorScheme {
-    return copy(
-        primary = animateColorAsState(primary, animationSpec, label = "p").value,
-        onPrimary = animateColorAsState(onPrimary, animationSpec, label = "op").value,
-        primaryContainer = animateColorAsState(primaryContainer, animationSpec, label = "pc").value,
-        onPrimaryContainer = animateColorAsState(onPrimaryContainer, animationSpec, label = "opc").value,
-        secondary = animateColorAsState(secondary, animationSpec, label = "s").value,
-        onSecondary = animateColorAsState(onSecondary, animationSpec, label = "os").value,
-        secondaryContainer = animateColorAsState(secondaryContainer, animationSpec, label = "sc").value,
-        onSecondaryContainer = animateColorAsState(onSecondaryContainer, animationSpec, label = "osc").value,
-        tertiary = animateColorAsState(tertiary, animationSpec, label = "t").value,
-        onTertiary = animateColorAsState(onTertiary, animationSpec, label = "ot").value,
-        tertiaryContainer = animateColorAsState(tertiaryContainer, animationSpec, label = "tc").value,
-        onTertiaryContainer = animateColorAsState(onTertiaryContainer, animationSpec, label = "otc").value,
-        background = animateColorAsState(background, animationSpec, label = "bg").value,
-        onBackground = animateColorAsState(onBackground, animationSpec, label = "obg").value,
-        surface = animateColorAsState(surface, animationSpec, label = "sf").value,
-        onSurface = animateColorAsState(onSurface, animationSpec, label = "osf").value,
-        surfaceVariant = animateColorAsState(surfaceVariant, animationSpec, label = "sfv").value,
-        onSurfaceVariant = animateColorAsState(onSurfaceVariant, animationSpec, label = "osfv").value,
-        surfaceContainer = animateColorAsState(surfaceContainer, animationSpec, label = "sfc").value,
-        surfaceContainerLow = animateColorAsState(surfaceContainerLow, animationSpec, label = "sfcl").value,
-        surfaceContainerHigh = animateColorAsState(surfaceContainerHigh, animationSpec, label = "sfch").value,
-        surfaceContainerHighest = animateColorAsState(surfaceContainerHighest, animationSpec, label = "sfchx").value,
-        outline = animateColorAsState(outline, animationSpec, label = "ol").value,
-        outlineVariant = animateColorAsState(outlineVariant, animationSpec, label = "olv").value
     )
 }

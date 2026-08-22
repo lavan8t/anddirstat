@@ -87,16 +87,8 @@ fun SettingsView(
             ) {
                 AppTheme.entries.forEach { theme ->
                     val isSelected = currentTheme == theme
-                    val cardBg by animateColorAsState(
-                        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        animationSpec = tween(durationMillis = 200),
-                        label = "cardBg"
-                    )
-                    val cardFg by animateColorAsState(
-                        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = tween(durationMillis = 200),
-                        label = "cardFg"
-                    )
+                    val cardBg = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                    val cardFg = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
                     Box(
                         modifier = Modifier
@@ -113,7 +105,7 @@ fun SettingsView(
                         ) {
                             MaterialSymbol(
                                 name = when (theme) {
-                                    AppTheme.SYSTEM -> "brightness_medium"   // half-sun
+                                    AppTheme.SYSTEM -> "brightness_medium"
                                     AppTheme.LIGHT  -> "light_mode"
                                     AppTheme.DARK   -> "dark_mode"
                                 },
@@ -135,11 +127,8 @@ fun SettingsView(
 
         // Pure Black toggle — always visible, greyed out and disabled when in light theme
         item {
-            val textColor by animateColorAsState(
-                targetValue = if (isDarkActive) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                label = "pureBlackTextColor"
-            )
+            val textColor = if (isDarkActive) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
 
             Row(
                 modifier = Modifier
@@ -178,27 +167,39 @@ fun SettingsView(
             )
         }
 
-        // All accent colors as circles — no name, no pill, no separation
+        // All accent colors as large vibrant circles — shows actual generated color
         item {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 items(AccentColor.entries) { ac ->
                     val isSelected = accentColor == ac
+                    val actualColor = ac.getActualColor(isDarkActive)
                     Box(
                         modifier = Modifier
-                            .size(if (isSelected) 44.dp else 38.dp)
+                            .size(if (isSelected) 54.dp else 46.dp)
                             .clip(CircleShape)
-                            .background(ac.seed)
+                            .background(actualColor)
                             .then(
                                 if (isSelected) Modifier.border(
-                                    3.dp, MaterialTheme.colorScheme.onSurface, CircleShape
+                                    3.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape
                                 ) else Modifier
                             )
-                            .clickable { onSelectAccent(ac) }
-                    )
+                            .clickable { onSelectAccent(ac) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            MaterialSymbol(
+                                name = "check",
+                                active = true,
+                                size = 24.dp,
+                                tint = if (isDarkActive) Color.Black else Color.White
+                            )
+                        }
+                    }
                 }
             }
         }

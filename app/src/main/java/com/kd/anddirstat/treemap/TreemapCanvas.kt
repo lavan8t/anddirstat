@@ -243,12 +243,6 @@ fun TreemapCanvas(
         else spatialGrid.nodeToTileMap[selectedNode]
     }
 
-    val selectionFadeAlpha by animateFloatAsState(
-        targetValue = if (selectedNode != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "selectionFade"
-    )
-
     val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
     Canvas(
@@ -335,24 +329,17 @@ fun TreemapCanvas(
                 // AMOLED: outline borders only when unselected, animated smooth fill when selected
                 if (isSelected) {
                     drawRect(
-                        color = tile.baseColor.copy(alpha = selectionFadeAlpha),
+                        color = tile.baseColor,
                         topLeft = Offset(sLeft, sTop),
                         size = Size(sW, sH)
                     )
-                    drawRect(
-                        color = tile.baseColor,
-                        topLeft = Offset(sLeft, sTop),
-                        size = Size(sW, sH),
-                        style = Stroke(width = if (currentScale > 2f) 1.5f else 1.0f)
-                    )
-                } else {
-                    drawRect(
-                        color = tile.baseColor,
-                        topLeft = Offset(sLeft, sTop),
-                        size = Size(sW, sH),
-                        style = Stroke(width = if (currentScale > 2f) 1.5f else 1.0f)
-                    )
                 }
+                drawRect(
+                    color = tile.baseColor,
+                    topLeft = Offset(sLeft, sTop),
+                    size = Size(sW, sH),
+                    style = Stroke(width = if (currentScale > 2f) 1.5f else 1.0f)
+                )
             } else {
                 // Fast path: draw solid color for small tiles (<16px) — 50x faster GPU throughput
                 if (sW < 16f || sH < 16f) {
@@ -396,27 +383,19 @@ fun TreemapCanvas(
             }
         }
 
-        // Selected tile crisp overlay with smooth animated fade
+        // Instant crisp selection border — zero animation delay, zero fade overlay
         val sel = selectedTile
-        if (selectedNode != null && sel != null && selectionFadeAlpha > 0.01f) {
+        if (selectedNode != null && sel != null) {
             val selLeft = sel.left * currentScale + currentOffset.x
             val selTop = sel.top * currentScale + currentOffset.y
             val selW = sel.width * currentScale
             val selH = sel.height * currentScale
 
-            // Smooth highlight overlay
             drawRect(
-                color = Color.White.copy(alpha = 0.20f * selectionFadeAlpha),
-                topLeft = Offset(selLeft, selTop),
-                size = Size(selW, selH)
-            )
-
-            // Crisp selection border
-            drawRect(
-                color = SelectionBorderColor.copy(alpha = selectionFadeAlpha),
+                color = SelectionBorderColor,
                 topLeft = Offset(selLeft, selTop),
                 size = Size(selW, selH),
-                style = Stroke(width = 4f)
+                style = Stroke(width = 3.5f)
             )
         }
     }
