@@ -9,6 +9,8 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -20,9 +22,11 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -56,6 +60,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -259,31 +264,52 @@ fun MainApp() {
         }
     }
 
+    var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+    var isPredictiveBackActive by remember { mutableStateOf(false) }
+
     PredictiveBackHandler(enabled = currentRoute == AppDestinations.SETTINGS) { progress ->
         try {
-            progress.collect { }
+            isPredictiveBackActive = true
+            progress.collect { backEvent ->
+                predictiveBackProgress = backEvent.progress
+            }
             currentRoute = previousRoute
         } catch (_: CancellationException) {
+        } finally {
+            isPredictiveBackActive = false
+            predictiveBackProgress = 0f
         }
     }
 
     PredictiveBackHandler(enabled = selectedNode != null) { progress ->
         try {
-            progress.collect { }
+            isPredictiveBackActive = true
+            progress.collect { backEvent ->
+                predictiveBackProgress = backEvent.progress
+            }
             selectedNode = null
             selectedPath = null
         } catch (_: CancellationException) {
+        } finally {
+            isPredictiveBackActive = false
+            predictiveBackProgress = 0f
         }
     }
 
     PredictiveBackHandler(enabled = currentRoute == AppDestinations.EXPLORER && explorerStack.isNotEmpty()) { progress ->
         try {
-            progress.collect { }
+            isPredictiveBackActive = true
+            progress.collect { backEvent ->
+                predictiveBackProgress = backEvent.progress
+            }
             val prev = explorerStack.last()
             explorerStack = explorerStack.dropLast(1)
             explorerNode = prev.node
             explorerPath = prev.path
         } catch (_: CancellationException) {
+        } finally {
+            isPredictiveBackActive = false
+            predictiveBackProgress = 0f
         }
     }
 
@@ -543,14 +569,51 @@ fun MainApp() {
             }
         }
     ) { paddingValues ->
+        val destIndexMap = remember {
+            mapOf(
+                AppDestinations.MAP to 0,
+                AppDestinations.EXPLORER to 1,
+                AppDestinations.TYPES to 2,
+                AppDestinations.DISCOVER to 3,
+                AppDestinations.SETTINGS to 4
+            )
+        }
+
+        val backScale = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.08f) else 1f
+        val backAlpha = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.20f) else 1f
+        val backCornerRadius = if (isPredictiveBackActive) (predictiveBackProgress * 24).dp else 0.dp
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .graphicsLayer {
+                    scaleX = backScale
+                    scaleY = backScale
+                    alpha = backAlpha
+                }
+                .clip(RoundedCornerShape(backCornerRadius))
         ) {
             when {
                 currentRoute == AppDestinations.SETTINGS -> {
-                    // Settings is always independent — never blocked by scan state
+                    SettingsView(
+                        currentTheme = currentTheme,
+                        onSelectTheme = { selectedTheme ->
+                            currentTheme = selectedTheme
+                            prefs.edit { putString("app_theme", selectedTheme.key) }
+                        },
+                        pureBlack = pureBlack,
+                        onTogglePureBlack = { v ->
+                            pureBlack = v
+                            prefs.edit { putBoolean("pure_black", v) }
+                        },
+                        accentColor = accentColor,
+                        onSelectAccent = { a ->
+                            accentColor = a
+                            prefs.edit().putString("accent_color", a.key).apply()
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
                 !hasStoragePermission -> {
                     PermissionScreen(
@@ -625,73 +688,85 @@ fun MainApp() {
                         }
                     }
 
-                    if (currentRoute == AppDestinations.EXPLORER) {
-                        ExplorerView(
-                            currentNode = explorerNode ?: rootNode!!,
-                            currentPath = explorerPath,
-                            canGoBack = explorerStack.isNotEmpty(),
-                            onNavigateBack = {
-                                if (explorerStack.isNotEmpty()) {
-                                    val prev = explorerStack.last()
-                                    explorerStack = explorerStack.dropLast(1)
-                                    explorerNode = prev.node
-                                    explorerPath = prev.path
-                                }
-                            },
-                            onNodeClick = { child, childPath ->
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (child.isDirectory && child.children != null && child.children!!.isNotEmpty()) {
-                                    explorerStack = explorerStack + NavEntry(explorerNode ?: rootNode!!, explorerPath)
-                                    explorerNode = child
-                                    explorerPath = childPath
-                                } else {
-                                    selectedNode = child
-                                    selectedPath = childPath
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else if (currentRoute == AppDestinations.TYPES) {
-                        FileTypesView(
-                            stats = extensionStats,
-                            totalDeviceSize = rootNode!!.size,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else if (currentRoute == AppDestinations.DISCOVER) {
-                        DiscoverView(
-                            rootNode = rootNode!!,
-                            topFiles = topFiles,
-                            onNodeClick = { node, path ->
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedNode = node
-                                selectedPath = path
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    // Accelerated Slide Transitions between main pages
+                    AnimatedContent(
+                        targetState = currentRoute,
+                        transitionSpec = {
+                            val initialIdx = destIndexMap[initialState] ?: 0
+                            val targetIdx = destIndexMap[targetState] ?: 0
+                            val towards = if (targetIdx > initialIdx) AnimatedContentTransitionScope.SlideDirection.Left
+                            else AnimatedContentTransitionScope.SlideDirection.Right
+
+                            (slideIntoContainer(
+                                towards = towards,
+                                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+                            ) + fadeIn(
+                                animationSpec = tween(durationMillis = 180)
+                            )).togetherWith(
+                                slideOutOfContainer(
+                                    towards = towards,
+                                    animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+                                ) + fadeOut(
+                                    animationSpec = tween(durationMillis = 150)
+                                )
+                            )
+                        },
+                        label = "pageSlideTransition",
+                        modifier = Modifier.fillMaxSize()
+                    ) { route ->
+                        when (route) {
+                            AppDestinations.MAP -> {
+                                Spacer(modifier = Modifier.fillMaxSize())
+                            }
+                            AppDestinations.EXPLORER -> {
+                                ExplorerView(
+                                    currentNode = explorerNode ?: rootNode!!,
+                                    currentPath = explorerPath,
+                                    canGoBack = explorerStack.isNotEmpty(),
+                                    onNavigateBack = {
+                                        if (explorerStack.isNotEmpty()) {
+                                            val prev = explorerStack.last()
+                                            explorerStack = explorerStack.dropLast(1)
+                                            explorerNode = prev.node
+                                            explorerPath = prev.path
+                                        }
+                                    },
+                                    onNodeClick = { child, childPath ->
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        if (child.isDirectory && child.children != null && child.children!!.isNotEmpty()) {
+                                            explorerStack = explorerStack + NavEntry(explorerNode ?: rootNode!!, explorerPath)
+                                            explorerNode = child
+                                            explorerPath = childPath
+                                        } else {
+                                            selectedNode = child
+                                            selectedPath = childPath
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            AppDestinations.TYPES -> {
+                                FileTypesView(
+                                    stats = extensionStats,
+                                    totalDeviceSize = rootNode!!.size,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            AppDestinations.DISCOVER -> {
+                                DiscoverView(
+                                    rootNode = rootNode!!,
+                                    topFiles = topFiles,
+                                    onNodeClick = { node, path ->
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedNode = node
+                                        selectedPath = path
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
                     }
                 }
-            }
-
-            // Settings renders outside scan/load gates — always accessible
-            if (currentRoute == AppDestinations.SETTINGS) {
-                SettingsView(
-                    currentTheme = currentTheme,
-                    onSelectTheme = { selectedTheme ->
-                        currentTheme = selectedTheme
-                        prefs.edit { putString("app_theme", selectedTheme.key) }
-                    },
-                    pureBlack = pureBlack,
-                    onTogglePureBlack = { v ->
-                        pureBlack = v
-                        prefs.edit { putBoolean("pure_black", v) }
-                    },
-                    accentColor = accentColor,
-                    onSelectAccent = { a ->
-                        accentColor = a
-                        prefs.edit().putString("accent_color", a.key).apply()
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
             }
 
             // Usage Access Warning Banner
