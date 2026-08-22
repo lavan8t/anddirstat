@@ -26,9 +26,12 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,8 +39,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -191,6 +196,7 @@ fun MainApp() {
 
     var currentScale by remember { mutableStateOf(1f) }
     var resetZoomKey by remember { mutableStateOf(0) }
+    var discoverSearchQuery by remember { mutableStateOf("") }
 
     fun applyFilter(freeSpace: Boolean, systemApps: Boolean) {
         val raw = rawScannedNode ?: return
@@ -515,7 +521,83 @@ fun MainApp() {
                     )
                 }
                 AppDestinations.DISCOVER -> {
-                    // DiscoverView has its own pinned SearchBar anchor
+                    TopAppBar(
+                        title = {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    MaterialSymbol(
+                                        name = "search",
+                                        active = true,
+                                        size = 20.dp,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    BasicTextField(
+                                        value = discoverSearchQuery,
+                                        onValueChange = { discoverSearchQuery = it },
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                        decorationBox = { innerTextField ->
+                                            if (discoverSearchQuery.isEmpty()) {
+                                                Text(
+                                                    text = "Search files...",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                            innerTextField()
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (discoverSearchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = { discoverSearchQuery = "" },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "close",
+                                                active = true,
+                                                size = 18.dp,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { triggerScan() },
+                                enabled = !isLoading && hasStoragePermission
+                            ) {
+                                MaterialSymbol(
+                                    name = "refresh",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
                 }
             }
         },
@@ -741,6 +823,7 @@ fun MainApp() {
                                 DiscoverView(
                                     rootNode = rootNode!!,
                                     topFiles = topFiles,
+                                    searchQuery = discoverSearchQuery,
                                     onNodeClick = { node, path ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedNode = node
