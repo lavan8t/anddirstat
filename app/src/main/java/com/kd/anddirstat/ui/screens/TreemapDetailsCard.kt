@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,8 +26,12 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +58,7 @@ fun ExpressiveNodeDetailsSheet(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     val realFile = remember(path) { FileUtils.resolveActualFile(path) }
     val isRealFile = realFile != null && realFile.exists()
     val appChildren = node.children
@@ -320,14 +326,7 @@ fun ExpressiveNodeDetailsSheet(
                     MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
                 }
                 IconButton(
-                    onClick = {
-                        if (realFile.delete()) {
-                            Toast.makeText(context, "Deleted: ${realFile.name}", Toast.LENGTH_SHORT).show()
-                            onDeleted()
-                        } else {
-                            Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { showDeleteConfirmation = true },
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError
@@ -337,6 +336,53 @@ fun ExpressiveNodeDetailsSheet(
                     MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
                 }
             }
+        }
+
+        if (showDeleteConfirmation && realFile != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmation = false },
+                icon = {
+                    Icon(
+                        imageVector = FileUtils.getNodeIcon(node),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = {
+                    Text(
+                        text = "Delete file?",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This action is permanent and cannot be undone.\n\n${displayName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirmation = false
+                            if (realFile.delete()) {
+                                Toast.makeText(context, "Deleted: ${realFile.name}", Toast.LENGTH_SHORT).show()
+                                onDeleted()
+                            } else {
+                                Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmation = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

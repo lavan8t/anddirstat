@@ -109,28 +109,16 @@ object StorageFilterHelper {
 
         fun collect(node: CompactNode) {
             val name = node.name
-            if (name == "[Free Space]" || name == "[System & OS]") {
-                val cur = statsMap[name] ?: Pair(0L, 0)
-                statsMap[name] = Pair(cur.first + node.size, cur.second + 1)
-                return
-            }
-            if (name == "[Recycle Bin]") {
-                val cur = statsMap[name] ?: Pair(0L, 0)
-                statsMap[name] = Pair(cur.first + node.size, cur.second + 1)
+            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+                name == "Cache" || name == "App Cache" || name == "Data" || name == "App Data") {
                 return
             }
             if (!node.isDirectory) {
-                val ext = if (name.startsWith(".trashed")) {
-                    ".trashed"
-                } else if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true)) {
+                val ext = if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
                     ".apk"
-                } else if (name == "Cache" || name == "App Cache") {
-                    "Cache"
-                } else if (name == "Data" || name == "App Data") {
-                    "Data"
                 } else {
                     val e = name.substringAfterLast('.', "").lowercase()
-                    if (e.isEmpty()) "[no ext]" else ".$e"
+                    if (e.isEmpty() || e == name.lowercase()) "[no ext]" else ".$e"
                 }
                 val cur = statsMap[ext] ?: Pair(0L, 0)
                 statsMap[ext] = Pair(cur.first + node.size, cur.second + 1)

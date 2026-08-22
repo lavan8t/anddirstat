@@ -44,6 +44,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -51,6 +54,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -179,6 +183,7 @@ fun MainApp() {
         var resetZoomKey by remember { mutableStateOf(0) }
         var discoverSearchQuery by remember { mutableStateOf("") }
         var selectedTreeNodes by remember { mutableStateOf(setOf<CompactNode>()) }
+        var showTreeDeleteDialog by remember { mutableStateOf(false) }
 
         fun applyFilter(freeSpace: Boolean, systemApps: Boolean, hiddenFiles: Boolean = showHiddenFiles) {
             val raw = rawScannedNode ?: return
@@ -394,7 +399,7 @@ fun MainApp() {
                                     onClick = { showFilterMenu = true },
                                     enabled = !isLoading && hasStoragePermission && rawScannedNode != null
                                 ) {
-                                    MaterialSymbol("tune", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    MaterialSymbol("filter_list", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 DropdownMenu(
                                     expanded = showFilterMenu,
@@ -752,17 +757,77 @@ fun MainApp() {
                                             )
                                         }
                                     }
-                                    TextButton(
-                                        onClick = { selectedTreeNodes = emptySet() }
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        modifier = Modifier.size(38.dp)
                                     ) {
-                                        Text(
-                                            text = "Clear",
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        IconButton(
+                                            onClick = { showTreeDeleteDialog = true },
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "delete",
+                                                active = true,
+                                                size = 20.dp,
+                                                tint = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
+                    }
+
+                    if (showTreeDeleteDialog && selectedTreeNodes.isNotEmpty()) {
+                        val count = selectedTreeNodes.size
+                        val totalBytes = selectedTreeNodes.sumOf { it.size }
+                        AlertDialog(
+                            onDismissRequest = { showTreeDeleteDialog = false },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            title = {
+                                Text(
+                                    text = if (count == 1) "Delete 1 item?" else "Delete $count items?",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = "This action is permanent and cannot be undone.\n\nTotal space to free: ${FileUtils.formatFileSize(totalBytes)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        showTreeDeleteDialog = false
+                                        selectedTreeNodes.forEach { node ->
+                                            try {
+                                                val f = FileUtils.resolveActualFile(node.name)
+                                                if (f != null && f.exists()) f.deleteRecursively()
+                                            } catch (_: Exception) {}
+                                        }
+                                        selectedTreeNodes = emptySet()
+                                        triggerScan()
+                                    }
+                                ) {
+                                    Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showTreeDeleteDialog = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
                     }
 
                     // Universal file/app details ModalBottomSheet
@@ -849,8 +914,14 @@ fun MainApp() {
                             }
                             AppDestinations.TYPES -> {
                                 FileTypesView(
+                                    rootNode = rootNode!!,
                                     stats = extensionStats,
                                     totalDeviceSize = rootNode!!.size,
+                                    onNodeClick = { node, path ->
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedNode = node
+                                        selectedPath = path
+                                    },
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }

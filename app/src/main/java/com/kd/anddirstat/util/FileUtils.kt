@@ -107,7 +107,7 @@ object FileUtils {
         return when {
             name == "[free space]" -> Icons.Outlined.Storage
             name == "[system & os]" -> Icons.Outlined.Storage
-            name == "[recycle bin]" || name == "recycle bin" || name.startsWith(".trashed") -> Icons.Outlined.Delete
+            name == "[recycle bin]" || name == "recycle bin" -> Icons.Outlined.Delete
             name == "apps & system packages" || isAppNode -> Icons.Outlined.Apps
             node.isDirectory -> if (node.children?.isNotEmpty() == true) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
             name.endsWith(".apk") || name.endsWith(".apks") || name.endsWith(".xapk") || name.endsWith(".apkm") || name.endsWith(".obb") || name.endsWith(".aab") -> Icons.Outlined.Android
@@ -136,12 +136,12 @@ object FileUtils {
 
     fun getNodeIconColor(node: CompactNode, isDark: Boolean): Color {
         val name = node.name
-        if (name == "[Free Space]") return if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2)
-        if (name == "[System & OS]") return if (isDark) Color(0xFFB0BEC5) else Color(0xFF546E7A)
-        if (name == "[Recycle Bin]" || name.startsWith(".trashed")) return if (isDark) Color(0xFFFF80AB) else Color(0xFFE11D48)
-        if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFFFB74D) else Color(0xFFF57C00)
-        if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF81D4FA) else Color(0xFF0288D1)
-        if (node.isDirectory) return if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2)
+        if (name == "[Free Space]") return if (isDark) Color(0xFF60A5FA) else Color(0xFF1D4ED8)
+        if (name == "[System & OS]") return if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+        if (name == "[Recycle Bin]" || name == "Recycle Bin") return if (isDark) Color(0xFFFF2A6D) else Color(0xFFE11D48)
+        if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFFF9800) else Color(0xFFE65100)
+        if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+        if (node.isDirectory) return if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
 
         val ext = if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
             "apk"
@@ -156,30 +156,30 @@ object FileUtils {
         val ext = extension.lowercase().removePrefix(".")
         return when (ext) {
             "trashed", "recycle bin", "[recycle bin]" ->
-                if (isDark) Color(0xFFFF80AB) else Color(0xFFE11D48)
+                if (isDark) Color(0xFFFF2A6D) else Color(0xFFE11D48)
             "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" ->
-                if (isDark) Color(0xFF82B1FF) else Color(0xFF1565C0)
+                if (isDark) Color(0xFF3B82F6) else Color(0xFF1D4ED8)
             "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" ->
-                if (isDark) Color(0xFFEA80FC) else Color(0xFF8E24AA)
+                if (isDark) Color(0xFFC084FC) else Color(0xFF9333EA)
             "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" ->
-                if (isDark) Color(0xFFFFD180) else Color(0xFFEF6C00)
+                if (isDark) Color(0xFFFB923C) else Color(0xFFEA580C)
             "apk", "apks", "xapk", "apkm", "obb", "aab" ->
-                if (isDark) Color(0xFFA5D6A7) else Color(0xFF2E7D32)
+                if (isDark) Color(0xFF34D399) else Color(0xFF059669)
             "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" ->
-                if (isDark) Color(0xFF80CBC4) else Color(0xFF00796B)
+                if (isDark) Color(0xFF2DD4BF) else Color(0xFF0D9488)
             "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" ->
-                if (isDark) Color(0xFF80DEEA) else Color(0xFF0097A7)
+                if (isDark) Color(0xFF22D3EE) else Color(0xFF0891B2)
             "so", "bin", "dex", "jar", "class", "exe", "dll" ->
-                if (isDark) Color(0xFFFF8A80) else Color(0xFFC62828)
+                if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
             "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py" ->
-                if (isDark) Color(0xFFFFE57F) else Color(0xFFF57F17)
+                if (isDark) Color(0xFFFACC15) else Color(0xFFCA8A04)
             else -> {
                 if (ext.isEmpty()) {
-                    if (isDark) Color(0xFFCFD8DC) else Color(0xFF607D8B)
+                    if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
                 } else {
                     val hash = Math.abs(ext.hashCode())
                     val hue = (hash * 137.507764f) % 360f
-                    Color.hsl(hue = hue, saturation = 0.75f, lightness = if (isDark) 0.75f else 0.45f)
+                    Color.hsl(hue = hue, saturation = 0.85f, lightness = if (isDark) 0.65f else 0.40f)
                 }
             }
         }

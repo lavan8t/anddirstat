@@ -27,6 +27,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -75,6 +78,7 @@ fun ExplorerView(
 ) {
     var expandedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
     var selectedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
 
     fun flattenTree(
@@ -89,7 +93,8 @@ fun ExplorerView(
             val childPath = if (parentPath == "Device Storage") child.name
                 else if (parentPath.endsWith("/")) "$parentPath${child.name}"
                 else "$parentPath/${child.name}"
-            val isDirWithChildren = child.isDirectory && child.children?.isNotEmpty() == true
+            val isApp = child.children?.any { it.name.startsWith("App Code") } == true
+            val isDirWithChildren = child.isDirectory && !isApp && child.children?.any { it.size > 0L } == true
             val isExpanded = expandedNodes.contains(child)
             outList.add(ExplorerTreeRow(child, childPath, depth, isExpanded, isDirWithChildren, parent.size))
             if (isDirWithChildren && isExpanded) {
@@ -116,8 +121,7 @@ fun ExplorerView(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             items(
-                items = visibleRows,
-                key = { "${it.path}_${it.depth}" }
+                items = visibleRows
             ) { row ->
                 val child = row.node
                 val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
@@ -141,6 +145,7 @@ fun ExplorerView(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .size(28.dp)
+                                        .clip(CircleShape)
                                         .clickable {
                                             expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
                                         }
@@ -152,8 +157,7 @@ fun ExplorerView(
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                            } else {
-                                Spacer(modifier = Modifier.width(28.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                             }
 
                             Box(
@@ -305,18 +309,75 @@ fun ExplorerView(
                             )
                         }
                     }
-                    TextButton(
-                        onClick = {
-                            selectedNodes = emptySet()
-                        }
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.size(38.dp)
                     ) {
-                        Text(
-                            text = "Clear",
-                            fontWeight = FontWeight.Bold
-                        )
+                        IconButton(
+                            onClick = { showDeleteDialog = true },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            MaterialSymbol(
+                                name = "delete",
+                                active = true,
+                                size = 20.dp,
+                                tint = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        if (showDeleteDialog && selectedNodes.isNotEmpty()) {
+            val count = selectedNodes.size
+            val totalBytes = selectedNodes.sumOf { it.size }
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = {
+                    Text(
+                        text = if (count == 1) "Delete 1 item?" else "Delete $count items?",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This action is permanent and cannot be undone.\n\nTotal space to free: ${FileUtils.formatFileSize(totalBytes)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteDialog = false
+                            selectedNodes.forEach { node ->
+                                try {
+                                    val f = FileUtils.resolveActualFile(node.name)
+                                    if (f != null && f.exists()) f.deleteRecursively()
+                                } catch (_: Exception) {}
+                            }
+                            selectedNodes = emptySet()
+                        }
+                    ) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }
