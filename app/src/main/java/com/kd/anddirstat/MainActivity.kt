@@ -73,7 +73,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.kd.anddirstat.model.AppDestinations
@@ -322,10 +325,25 @@ fun MainApp() {
                     TopAppBar(
                         title = {
                             Text(
-                                text = "AndDirStat",
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Black
-                                )
+                                text = buildAnnotatedString {
+                                    withStyle(
+                                        SpanStyle(
+                                            fontFamily = GoogleSansFlexStraightRegularFamily,
+                                            fontWeight = FontWeight.Normal
+                                        )
+                                    ) {
+                                        append("And")
+                                    }
+                                    withStyle(
+                                        SpanStyle(
+                                            fontFamily = GoogleSansFlexFontFamily,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    ) {
+                                        append("DirStat")
+                                    }
+                                },
+                                style = MaterialTheme.typography.titleLarge
                             )
                         },
                         actions = {

@@ -36,10 +36,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.AccentColor
 import com.kd.anddirstat.AppTheme
+import com.kd.anddirstat.GoogleSansFlexFontFamily
+import com.kd.anddirstat.GoogleSansFlexStraightRegularFamily
 import com.kd.anddirstat.ui.components.MaterialSymbol
 
 @Composable
@@ -207,9 +212,25 @@ fun SettingsView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "AndDirStat",
+                    text = buildAnnotatedString {
+                        withStyle(
+                            SpanStyle(
+                                fontFamily = GoogleSansFlexStraightRegularFamily,
+                                fontWeight = FontWeight.Normal
+                            )
+                        ) {
+                            append("And")
+                        }
+                        withStyle(
+                            SpanStyle(
+                                fontFamily = GoogleSansFlexFontFamily,
+                                fontWeight = FontWeight.Bold
+                            )
+                        ) {
+                            append("DirStat")
+                        }
+                    },
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(

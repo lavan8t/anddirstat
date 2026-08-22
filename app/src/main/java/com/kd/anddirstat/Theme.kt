@@ -119,6 +119,20 @@ val GoogleSansFlexFontFamily = FontFamily(
     )
 )
 
+@OptIn(ExperimentalTextApi::class)
+val GoogleSansFlexStraightRegularFamily = FontFamily(
+    Font(
+        resId = R.font.google_sans_flex,
+        weight = FontWeight.Normal,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(400),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 0f),
+            FontVariation.width(100f)
+        )
+    )
+)
+
 
 
 val Material3Shapes = Shapes(
