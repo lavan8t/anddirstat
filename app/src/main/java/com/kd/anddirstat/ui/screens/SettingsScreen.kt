@@ -19,14 +19,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -52,7 +49,7 @@ fun SettingsView(
     onSelectAccent: (AccentColor) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
+    val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
 
     LazyColumn(
         modifier = modifier
@@ -71,7 +68,7 @@ fun SettingsView(
             )
         }
 
-        // Theme selector row (System / Light / Dark as 3-card row)
+        // Theme 3-card row — only selected has surfaceContainerHigh bg, others transparent
         item {
             Row(
                 modifier = Modifier
@@ -81,47 +78,39 @@ fun SettingsView(
             ) {
                 AppTheme.entries.forEach { theme ->
                     val isSelected = currentTheme == theme
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
-                                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(20.dp))
-                            .border(
-                                width = if (isSelected) 2.dp else 0.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                shape = RoundedCornerShape(20.dp)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                else Color.Transparent
                             )
                             .clickable { onSelectTheme(theme) }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             MaterialSymbol(
                                 name = when (theme) {
-                                    AppTheme.SYSTEM -> "settings_suggest"
-                                    AppTheme.LIGHT -> "light_mode"
-                                    AppTheme.DARK -> "dark_mode"
+                                    AppTheme.SYSTEM -> "brightness_medium"   // half-sun
+                                    AppTheme.LIGHT  -> "light_mode"
+                                    AppTheme.DARK   -> "dark_mode"
                                 },
                                 active = isSelected,
                                 size = 24.dp,
-                                tint = if (isSelected) MaterialTheme.colorScheme.primary
+                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                                        else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = theme.title,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
-                                        else MaterialTheme.colorScheme.onSurface
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -129,66 +118,41 @@ fun SettingsView(
             }
         }
 
-        // Pure black toggle — only visible when DARK or SYSTEM in dark
+        // Pure Black toggle — only when dark/system, no card, no subtext, no icon
         item {
             AnimatedVisibility(
-                visible = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM,
+                visible = isDarkActive,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable { onTogglePureBlack(!pureBlack) }
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onTogglePureBlack(!pureBlack) }
-                            .padding(horizontal = 18.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        MaterialSymbol(
-                            name = "contrast",
-                            active = pureBlack,
-                            size = 22.dp,
-                            tint = if (pureBlack) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        text = "Use pure black",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = pureBlack,
+                        onCheckedChange = onTogglePureBlack,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Pure Black",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "True #000000 background for OLED displays",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = pureBlack,
-                            onCheckedChange = onTogglePureBlack,
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                    }
+                    )
                 }
             }
         }
 
         // Accent color section header
         item {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Accent Color",
                 style = MaterialTheme.typography.titleMedium,
@@ -198,147 +162,52 @@ fun SettingsView(
             )
         }
 
-        // Accent color carousel — no border when selected, inner border only
+        // All accent colors as circles — no name, no pill, no separation
         item {
-            val normal = AccentColor.entries.filter { !it.neon }
-            val neon = AccentColor.entries.filter { it.neon }
-
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Normal accents row
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(normal) { ac ->
-                        AccentChip(ac, accentColor == ac, onSelectAccent)
-                    }
-                }
-
-                // Neon accents row (only when pure black is on)
-                AnimatedVisibility(
-                    visible = pureBlack && (currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM),
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Column {
-                        Text(
-                            text = "Neon (AMOLED)",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                        )
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(neon) { ac ->
-                                AccentChip(ac, accentColor == ac, onSelectAccent)
-                            }
-                        }
-                    }
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(AccentColor.entries) { ac ->
+                    val isSelected = accentColor == ac
+                    Box(
+                        modifier = Modifier
+                            .size(if (isSelected) 44.dp else 38.dp)
+                            .clip(CircleShape)
+                            .background(ac.seed)
+                            .then(
+                                if (isSelected) Modifier.border(
+                                    3.dp, MaterialTheme.colorScheme.onSurface, CircleShape
+                                ) else Modifier
+                            )
+                            .clickable { onSelectAccent(ac) }
+                    )
                 }
             }
         }
 
-        // About section
+        // App name + version pinned at bottom center — no card, no heading
         item {
-            Spacer(modifier = Modifier.height(28.dp))
-            Text(
-                text = "About",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-            )
-        }
-
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            Spacer(modifier = Modifier.height(48.dp))
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .padding(bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "AndDirStat",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Material 3 Expressive storage & treemap visualizer",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "v1.0.0",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                Text(
+                    text = "AndDirStat",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "v1.0.0",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
             }
-        }
-    }
-}
-
-@Composable
-private fun AccentChip(
-    ac: AccentColor,
-    isSelected: Boolean,
-    onSelect: (AccentColor) -> Unit
-) {
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent
-    Card(
-        shape = CircleShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier
-            .border(width = if (isSelected) 2.dp else 0.dp, color = borderColor, shape = CircleShape)
-            .clickable { onSelect(ac) }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(ac.seed)
-            )
-            Text(
-                text = ac.label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
         }
     }
 }

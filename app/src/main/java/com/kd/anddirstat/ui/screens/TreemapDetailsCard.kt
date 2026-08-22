@@ -23,6 +23,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -259,65 +261,41 @@ fun ExpressiveNodeDetailsCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Action Buttons: Fully rounded only (shape = CircleShape) + Cancel button
-            if (isAppNode && pkgName != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
+            // Action buttons — icon only, no text
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isAppNode && pkgName != null) {
+                    IconButton(
                         onClick = {
                             try {
-                                val intent = Intent(
-                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.parse("package:$pkgName")
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
                                 )
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                            }
+                            } catch (_: Exception) {}
                         },
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
+                        colors = IconButtonDefaults.iconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.weight(1.5f)
+                        modifier = Modifier.size(52.dp)
                     ) {
-                        MaterialSymbol("info", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("App Info", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    }
-                    FilledTonalButton(
-                        onClick = onDismiss,
-                        shape = CircleShape,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Cancel", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        MaterialSymbol("info", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
-            } else if (isRealFile && !realFile!!.isDirectory) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
+                if (isRealFile && !realFile!!.isDirectory) {
+                    IconButton(
                         onClick = { FileUtils.openFile(context, realFile) },
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
+                        colors = IconButtonDefaults.iconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.weight(1.2f)
+                        modifier = Modifier.size(52.dp)
                     ) {
-                        MaterialSymbol("open_in_new", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Open", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        MaterialSymbol("open_in_new", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onPrimary)
                     }
-                    Button(
+                    IconButton(
                         onClick = {
                             if (realFile.delete()) {
                                 Toast.makeText(context, "Deleted: ${realFile.name}", Toast.LENGTH_SHORT).show()
@@ -326,40 +304,25 @@ fun ExpressiveNodeDetailsCard(
                                 Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
                             }
                         },
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
+                        colors = IconButtonDefaults.iconButtonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError
                         ),
-                        modifier = Modifier.weight(1.2f)
+                        modifier = Modifier.size(52.dp)
                     ) {
-                        MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Delete", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    }
-                    FilledTonalButton(
-                        onClick = onDismiss,
-                        shape = CircleShape,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Cancel", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        MaterialSymbol("delete", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onError)
                     }
                 }
-            } else {
-                FilledTonalButton(
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(
                     onClick = onDismiss,
-                    shape = CircleShape,
-                    colors = ButtonDefaults.filledTonalButtonColors(
+                    colors = IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.size(52.dp)
                 ) {
-                    Text("Cancel", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    MaterialSymbol("close", active = false, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
         }

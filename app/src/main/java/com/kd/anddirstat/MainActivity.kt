@@ -89,6 +89,7 @@ import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
+import androidx.core.content.edit
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -571,6 +572,9 @@ fun MainApp() {
                 .padding(paddingValues)
         ) {
             when {
+                currentRoute == AppDestinations.SETTINGS -> {
+                    // Settings is always independent — never blocked by scan state
+                }
                 !hasStoragePermission -> {
                     PermissionScreen(
                         onGrant = {
@@ -697,27 +701,30 @@ fun MainApp() {
                             },
                             modifier = Modifier.fillMaxSize()
                         )
-                    } else if (currentRoute == AppDestinations.SETTINGS) {
-                        SettingsView(
-                            currentTheme = currentTheme,
-                            onSelectTheme = { selectedTheme ->
-                                currentTheme = selectedTheme
-                                prefs.edit().putString("app_theme", selectedTheme.key).apply()
-                            },
-                            pureBlack = pureBlack,
-                            onTogglePureBlack = { v ->
-                                pureBlack = v
-                                prefs.edit().putBoolean("pure_black", v).apply()
-                            },
-                            accentColor = accentColor,
-                            onSelectAccent = { a ->
-                                accentColor = a
-                                prefs.edit().putString("accent_color", a.key).apply()
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
                     }
                 }
+            }
+
+            // Settings renders outside scan/load gates — always accessible
+            if (currentRoute == AppDestinations.SETTINGS) {
+                SettingsView(
+                    currentTheme = currentTheme,
+                    onSelectTheme = { selectedTheme ->
+                        currentTheme = selectedTheme
+                        prefs.edit { putString("app_theme", selectedTheme.key) }
+                    },
+                    pureBlack = pureBlack,
+                    onTogglePureBlack = { v ->
+                        pureBlack = v
+                        prefs.edit { putBoolean("pure_black", v) }
+                    },
+                    accentColor = accentColor,
+                    onSelectAccent = { a ->
+                        accentColor = a
+                        prefs.edit().putString("accent_color", a.key).apply()
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             // Usage Access Warning Banner
