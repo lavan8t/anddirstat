@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -534,11 +535,12 @@ fun FileTypesView(
                                                 }
                                             }
                                     ) {
-                                        Icon(
-                                            imageVector = icon,
-                                            contentDescription = stat.extension,
-                                            tint = iconColor,
-                                            modifier = Modifier.size(24.dp)
+                                        val extSymbol = remember(stat.extension) { FileUtils.getExtensionSymbolName(stat.extension) }
+                                        MaterialSymbol(
+                                            name = extSymbol,
+                                            active = true,
+                                            size = 24.dp,
+                                            tint = iconColor
                                         )
                                     }
                                 }
@@ -617,10 +619,10 @@ fun FileTypesView(
                     if (isStatExpanded) {
                         val files = filesByExt[stat.extension] ?: emptyList()
 
-                        items(
+                        itemsIndexed(
                             items = files,
-                            key = { "${category.id}_${stat.extension}_${it.second}" }
-                        ) { (fileNode, filePath) ->
+                            key = { index, (fileNode, filePath) -> "${category.id}_${stat.extension}_${filePath}_$index" }
+                        ) { _, (fileNode, filePath) ->
                             val fileFraction = if (stat.totalSize > 0L) (fileNode.size.toDouble() / stat.totalSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
                             val fileColor = FileUtils.getNodeIconColor(fileNode, isDark)
                             val isApp = fileNode.children?.any { it.name.startsWith("App Code") } == true
@@ -644,11 +646,12 @@ fun FileTypesView(
                                                         .clip(RoundedCornerShape(6.dp))
                                                 )
                                             } else {
-                                                Icon(
-                                                    imageVector = fileIcon,
-                                                    contentDescription = null,
-                                                    tint = fileColor,
-                                                    modifier = Modifier.size(22.dp)
+                                                val fileSymbol = remember(fileNode, isApp) { FileUtils.getNodeSymbolName(fileNode, isApp) }
+                                                MaterialSymbol(
+                                                    name = fileSymbol,
+                                                    active = true,
+                                                    size = 22.dp,
+                                                    tint = fileColor
                                                 )
                                             }
                                         }

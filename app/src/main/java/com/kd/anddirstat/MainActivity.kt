@@ -2,8 +2,10 @@ package com.kd.anddirstat
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,17 +21,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,8 +38,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
@@ -53,7 +50,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,14 +59,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import android.content.SharedPreferences
-import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -83,15 +76,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -106,6 +97,7 @@ import com.kd.anddirstat.scanner.TreeCacheManager
 import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.ui.components.AppIconCache
 import com.kd.anddirstat.ui.components.AppTooltip
+import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.screens.DiscoverView
 import com.kd.anddirstat.ui.screens.ExplorerView
@@ -113,13 +105,11 @@ import com.kd.anddirstat.ui.screens.ExpressiveNodeDetailsSheet
 import com.kd.anddirstat.ui.screens.FileTypesView
 import com.kd.anddirstat.ui.screens.LoadingScreen
 import com.kd.anddirstat.ui.screens.PermissionScreen
-import com.kd.anddirstat.ui.screens.SettingsView
 import com.kd.anddirstat.util.FileUtils
 import com.kd.anddirstat.util.StorageVolumeInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.core.content.edit
 import kotlin.coroutines.cancellation.CancellationException
 
 class MainActivity : ComponentActivity() {
@@ -166,6 +156,7 @@ fun MainApp() {
         var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
         var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
         var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", true)) }
+        var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", true)) }
         var showFilterMenu by remember { mutableStateOf(false) }
 
         var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
@@ -189,21 +180,33 @@ fun MainApp() {
         var currentScale by remember { mutableStateOf(1f) }
         var resetZoomKey by remember { mutableStateOf(0) }
         var discoverSearchQuery by remember { mutableStateOf("") }
-        var selectedTreeNodes by remember { mutableStateOf(setOf<CompactNode>()) }
+        var selectedTreeNodes by remember { mutableStateOf(mapOf<CompactNode, String>()) }
         var showTreeDeleteDialog by remember { mutableStateOf(false) }
         var showVolumeSelectionDialog by remember { mutableStateOf(false) }
         var detectedVolumes by remember { mutableStateOf(emptyList<StorageVolumeInfo>()) }
         var selectedVolumeIds by remember { mutableStateOf(setOf<String>()) }
 
-        fun applyFilter(freeSpace: Boolean, systemApps: Boolean, hiddenFiles: Boolean = showHiddenFiles) {
+        var isTreeDeleting by remember { mutableStateOf(false) }
+        var treeDeleteCurrentCount by remember { mutableStateOf(0) }
+        var treeDeleteTotalCount by remember { mutableStateOf(0) }
+        var treeDeleteCurrentFileName by remember { mutableStateOf("") }
+        var treeDeleteIsTrash by remember { mutableStateOf(true) }
+
+        fun applyFilter(
+            freeSpace: Boolean,
+            systemApps: Boolean,
+            hiddenFiles: Boolean = showHiddenFiles,
+            systemOS: Boolean = showSystemOS
+        ) {
             val raw = rawScannedNode ?: return
-            val filtered = StorageFilterHelper.filterStorageTree(raw, freeSpace, systemApps, hiddenFiles, deviceTotalBytes)
+            val filtered = StorageFilterHelper.filterStorageTree(raw, freeSpace, systemApps, hiddenFiles, systemOS, deviceTotalBytes)
             rootNode = filtered
             explorerNode = filtered
             explorerPath = filtered?.name ?: "Device Storage"
             explorerStack = emptyList()
             extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
             topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+            selectedTreeNodes = emptyMap()
             if (selectedNode != null) {
                 selectedNode = null
                 selectedPath = null
@@ -280,9 +283,11 @@ fun MainApp() {
             val freeSpacePref = prefs.getBoolean("show_free_space", true)
             val systemAppsPref = prefs.getBoolean("show_system_apps", true)
             val hiddenFilesPref = prefs.getBoolean("show_hidden_files", true)
+            val systemOSPref = prefs.getBoolean("show_system_os", true)
             showFreeSpace = freeSpacePref
             showSystemApps = systemAppsPref
             showHiddenFiles = hiddenFilesPref
+            showSystemOS = systemOSPref
             val scanner = StorageScanner(context)
             val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true) { phase, detail ->
                 scanPhase = phase
@@ -292,7 +297,7 @@ fun MainApp() {
             deviceTotalBytes = scanned.size
 
             val filtered = withContext(Dispatchers.Default) {
-                StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, hiddenFilesPref, scanned.size)
+                StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, hiddenFilesPref, systemOSPref, scanned.size)
             }
             rootNode = filtered
             explorerNode = filtered
@@ -359,8 +364,9 @@ fun MainApp() {
                 val freeSpacePref = prefs.getBoolean("show_free_space", true)
                 val systemAppsPref = prefs.getBoolean("show_system_apps", true)
                 val hiddenFilesPref = prefs.getBoolean("show_hidden_files", true)
+                val systemOSPref = prefs.getBoolean("show_system_os", true)
                 val filtered = withContext(Dispatchers.Default) {
-                    StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, hiddenFilesPref, cached.size)
+                    StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, hiddenFilesPref, systemOSPref, cached.size)
                 }
                 rootNode = filtered
                 explorerNode = filtered
@@ -398,7 +404,7 @@ fun MainApp() {
             progress.collect { backEvent ->
                 predictiveBackProgress = backEvent.progress
             }
-            selectedTreeNodes = emptySet()
+            selectedTreeNodes = emptyMap()
         } catch (_: CancellationException) {
         } finally {
             isPredictiveBackActive = false
@@ -454,6 +460,36 @@ fun MainApp() {
                                     DropdownMenuItem(
                                         text = {
                                             Text(
+                                                text = "Show System & OS",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            MaterialSymbol(
+                                                name = "settings",
+                                                active = showSystemOS,
+                                                size = 24.dp,
+                                                tint = if (showSystemOS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Checkbox(
+                                                checked = showSystemOS,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showSystemOS
+                                            showSystemOS = newVal
+                                            prefs.edit().putBoolean("show_system_os", newVal).apply()
+                                            applyFilter(showFreeSpace, showSystemApps, showHiddenFiles, newVal)
+                                        }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
                                                 text = "Show system applications",
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 color = MaterialTheme.colorScheme.onSurface
@@ -477,7 +513,7 @@ fun MainApp() {
                                             val newVal = !showSystemApps
                                             showSystemApps = newVal
                                             prefs.edit().putBoolean("show_system_apps", newVal).apply()
-                                            applyFilter(showFreeSpace, newVal, showHiddenFiles)
+                                            applyFilter(showFreeSpace, newVal, showHiddenFiles, showSystemOS)
                                         }
                                     )
 
@@ -507,7 +543,7 @@ fun MainApp() {
                                             val newVal = !showFreeSpace
                                             showFreeSpace = newVal
                                             prefs.edit().putBoolean("show_free_space", newVal).apply()
-                                            applyFilter(newVal, showSystemApps, showHiddenFiles)
+                                            applyFilter(newVal, showSystemApps, showHiddenFiles, showSystemOS)
                                         }
                                     )
 
@@ -537,7 +573,7 @@ fun MainApp() {
                                             val newVal = !showHiddenFiles
                                             showHiddenFiles = newVal
                                             prefs.edit().putBoolean("show_hidden_files", newVal).apply()
-                                            applyFilter(showFreeSpace, showSystemApps, newVal)
+                                            applyFilter(showFreeSpace, showSystemApps, newVal, showSystemOS)
                                         }
                                     )
                                 }
@@ -686,6 +722,15 @@ fun MainApp() {
                         animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
                         label = "navIconScale"
                     )
+                    val targetWeight = if (selected) 750f else 450f
+                    val animatedWeight by animateFloatAsState(
+                        targetValue = targetWeight,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "navWeightAnimation"
+                    )
 
                     NavigationBarItem(
                         selected = selected,
@@ -706,8 +751,10 @@ fun MainApp() {
                         label = {
                             Text(
                                 text = label,
+                                fontFamily = GoogleSansFlexFontFamily,
                                 style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                fontWeight = FontWeight(animatedWeight.toInt().coerceIn(100, 1000)),
+                                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -775,7 +822,7 @@ fun MainApp() {
                             rootNode = rootNode!!,
                             rootPath = rootNode!!.name,
                             selectedNode = selectedNode,
-                            selectedNodes = selectedTreeNodes,
+                            selectedNodes = selectedTreeNodes.keys,
                             resetKey = resetZoomKey,
                             isDark = isDark,
                             pureBlack = pureBlack,
@@ -810,7 +857,7 @@ fun MainApp() {
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(
-                                            onClick = { selectedTreeNodes = emptySet() },
+                                            onClick = { selectedTreeNodes = emptyMap() },
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             MaterialSymbol(
@@ -829,7 +876,7 @@ fun MainApp() {
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = FileUtils.formatFileSize(selectedTreeNodes.sumOf { it.size }),
+                                                text = FileUtils.formatFileSize(selectedTreeNodes.keys.sumOf { it.size }),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -859,9 +906,10 @@ fun MainApp() {
 
                     if (showTreeDeleteDialog && selectedTreeNodes.isNotEmpty()) {
                         val count = selectedTreeNodes.size
-                        val totalBytes = selectedTreeNodes.sumOf { it.size }
-                        val hasApps = selectedTreeNodes.any { FileUtils.extractPackageName(it) != null }
-                        val allApps = selectedTreeNodes.all { FileUtils.extractPackageName(it) != null }
+                        val totalBytes = selectedTreeNodes.keys.sumOf { it.size }
+                        val hasApps = selectedTreeNodes.any { (node, path) -> FileUtils.extractPackageName(node, path, context) != null }
+                        val allApps = selectedTreeNodes.all { (node, path) -> FileUtils.extractPackageName(node, path, context) != null }
+                        val allAlreadyTrashed = selectedTreeNodes.all { (node, path) -> node.name.startsWith(".trashed") || path.contains(".trashed") || path.contains("[Recycle Bin]") }
 
                         AlertDialog(
                             onDismissRequest = { showTreeDeleteDialog = false },
@@ -878,8 +926,10 @@ fun MainApp() {
                                         allApps && count == 1 -> "Uninstall 1 app?"
                                         allApps -> "Uninstall $count apps?"
                                         hasApps -> "Delete / Uninstall $count items?"
-                                        count == 1 -> "Delete 1 item?"
-                                        else -> "Delete $count items?"
+                                        allAlreadyTrashed && count == 1 -> "Delete 1 item permanently?"
+                                        allAlreadyTrashed -> "Delete $count items permanently?"
+                                        count == 1 -> "Move 1 item to Recycle Bin?"
+                                        else -> "Move $count items to Recycle Bin?"
                                     },
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold
@@ -887,7 +937,11 @@ fun MainApp() {
                             },
                             text = {
                                 Text(
-                                    text = "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently",
+                                    text = when {
+                                        allApps -> "$count applications will be uninstalled from device."
+                                        allAlreadyTrashed -> "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently"
+                                        else -> "Selected items will be moved to the Recycle Bin.\n\n${FileUtils.formatFileSize(totalBytes)} to be moved"
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -896,27 +950,48 @@ fun MainApp() {
                                 TextButton(
                                     onClick = {
                                         showTreeDeleteDialog = false
-                                        val packagesToUninstall = mutableListOf<String>()
-                                        selectedTreeNodes.forEach { node ->
-                                            val pkg = FileUtils.extractPackageName(node)
-                                            if (pkg != null) {
-                                                packagesToUninstall.add(pkg)
-                                            } else {
-                                                try {
-                                                    val f = FileUtils.resolveActualFile(node.name)
-                                                    if (f != null && f.exists()) f.deleteRecursively()
-                                                } catch (_: Exception) {}
+                                        val itemsToDelete = selectedTreeNodes.toList()
+                                        scope.launch {
+                                            isTreeDeleting = true
+                                            treeDeleteTotalCount = itemsToDelete.size
+                                            treeDeleteIsTrash = !allAlreadyTrashed
+                                            var processedCount = 0
+                                            val packagesToUninstall = mutableListOf<String>()
+
+                                            withContext(Dispatchers.IO) {
+                                                itemsToDelete.forEachIndexed { index, (node, path) ->
+                                                    treeDeleteCurrentCount = index + 1
+                                                    treeDeleteCurrentFileName = node.name
+                                                    val pkg = FileUtils.extractPackageName(node, path, context)
+                                                    if (pkg != null) {
+                                                        packagesToUninstall.add(pkg)
+                                                    } else {
+                                                        try {
+                                                            val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
+                                                            if (f != null && f.exists()) {
+                                                                if (FileUtils.deleteOrTrashFile(f, context)) {
+                                                                    processedCount++
+                                                                }
+                                                            }
+                                                        } catch (_: Exception) {}
+                                                    }
+                                                }
                                             }
+
+                                            if (packagesToUninstall.isNotEmpty()) {
+                                                FileUtils.uninstallApps(context, packagesToUninstall)
+                                            }
+
+                                            isTreeDeleting = false
+                                            selectedTreeNodes = emptyMap()
+                                            val msg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                         }
-                                        if (packagesToUninstall.isNotEmpty()) {
-                                            FileUtils.uninstallApps(context, packagesToUninstall)
-                                        }
-                                        selectedTreeNodes = emptySet()
-                                        triggerScan()
                                     }
                                 ) {
                                     Text(
-                                        text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else "Delete",
+                                        text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else if (allAlreadyTrashed) "Delete" else "Move to Bin",
                                         color = MaterialTheme.colorScheme.error,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -929,6 +1004,14 @@ fun MainApp() {
                             }
                         )
                     }
+
+                    DeletionProgressDialog(
+                        visible = isTreeDeleting,
+                        currentCount = treeDeleteCurrentCount,
+                        totalCount = treeDeleteTotalCount,
+                        currentFileName = treeDeleteCurrentFileName,
+                        isTrash = treeDeleteIsTrash
+                    )
 
 
                     if (showVolumeSelectionDialog && detectedVolumes.isNotEmpty()) {
@@ -1050,11 +1133,12 @@ fun MainApp() {
                             ExpressiveNodeDetailsSheet(
                                 node = selectedNode!!,
                                 path = selectedPath!!,
-                                isSelected = selectedTreeNodes.contains(selectedNode),
+                                isSelected = selectedTreeNodes.containsKey(selectedNode),
                                 onToggleSelect = {
                                     val n = selectedNode
-                                    if (n != null) {
-                                        selectedTreeNodes = if (selectedTreeNodes.contains(n)) selectedTreeNodes - n else selectedTreeNodes + n
+                                    val p = selectedPath
+                                    if (n != null && p != null) {
+                                        selectedTreeNodes = if (selectedTreeNodes.containsKey(n)) selectedTreeNodes - n else selectedTreeNodes + (n to p)
                                     }
                                 },
                                 onDismiss = {
@@ -1068,7 +1152,7 @@ fun MainApp() {
                                     }
                                     selectedNode = null
                                     selectedPath = null
-                                    triggerScan()
+                                    performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                 }
                             )
                         }
@@ -1112,6 +1196,9 @@ fun MainApp() {
                                         selectedNode = child
                                         selectedPath = childPath
                                     },
+                                    onRefresh = {
+                                        performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
+                                    },
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -1137,6 +1224,9 @@ fun MainApp() {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedNode = node
                                         selectedPath = path
+                                    },
+                                    onRefresh = {
+                                        performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )

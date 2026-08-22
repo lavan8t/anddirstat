@@ -12,6 +12,7 @@ object StorageFilterHelper {
         showFreeSpace: Boolean,
         showSystemApps: Boolean,
         showHiddenFiles: Boolean = true,
+        showSystemOS: Boolean = true,
         deviceTotalBytes: Long
     ): CompactNode? {
         if (rawRoot == null) return null
@@ -48,6 +49,11 @@ object StorageFilterHelper {
             when {
                 child.name == "[Free Space]" -> {
                     if (showFreeSpace) {
+                        newChildren.add(child)
+                    }
+                }
+                child.name == "[System & OS]" || child.name == "System & OS" -> {
+                    if (showSystemOS) {
                         newChildren.add(child)
                     }
                 }

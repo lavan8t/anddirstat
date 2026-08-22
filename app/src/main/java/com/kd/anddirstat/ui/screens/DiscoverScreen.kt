@@ -73,6 +73,13 @@ import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
 
+import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import com.kd.anddirstat.ui.components.DeletionProgressDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DiscoverView(
@@ -80,13 +87,21 @@ fun DiscoverView(
     topFiles: List<TopFileEntry>,
     searchQuery: String = "",
     onNodeClick: (CompactNode, String) -> Unit,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     var selectedPreset by remember { mutableStateOf<String?>("> 1 GB") }
     var selectedEntries by remember(rootNode, searchQuery) { mutableStateOf(setOf<TopFileEntry>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    var isDeleting by remember { mutableStateOf(false) }
+    var deleteCurrentCount by remember { mutableStateOf(0) }
+    var deleteTotalCount by remember { mutableStateOf(0) }
+    var deleteCurrentFileName by remember { mutableStateOf("") }
+    var deleteIsTrash by remember { mutableStateOf(true) }
 
     val filterPresets = remember {
         listOf("> 1 GB", "Duplicates", "Old Downloads", "APKs")
@@ -150,7 +165,7 @@ fun DiscoverView(
                 } else {
                     itemsIndexed(
                         items = searchResults,
-                        key = { _, entry -> entry.path }
+                        key = { index, entry -> "${entry.path}_$index" }
                     ) { index, entry ->
                         val shape = when {
                             searchResults.size == 1 -> RoundedCornerShape(24.dp)
@@ -333,10 +348,10 @@ fun DiscoverView(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(
+                        itemsIndexed(
                             items = displayedFiles,
-                            key = { it.path }
-                        ) { entry ->
+                            key = { index, entry -> "${entry.path}_$index" }
+                        ) { _, entry ->
                             val isApk = entry.node.name.endsWith(".apk", ignoreCase = true) || entry.node.name.startsWith("App Code")
                             val isBinary = !entry.node.isDirectory && (entry.node.name.endsWith(".iso", ignoreCase = true) || entry.node.name.endsWith(".bin", ignoreCase = true) || entry.node.name.endsWith(".zip", ignoreCase = true))
                             val iconColor = if (isApk) {
@@ -700,24 +715,44 @@ fun DiscoverView(
                         onClick = {
                             showDeleteDialog = false
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val packagesToUninstall = mutableListOf<String>()
-                            selectedEntries.forEach { entry ->
-                                val pkg = FileUtils.extractPackageName(entry.node, entry.path, context)
-                                if (pkg != null) {
-                                    packagesToUninstall.add(pkg)
-                                } else {
-                                    try {
-                                        val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
-                                        if (f != null && f.exists()) {
-                                            FileUtils.deleteOrTrashFile(f)
+                            val itemsToDelete = selectedEntries.toList()
+                            scope.launch {
+                                isDeleting = true
+                                deleteTotalCount = itemsToDelete.size
+                                deleteIsTrash = !allAlreadyTrashed
+                                var processedCount = 0
+                                val packagesToUninstall = mutableListOf<String>()
+
+                                withContext(Dispatchers.IO) {
+                                    itemsToDelete.forEachIndexed { index, entry ->
+                                        deleteCurrentCount = index + 1
+                                        deleteCurrentFileName = entry.node.name
+                                        val pkg = FileUtils.extractPackageName(entry.node, entry.path, context)
+                                        if (pkg != null) {
+                                            packagesToUninstall.add(pkg)
+                                        } else {
+                                            try {
+                                                val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
+                                                if (f != null && f.exists()) {
+                                                    if (FileUtils.deleteOrTrashFile(f, context)) {
+                                                        processedCount++
+                                                    }
+                                                }
+                                            } catch (_: Exception) {}
                                         }
-                                    } catch (_: Exception) {}
+                                    }
                                 }
+
+                                if (packagesToUninstall.isNotEmpty()) {
+                                    FileUtils.uninstallApps(context, packagesToUninstall)
+                                }
+
+                                isDeleting = false
+                                selectedEntries = emptySet()
+                                val msg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                onRefresh()
                             }
-                            if (packagesToUninstall.isNotEmpty()) {
-                                FileUtils.uninstallApps(context, packagesToUninstall)
-                            }
-                            selectedEntries = emptySet()
                         }
                     ) {
                         Text(
@@ -734,5 +769,13 @@ fun DiscoverView(
                 }
             )
         }
+
+        DeletionProgressDialog(
+            visible = isDeleting,
+            currentCount = deleteCurrentCount,
+            totalCount = deleteTotalCount,
+            currentFileName = deleteCurrentFileName,
+            isTrash = deleteIsTrash
+        )
     }
 }

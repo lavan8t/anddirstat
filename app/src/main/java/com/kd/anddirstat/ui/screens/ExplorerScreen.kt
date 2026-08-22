@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,6 +65,13 @@ import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FileUtils
 import java.util.Locale
 
+import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import com.kd.anddirstat.ui.components.DeletionProgressDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 data class ExplorerTreeRow(
     val node: CompactNode,
     val path: String,
@@ -78,14 +86,22 @@ data class ExplorerTreeRow(
 fun ExplorerView(
     rootNode: CompactNode,
     onNodeClick: (CompactNode, String) -> Unit,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     val isDark = isSystemInDarkTheme()
     var expandedNodes by remember(rootNode) { mutableStateOf(setOf(rootNode)) }
     var selectedRows by remember(rootNode) { mutableStateOf(mapOf<CompactNode, String>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    var isDeleting by remember { mutableStateOf(false) }
+    var deleteCurrentCount by remember { mutableStateOf(0) }
+    var deleteTotalCount by remember { mutableStateOf(0) }
+    var deleteCurrentFileName by remember { mutableStateOf("") }
+    var deleteIsTrash by remember { mutableStateOf(true) }
 
     fun flattenTree(
         parent: CompactNode,
@@ -126,10 +142,10 @@ fun ExplorerView(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            items(
+            itemsIndexed(
                 items = visibleRows,
-                key = { "${it.path}_${it.node.name}_${it.depth}" }
-            ) { row ->
+                key = { index, row -> "${row.path}_${row.node.name}_${row.depth}_$index" }
+            ) { _, row ->
                 val child = row.node
                 val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
                 val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
@@ -197,11 +213,12 @@ fun ExplorerView(
                                             .clip(RoundedCornerShape(8.dp))
                                     )
                                 } else {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = null,
-                                        tint = childColor,
-                                        modifier = Modifier.size(26.dp)
+                                    val symbolName = remember(child, isApp) { FileUtils.getNodeSymbolName(child, isApp) }
+                                    MaterialSymbol(
+                                        name = symbolName,
+                                        active = true,
+                                        size = 26.dp,
+                                        tint = childColor
                                     )
                                 }
                             }
@@ -404,24 +421,44 @@ fun ExplorerView(
                         onClick = {
                             showDeleteDialog = false
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val packagesToUninstall = mutableListOf<String>()
-                            selectedRows.forEach { (node, path) ->
-                                val pkg = FileUtils.extractPackageName(node, path, context)
-                                if (pkg != null) {
-                                    packagesToUninstall.add(pkg)
-                                } else {
-                                    try {
-                                        val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
-                                        if (f != null && f.exists()) {
-                                            FileUtils.deleteOrTrashFile(f)
+                            val itemsToDelete = selectedRows.toList()
+                            scope.launch {
+                                isDeleting = true
+                                deleteTotalCount = itemsToDelete.size
+                                deleteIsTrash = !allAlreadyTrashed
+                                var processedCount = 0
+                                val packagesToUninstall = mutableListOf<String>()
+
+                                withContext(Dispatchers.IO) {
+                                    itemsToDelete.forEachIndexed { index, (node, path) ->
+                                        deleteCurrentCount = index + 1
+                                        deleteCurrentFileName = node.name
+                                        val pkg = FileUtils.extractPackageName(node, path, context)
+                                        if (pkg != null) {
+                                            packagesToUninstall.add(pkg)
+                                        } else {
+                                            try {
+                                                val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
+                                                if (f != null && f.exists()) {
+                                                    if (FileUtils.deleteOrTrashFile(f, context)) {
+                                                        processedCount++
+                                                    }
+                                                }
+                                            } catch (_: Exception) {}
                                         }
-                                    } catch (_: Exception) {}
+                                    }
                                 }
+
+                                if (packagesToUninstall.isNotEmpty()) {
+                                    FileUtils.uninstallApps(context, packagesToUninstall)
+                                }
+
+                                isDeleting = false
+                                selectedRows = emptyMap()
+                                val msg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                onRefresh()
                             }
-                            if (packagesToUninstall.isNotEmpty()) {
-                                FileUtils.uninstallApps(context, packagesToUninstall)
-                            }
-                            selectedRows = emptyMap()
                         }
                     ) {
                         Text(
@@ -438,5 +475,13 @@ fun ExplorerView(
                 }
             )
         }
+
+        DeletionProgressDialog(
+            visible = isDeleting,
+            currentCount = deleteCurrentCount,
+            totalCount = deleteTotalCount,
+            currentFileName = deleteCurrentFileName,
+            isTrash = deleteIsTrash
+        )
     }
 }

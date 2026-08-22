@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.Process
 import android.os.StatFs
 import android.os.storage.StorageManager
+import android.provider.MediaStore
 import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -139,16 +140,33 @@ object FileUtils {
 
         val externalRoot = Environment.getExternalStorageDirectory().absolutePath
         val relative = when {
+            path.startsWith("[Recycle Bin]/") -> path.removePrefix("[Recycle Bin]/")
             path.startsWith("Device Storage/Files/") -> path.removePrefix("Device Storage/Files/")
             path.startsWith("Device Storage/") -> path.removePrefix("Device Storage/")
             path.startsWith("Files/") -> path.removePrefix("Files/")
-            path == "Files" || path == "Device Storage" -> ""
+            path == "Files" || path == "Device Storage" || path == "[Recycle Bin]" -> ""
             path.startsWith("/storage/emulated/0/") -> path.removePrefix("/storage/emulated/0/")
             path.startsWith(externalRoot) -> path.removePrefix(externalRoot).removePrefix("/")
             else -> path
         }
         val f = File(externalRoot, relative)
         if (f.exists()) return f
+
+        if (relative.startsWith(".trashed")) {
+            val candidateDirs = listOf(
+                Environment.getExternalStorageDirectory(),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+            )
+            for (dir in candidateDirs) {
+                val candidate = File(dir, relative)
+                if (candidate.exists()) return candidate
+            }
+        }
 
         for (vol in getAvailableStorageVolumes(null)) {
             val volFile = File(vol.path, relative)
@@ -163,25 +181,65 @@ object FileUtils {
         return null
     }
 
-    fun deleteOrTrashFile(file: File): Boolean {
+    fun deleteOrTrashFile(file: File, context: Context? = null): Boolean {
         if (!file.exists()) return false
         val parent = file.parentFile ?: return file.deleteRecursively()
         val name = file.name
 
         // If already in Recycle Bin or starts with .trashed, permanently delete
         if (name.startsWith(".trashed") || parent.name.startsWith(".trashed") || parent.name.equals("[Recycle Bin]", ignoreCase = true)) {
-            return file.deleteRecursively()
+            val deleted = file.deleteRecursively()
+            if (context != null) {
+                try {
+                    val uri = MediaStore.Files.getContentUri("external")
+                    context.contentResolver.delete(uri, "${MediaStore.MediaColumns.DATA}=?", arrayOf(file.absolutePath))
+                    android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), null, null)
+                } catch (_: Exception) {}
+            }
+            return deleted
         }
 
         // Rename to .trashed-<original_name>
         val target = File(parent, ".trashed-${file.name}")
-        if (file.renameTo(target)) return true
+        if (file.renameTo(target)) {
+            if (context != null) {
+                try {
+                    android.media.MediaScannerConnection.scanFile(
+                        context,
+                        arrayOf(file.absolutePath, target.absolutePath),
+                        null,
+                        null
+                    )
+                } catch (_: Exception) {}
+            }
+            return true
+        }
 
         // Fallback with timestamp if file with same name exists
         val timestampTarget = File(parent, ".trashed-${System.currentTimeMillis()}-${file.name}")
-        if (file.renameTo(timestampTarget)) return true
+        if (file.renameTo(timestampTarget)) {
+            if (context != null) {
+                try {
+                    android.media.MediaScannerConnection.scanFile(
+                        context,
+                        arrayOf(file.absolutePath, timestampTarget.absolutePath),
+                        null,
+                        null
+                    )
+                } catch (_: Exception) {}
+            }
+            return true
+        }
 
-        return file.deleteRecursively()
+        val deleted = file.deleteRecursively()
+        if (context != null) {
+            try {
+                val uri = MediaStore.Files.getContentUri("external")
+                context.contentResolver.delete(uri, "${MediaStore.MediaColumns.DATA}=?", arrayOf(file.absolutePath))
+                android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), null, null)
+            } catch (_: Exception) {}
+        }
+        return deleted
     }
 
     object AppPackageRegistry {
@@ -345,6 +403,40 @@ object FileUtils {
             context.packageName
         )
         return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    fun getNodeSymbolName(node: CompactNode, isAppNode: Boolean = false): String {
+        val name = node.name.lowercase()
+        return when {
+            name == "[free space]" -> "storage"
+            name == "[system & os]" -> "settings"
+            name == "[recycle bin]" || name == "recycle bin" -> "delete"
+            name == "apps & system packages" || isAppNode -> "apps"
+            node.isDirectory -> if (node.children?.isNotEmpty() == true) "folder_open" else "folder"
+            name.endsWith(".apk") || name.endsWith(".apks") || name.endsWith(".xapk") || name.endsWith(".apkm") || name.endsWith(".obb") || name.endsWith(".aab") -> "android"
+            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || name.endsWith(".gz") || name.endsWith(".bz2") || name.endsWith(".xz") || name.endsWith(".iso") || name.endsWith(".tgz") -> "folder_zip"
+            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".heic") || name.endsWith(".gif") || name.endsWith(".svg") || name.endsWith(".bmp") || name.endsWith(".ico") || name.endsWith(".dng") || name.endsWith(".raw") -> "image"
+            name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi") || name.endsWith(".mov") || name.endsWith(".webm") || name.endsWith(".3gp") || name.endsWith(".ts") || name.endsWith(".wmv") || name.endsWith(".m4v") || name.endsWith(".flv") -> "movie"
+            name.endsWith(".mp3") || name.endsWith(".flac") || name.endsWith(".wav") || name.endsWith(".m4a") || name.endsWith(".ogg") || name.endsWith(".opus") || name.endsWith(".aac") || name.endsWith(".wma") || name.endsWith(".mid") -> "music_note"
+            name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".txt") || name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".ppt") || name.endsWith(".pptx") || name.endsWith(".csv") || name.endsWith(".epub") -> "description"
+            name.endsWith(".html") || name.endsWith(".xml") || name.endsWith(".json") || name.endsWith(".js") || name.endsWith(".css") || name.endsWith(".ts") || name.endsWith(".kt") || name.endsWith(".java") || name.endsWith(".py") || name.endsWith(".sh") -> "code"
+            else -> "draft"
+        }
+    }
+
+    fun getExtensionSymbolName(extension: String): String {
+        val ext = extension.lowercase().removePrefix(".")
+        return when (ext) {
+            "trashed", "recycle bin", "[recycle bin]" -> "delete"
+            "apk", "apks", "xapk", "apkm", "obb", "aab" -> "android"
+            "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> "movie"
+            "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> "music_note"
+            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico", "dng" -> "image"
+            "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" -> "description"
+            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz", "dmg", "bin" -> "folder_zip"
+            "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py", "sh" -> "code"
+            else -> "draft"
+        }
     }
 
     fun getNodeIcon(node: CompactNode, isAppNode: Boolean = false): ImageVector {

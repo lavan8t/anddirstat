@@ -139,11 +139,12 @@ fun ExpressiveNodeDetailsSheet(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(56.dp)
                 ) {
-                    Icon(
-                        imageVector = FileUtils.getNodeIcon(node, isAppNode),
-                        contentDescription = null,
-                        tint = materialItemColor,
-                        modifier = Modifier.size(40.dp)
+                    val symbolName = remember(node, isAppNode) { FileUtils.getNodeSymbolName(node, isAppNode) }
+                    MaterialSymbol(
+                        name = symbolName,
+                        active = true,
+                        size = 38.dp,
+                        tint = materialItemColor
                     )
                 }
             }
@@ -329,24 +330,27 @@ fun ExpressiveNodeDetailsSheet(
                 }
             }
 
-            if (isRealFile && !realFile!!.isDirectory) {
-                AppTooltip(text = "Open file") {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            FileUtils.openFile(context, realFile)
-                            onDismiss()
-                        },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+            if (isRealFile) {
+                val isDir = realFile!!.isDirectory
+                if (!isDir) {
+                    AppTooltip(text = "Open file") {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                FileUtils.openFile(context, realFile)
+                                onDismiss()
+                            },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                        }
                     }
                 }
-                AppTooltip(text = "Delete file") {
+                AppTooltip(text = if (isDir) "Delete folder" else "Delete file") {
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -365,26 +369,38 @@ fun ExpressiveNodeDetailsSheet(
         }
 
         if (showDeleteConfirmation && realFile != null) {
+            val isDir = realFile.isDirectory
             val isAlreadyTrashed = realFile.name.startsWith(".trashed") || realFile.parentFile?.name?.startsWith(".trashed") == true || realFile.parentFile?.name == "[Recycle Bin]"
             AlertDialog(
                 onDismissRequest = { showDeleteConfirmation = false },
                 icon = {
-                    Icon(
-                        imageVector = FileUtils.getNodeIcon(node),
-                        contentDescription = null,
+                    MaterialSymbol(
+                        name = if (isAlreadyTrashed) "delete_forever" else "delete",
+                        active = true,
+                        size = 28.dp,
                         tint = MaterialTheme.colorScheme.error
                     )
                 },
                 title = {
                     Text(
-                        text = if (isAlreadyTrashed) "Delete permanently?" else "Move to Recycle Bin?",
+                        text = when {
+                            isAlreadyTrashed && isDir -> "Delete folder permanently?"
+                            isAlreadyTrashed -> "Delete file permanently?"
+                            isDir -> "Move folder to Recycle Bin?"
+                            else -> "Move file to Recycle Bin?"
+                        },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 text = {
                     Text(
-                        text = if (isAlreadyTrashed) "This file will be permanently removed from device storage.\n\n${displayName}" else "This file will be moved to the Recycle Bin.\n\n${displayName}",
+                        text = when {
+                            isAlreadyTrashed && isDir -> "This folder and all its contents will be permanently removed from device storage.\n\n${displayName}"
+                            isAlreadyTrashed -> "This file will be permanently removed from device storage.\n\n${displayName}"
+                            isDir -> "This folder will be moved to the Recycle Bin.\n\n${displayName}"
+                            else -> "This file will be moved to the Recycle Bin.\n\n${displayName}"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -394,7 +410,7 @@ fun ExpressiveNodeDetailsSheet(
                         onClick = {
                             showDeleteConfirmation = false
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (FileUtils.deleteOrTrashFile(realFile)) {
+                            if (FileUtils.deleteOrTrashFile(realFile, context)) {
                                 val msg = if (isAlreadyTrashed) "Deleted ${realFile.name}" else "Moved to Recycle Bin"
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 onDeleted()
