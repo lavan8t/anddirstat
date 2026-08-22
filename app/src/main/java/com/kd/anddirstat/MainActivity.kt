@@ -476,7 +476,6 @@ fun MainApp() {
                         label = {
                             Text(
                                 text = "Map",
-                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (currentRoute == AppDestinations.MAP) FontWeight.Bold else FontWeight.Normal
                             )
                         },
@@ -499,7 +498,6 @@ fun MainApp() {
                         label = {
                             Text(
                                 text = "Explorer",
-                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (currentRoute == AppDestinations.EXPLORER) FontWeight.Bold else FontWeight.Normal
                             )
                         },
@@ -522,7 +520,6 @@ fun MainApp() {
                         label = {
                             Text(
                                 text = "Types",
-                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (currentRoute == AppDestinations.TYPES) FontWeight.Bold else FontWeight.Normal
                             )
                         },
@@ -545,7 +542,6 @@ fun MainApp() {
                         label = {
                             Text(
                                 text = "Discover",
-                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (currentRoute == AppDestinations.DISCOVER) FontWeight.Bold else FontWeight.Normal
                             )
                         },
