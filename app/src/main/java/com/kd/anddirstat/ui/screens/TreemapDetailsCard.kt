@@ -303,20 +303,4 @@ private fun AppSizeRow(label: String, size: Long) {
     }
 }
 
-@Deprecated("Use ExpressiveNodeDetailsSheet instead")
-@Composable
-fun ExpressiveNodeDetailsCard(
-    node: CompactNode,
-    path: String,
-    onDismiss: () -> Unit,
-    onDeleted: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ExpressiveNodeDetailsSheet(
-        node = node,
-        path = path,
-        onDismiss = onDismiss,
-        onDeleted = onDeleted,
-        modifier = modifier
-    )
-}
+

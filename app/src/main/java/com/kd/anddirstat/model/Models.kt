@@ -30,7 +30,4 @@ data class NavEntry(
     val path: String
 )
 
-data class TopFileEntry(
-    val node: CompactNode,
-    val path: String
-)
+typealias TopFileEntry = NavEntry
