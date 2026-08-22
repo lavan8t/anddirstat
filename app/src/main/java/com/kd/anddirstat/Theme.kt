@@ -47,14 +47,14 @@ enum class AccentColor(
     val label: String,
     val seed: Color
 ) {
-    GREEN("green", "Android", Color(0xFF1DB954)),
-    BLUE("blue", "Blue", Color(0xFF2196F3)),
     RED("red", "Red", Color(0xFFE53935)),
     ORANGE("orange", "Orange", Color(0xFFFF6D00)),
-    TEAL("teal", "Teal", Color(0xFF009688)),
+    NEON_YELLOW("neon_yellow", "Neon Yellow", Color(0xFFFFFF00)),
     NEON_GREEN("neon_green", "Neon Green", Color(0xFF39FF14)),
-    NEON_PINK("neon_pink", "Neon Pink", Color(0xFFFF10F0)),
-    NEON_YELLOW("neon_yellow", "Neon Yellow", Color(0xFFFFFF00));
+    GREEN("green", "Android", Color(0xFF1DB954)),
+    TEAL("teal", "Teal", Color(0xFF009688)),
+    BLUE("blue", "Blue", Color(0xFF2196F3)),
+    NEON_PINK("neon_pink", "Neon Pink", Color(0xFFFF10F0));
 
     fun getActualColor(isDark: Boolean): Color {
         val hct = Hct.fromInt(seed.toArgb())

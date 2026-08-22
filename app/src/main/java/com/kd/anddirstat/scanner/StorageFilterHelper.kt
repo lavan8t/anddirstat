@@ -11,13 +11,32 @@ object StorageFilterHelper {
         rawRoot: CompactNode?,
         showFreeSpace: Boolean,
         showSystemApps: Boolean,
+        showHiddenFiles: Boolean = true,
         deviceTotalBytes: Long
     ): CompactNode? {
         if (rawRoot == null) return null
+
+        fun filterHidden(node: CompactNode): CompactNode? {
+            if (!showHiddenFiles && node.name.startsWith(".")) {
+                return null
+            }
+            if (!node.isDirectory || node.children == null) return node
+            val filteredKids = node.children!!.mapNotNull { filterHidden(it) }
+            val newSize = filteredKids.sumOf { it.size }
+            return CompactNode(
+                name = node.name,
+                isDirectory = true,
+                size = if (newSize > 0L) newSize else node.size,
+                children = filteredKids.toTypedArray()
+            )
+        }
+
         val rawChildren = rawRoot.children ?: return rawRoot
 
         val newChildren = mutableListOf<CompactNode>()
-        for (child in rawChildren) {
+        for (rawChild in rawChildren) {
+            val child = if (!showHiddenFiles) filterHidden(rawChild) else rawChild
+            if (child == null) continue
             when {
                 child.name == "[Free Space]" -> {
                     if (showFreeSpace) {

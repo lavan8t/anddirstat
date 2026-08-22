@@ -57,6 +57,8 @@ fun SettingsView(
     onTogglePureBlack: (Boolean) -> Unit,
     accentColor: AccentColor,
     onSelectAccent: (AccentColor) -> Unit,
+    showHiddenFiles: Boolean = true,
+    onToggleShowHiddenFiles: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
@@ -221,6 +223,52 @@ fun SettingsView(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Storage section header
+        item {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Storage",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+        }
+
+        // Show Hidden Files card
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleShowHiddenFiles(!showHiddenFiles) }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Show hidden files",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = showHiddenFiles,
+                        onCheckedChange = onToggleShowHiddenFiles,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
             }
         }

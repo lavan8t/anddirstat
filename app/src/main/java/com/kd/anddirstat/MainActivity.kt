@@ -140,28 +140,6 @@ fun MainApp() {
         mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
     }
 
-    DisposableEffect(prefs) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            when (key) {
-                "app_theme" -> {
-                    val newTheme = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
-                    currentTheme = AppTheme.entries.firstOrNull { it.key == newTheme } ?: AppTheme.SYSTEM
-                }
-                "pure_black" -> {
-                    pureBlack = prefs.getBoolean("pure_black", false)
-                }
-                "accent_color" -> {
-                    val newAccent = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
-                    accentColor = AccentColor.entries.firstOrNull { it.key == newAccent } ?: AccentColor.GREEN
-                }
-            }
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose {
-            prefs.unregisterOnSharedPreferenceChangeListener(listener)
-        }
-    }
-
     AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
         val systemDark = isSystemInDarkTheme()
         val isDark = when (currentTheme) {
@@ -174,44 +152,82 @@ fun MainApp() {
         var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
         var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
         var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
+        var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", true)) }
         var showFilterMenu by remember { mutableStateOf(false) }
 
-    var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
-    var deviceTotalBytes by remember { mutableLongStateOf(0L) }
-    var rootNode by remember { mutableStateOf<CompactNode?>(null) }
-    var extensionStats by remember { mutableStateOf<List<ExtensionStat>>(emptyList()) }
-    var topFiles by remember { mutableStateOf<List<TopFileEntry>>(emptyList()) }
-    var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
-    var selectedPath by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(hasStoragePermission && rootNode == null) }
-    var scanPhase by remember { mutableStateOf("Analyzing storage...") }
-    var scanDetail by remember { mutableStateOf("Starting scan...") }
+        var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
+        var deviceTotalBytes by remember { mutableLongStateOf(0L) }
+        var rootNode by remember { mutableStateOf<CompactNode?>(null) }
+        var extensionStats by remember { mutableStateOf<List<ExtensionStat>>(emptyList()) }
+        var topFiles by remember { mutableStateOf<List<TopFileEntry>>(emptyList()) }
+        var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
+        var selectedPath by remember { mutableStateOf<String?>(null) }
+        var isLoading by remember { mutableStateOf(hasStoragePermission && rootNode == null) }
+        var scanPhase by remember { mutableStateOf("Analyzing storage...") }
+        var scanDetail by remember { mutableStateOf("Starting scan...") }
 
-    var currentRoute by remember { mutableStateOf(AppDestinations.TREE) }
-    var previousRoute by remember { mutableStateOf(AppDestinations.TREE) }
+        var currentRoute by remember { mutableStateOf(AppDestinations.TREE) }
+        var previousRoute by remember { mutableStateOf(AppDestinations.TREE) }
 
-    var explorerNode by remember { mutableStateOf<CompactNode?>(null) }
-    var explorerPath by remember { mutableStateOf("Device Storage") }
-    var explorerStack by remember { mutableStateOf<List<NavEntry>>(emptyList()) }
+        var explorerNode by remember { mutableStateOf<CompactNode?>(null) }
+        var explorerPath by remember { mutableStateOf("Device Storage") }
+        var explorerStack by remember { mutableStateOf<List<NavEntry>>(emptyList()) }
 
-    var currentScale by remember { mutableStateOf(1f) }
-    var resetZoomKey by remember { mutableStateOf(0) }
-    var discoverSearchQuery by remember { mutableStateOf("") }
+        var currentScale by remember { mutableStateOf(1f) }
+        var resetZoomKey by remember { mutableStateOf(0) }
+        var discoverSearchQuery by remember { mutableStateOf("") }
 
-    fun applyFilter(freeSpace: Boolean, systemApps: Boolean) {
-        val raw = rawScannedNode ?: return
-        val filtered = StorageFilterHelper.filterStorageTree(raw, freeSpace, systemApps, deviceTotalBytes)
-        rootNode = filtered
-        explorerNode = filtered
-        explorerPath = filtered?.name ?: "Device Storage"
-        explorerStack = emptyList()
-        extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
-        topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
-        if (selectedNode != null) {
-            selectedNode = null
-            selectedPath = null
+        fun applyFilter(freeSpace: Boolean, systemApps: Boolean, hiddenFiles: Boolean = showHiddenFiles) {
+            val raw = rawScannedNode ?: return
+            val filtered = StorageFilterHelper.filterStorageTree(raw, freeSpace, systemApps, hiddenFiles, deviceTotalBytes)
+            rootNode = filtered
+            explorerNode = filtered
+            explorerPath = filtered?.name ?: "Device Storage"
+            explorerStack = emptyList()
+            extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
+            topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+            if (selectedNode != null) {
+                selectedNode = null
+                selectedPath = null
+            }
         }
-    }
+
+        DisposableEffect(prefs) {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                when (key) {
+                    "app_theme" -> {
+                        val newTheme = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
+                        currentTheme = AppTheme.entries.firstOrNull { it.key == newTheme } ?: AppTheme.SYSTEM
+                    }
+                    "pure_black" -> {
+                        pureBlack = prefs.getBoolean("pure_black", false)
+                    }
+                    "accent_color" -> {
+                        val newAccent = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
+                        accentColor = AccentColor.entries.firstOrNull { it.key == newAccent } ?: AccentColor.GREEN
+                    }
+                    "show_hidden_files" -> {
+                        val newH = prefs.getBoolean("show_hidden_files", true)
+                        showHiddenFiles = newH
+                        applyFilter(showFreeSpace, showSystemApps, newH)
+                    }
+                    "show_free_space" -> {
+                        val newF = prefs.getBoolean("show_free_space", true)
+                        showFreeSpace = newF
+                        applyFilter(newF, showSystemApps, showHiddenFiles)
+                    }
+                    "show_system_apps" -> {
+                        val newS = prefs.getBoolean("show_system_apps", true)
+                        showSystemApps = newS
+                        applyFilter(showFreeSpace, newS, showHiddenFiles)
+                    }
+                }
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            onDispose {
+                prefs.unregisterOnSharedPreferenceChangeListener(listener)
+            }
+        }
 
     fun navigateTo(dest: String) {
         if (currentRoute == dest) return
@@ -229,8 +245,10 @@ fun MainApp() {
         scope.launch {
             val freeSpacePref = prefs.getBoolean("show_free_space", true)
             val systemAppsPref = prefs.getBoolean("show_system_apps", true)
+            val hiddenFilesPref = prefs.getBoolean("show_hidden_files", true)
             showFreeSpace = freeSpacePref
             showSystemApps = systemAppsPref
+            showHiddenFiles = hiddenFilesPref
             val scanner = StorageScanner(context)
             val scanned = scanner.scanStorage(includeFreeSpace = true) { phase, detail ->
                 scanPhase = phase
@@ -240,7 +258,7 @@ fun MainApp() {
             deviceTotalBytes = scanned.size
 
             val filtered = withContext(Dispatchers.Default) {
-                StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, scanned.size)
+                StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, hiddenFilesPref, scanned.size)
             }
             rootNode = filtered
             explorerNode = filtered
@@ -294,8 +312,9 @@ fun MainApp() {
                 deviceTotalBytes = cached.size
                 val freeSpacePref = prefs.getBoolean("show_free_space", true)
                 val systemAppsPref = prefs.getBoolean("show_system_apps", true)
+                val hiddenFilesPref = prefs.getBoolean("show_hidden_files", true)
                 val filtered = withContext(Dispatchers.Default) {
-                    StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, cached.size)
+                    StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, hiddenFilesPref, cached.size)
                 }
                 rootNode = filtered
                 explorerNode = filtered
@@ -400,7 +419,7 @@ fun MainApp() {
                                             val newVal = !showSystemApps
                                             showSystemApps = newVal
                                             prefs.edit().putBoolean("show_system_apps", newVal).apply()
-                                            applyFilter(showFreeSpace, newVal)
+                                            applyFilter(showFreeSpace, newVal, showHiddenFiles)
                                         }
                                     )
                                     DropdownMenuItem(
@@ -421,7 +440,28 @@ fun MainApp() {
                                             val newVal = !showFreeSpace
                                             showFreeSpace = newVal
                                             prefs.edit().putBoolean("show_free_space", newVal).apply()
-                                            applyFilter(newVal, showSystemApps)
+                                            applyFilter(newVal, showSystemApps, showHiddenFiles)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Show Hidden Files",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Checkbox(
+                                                checked = showHiddenFiles,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showHiddenFiles
+                                            showHiddenFiles = newVal
+                                            prefs.edit().putBoolean("show_hidden_files", newVal).apply()
+                                            applyFilter(showFreeSpace, showSystemApps, newVal)
                                         }
                                     )
                                 }

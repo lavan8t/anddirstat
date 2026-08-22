@@ -46,6 +46,7 @@ class SettingsActivity : ComponentActivity() {
             var accentColor by remember {
                 mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
             }
+            var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", true)) }
 
             var entered by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
@@ -108,6 +109,11 @@ class SettingsActivity : ComponentActivity() {
                             onSelectAccent = { a ->
                                 accentColor = a
                                 prefs.edit { putString("accent_color", a.key) }
+                            },
+                            showHiddenFiles = showHiddenFiles,
+                            onToggleShowHiddenFiles = { h ->
+                                showHiddenFiles = h
+                                prefs.edit { putBoolean("show_hidden_files", h) }
                             },
                             modifier = Modifier
                                 .fillMaxSize()
