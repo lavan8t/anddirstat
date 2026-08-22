@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -77,81 +78,101 @@ fun SettingsView(
             )
         }
 
-        // Theme 3-card row — 32dp icons with smooth animated container bg
+        // Card 1: Theme Select Card
         item {
-            Row(
+            Surface(
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(horizontal = 16.dp)
             ) {
-                AppTheme.entries.forEach { theme ->
-                    val isSelected = currentTheme == theme
-                    val cardBg = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                    val cardFg = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AppTheme.entries.forEach { theme ->
+                        val isSelected = currentTheme == theme
+                        val cardBg = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
+                        val cardFg = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(cardBg)
-                            .clickable { onSelectTheme(theme) }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(cardBg)
+                                .clickable { onSelectTheme(theme) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            MaterialSymbol(
-                                name = when (theme) {
-                                    AppTheme.SYSTEM -> "brightness_medium"
-                                    AppTheme.LIGHT  -> "light_mode"
-                                    AppTheme.DARK   -> "dark_mode"
-                                },
-                                active = isSelected,
-                                size = 32.dp,
-                                tint = cardFg
-                            )
-                            Text(
-                                text = theme.title,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = cardFg
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                MaterialSymbol(
+                                    name = when (theme) {
+                                        AppTheme.SYSTEM -> "brightness_medium"
+                                        AppTheme.LIGHT  -> "light_mode"
+                                        AppTheme.DARK   -> "dark_mode"
+                                    },
+                                    active = isSelected,
+                                    size = 28.dp,
+                                    tint = cardFg
+                                )
+                                Text(
+                                    text = theme.title,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = cardFg
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Pure Black toggle — always visible, greyed out and disabled when in light theme
+        item {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
+
+        // Card 2: Pure Black Toggle Card
         item {
             val textColor = if (isDarkActive) MaterialTheme.colorScheme.onSurface
             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
 
-            Row(
+            Surface(
+                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = isDarkActive) { onTogglePureBlack(!pureBlack) }
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 16.dp)
             ) {
-                Text(
-                    text = "Use pure black",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = textColor
-                )
-                Switch(
-                    checked = pureBlack && isDarkActive,
-                    onCheckedChange = onTogglePureBlack,
-                    enabled = isDarkActive,
-                    colors = SwitchDefaults.colors(
-                        checkedTrackColor = MaterialTheme.colorScheme.primary
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = isDarkActive) { onTogglePureBlack(!pureBlack) }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Use pure black",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = textColor
                     )
-                )
+                    Switch(
+                        checked = pureBlack && isDarkActive,
+                        onCheckedChange = onTogglePureBlack,
+                        enabled = isDarkActive,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
             }
         }
 
