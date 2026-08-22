@@ -495,20 +495,29 @@ fun MainApp() {
                         },
                         navigationIcon = {
                             if (explorerStack.isNotEmpty()) {
-                                IconButton(
-                                    onClick = {
-                                        val prev = explorerStack.last()
-                                        explorerStack = explorerStack.dropLast(1)
-                                        explorerNode = prev.node
-                                        explorerPath = prev.path
-                                    }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier
+                                        .padding(start = 12.dp, end = 4.dp)
+                                        .size(38.dp)
                                 ) {
-                                    MaterialSymbol(
-                                        name = "arrow_back",
-                                        active = true,
-                                        size = 22.dp,
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val prev = explorerStack.last()
+                                            explorerStack = explorerStack.dropLast(1)
+                                            explorerNode = prev.node
+                                            explorerPath = prev.path
+                                        },
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "arrow_back",
+                                            active = true,
+                                            size = 20.dp,
+                                            tint = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
                             }
                         },
