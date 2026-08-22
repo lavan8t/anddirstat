@@ -57,7 +57,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -78,6 +80,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.kd.anddirstat.model.AppDestinations
 import com.kd.anddirstat.model.CompactNode
@@ -100,6 +103,7 @@ import com.kd.anddirstat.ui.screens.SettingsView
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.core.content.edit
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -131,6 +135,28 @@ fun MainApp() {
         mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
     }
 
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                "app_theme" -> {
+                    val newTheme = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
+                    currentTheme = AppTheme.entries.firstOrNull { it.key == newTheme } ?: AppTheme.SYSTEM
+                }
+                "pure_black" -> {
+                    pureBlack = prefs.getBoolean("pure_black", false)
+                }
+                "accent_color" -> {
+                    val newAccent = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
+                    accentColor = AccentColor.entries.firstOrNull { it.key == newAccent } ?: AccentColor.GREEN
+                }
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
         val systemDark = isSystemInDarkTheme()
         val isDark = when (currentTheme) {
@@ -152,7 +178,7 @@ fun MainApp() {
     var topFiles by remember { mutableStateOf<List<TopFileEntry>>(emptyList()) }
     var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
     var selectedPath by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(hasStoragePermission && rootNode == null) }
     var scanPhase by remember { mutableStateOf("Analyzing storage...") }
     var scanDetail by remember { mutableStateOf("Starting scan...") }
 
@@ -189,7 +215,7 @@ fun MainApp() {
     }
 
     fun triggerScan() {
-        if (!hasStoragePermission || isLoading) return
+        if (!hasStoragePermission) return
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         isLoading = true
         scanPhase = "Analyzing storage..."
@@ -207,7 +233,9 @@ fun MainApp() {
             rawScannedNode = scanned
             deviceTotalBytes = scanned.size
 
-            val filtered = StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, deviceTotalBytes)
+            val filtered = withContext(Dispatchers.Default) {
+                StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, scanned.size)
+            }
             rootNode = filtered
             explorerNode = filtered
             explorerPath = filtered?.name ?: "Device Storage"
@@ -248,19 +276,27 @@ fun MainApp() {
     }
 
     LaunchedEffect(hasStoragePermission) {
-        if (hasStoragePermission && rootNode == null && !isLoading) {
-            val cached = TreeCacheManager.loadTree(context)
+        if (hasStoragePermission && rootNode == null) {
+            isLoading = true
+            scanPhase = "Restoring storage map..."
+            scanDetail = "Loading cached data..."
+            val cached = withContext(Dispatchers.IO) {
+                TreeCacheManager.loadTree(context)
+            }
             if (cached != null) {
                 rawScannedNode = cached
                 deviceTotalBytes = cached.size
                 val freeSpacePref = prefs.getBoolean("show_free_space", true)
                 val systemAppsPref = prefs.getBoolean("show_system_apps", true)
-                val filtered = StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, deviceTotalBytes)
+                val filtered = withContext(Dispatchers.Default) {
+                    StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, cached.size)
+                }
                 rootNode = filtered
                 explorerNode = filtered
                 explorerPath = filtered?.name ?: "Device Storage"
                 extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
                 topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+                isLoading = false
             } else {
                 triggerScan()
             }
@@ -269,20 +305,6 @@ fun MainApp() {
 
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
     var isPredictiveBackActive by remember { mutableStateOf(false) }
-
-    PredictiveBackHandler(enabled = currentRoute == AppDestinations.SETTINGS) { progress ->
-        try {
-            isPredictiveBackActive = true
-            progress.collect { backEvent ->
-                predictiveBackProgress = backEvent.progress
-            }
-            currentRoute = previousRoute
-        } catch (_: CancellationException) {
-        } finally {
-            isPredictiveBackActive = false
-            predictiveBackProgress = 0f
-        }
-    }
 
     PredictiveBackHandler(enabled = selectedNode != null) { progress ->
         try {
@@ -324,27 +346,22 @@ fun MainApp() {
                 AppDestinations.MAP -> {
                     TopAppBar(
                         title = {
-                            Text(
-                                text = buildAnnotatedString {
-                                    withStyle(
-                                        SpanStyle(
-                                            fontFamily = GoogleSansFlexStraightRegularFamily,
-                                            fontWeight = FontWeight.Normal
-                                        )
-                                    ) {
-                                        append("And")
-                                    }
-                                    withStyle(
-                                        SpanStyle(
-                                            fontFamily = GoogleSansFlexFontFamily,
-                                            fontWeight = FontWeight.Black
-                                        )
-                                    ) {
-                                        append("DirStat")
-                                    }
-                                },
-                                style = MaterialTheme.typography.titleLarge
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "And",
+                                    fontFamily = GoogleSansFlexTitleAndFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 22.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "DirStat",
+                                    fontFamily = GoogleSansFlexTitleDirStatFamily,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 22.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         },
                         actions = {
                             Box {
@@ -410,7 +427,7 @@ fun MainApp() {
                                 MaterialSymbol("refresh", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             IconButton(
-                                onClick = { navigateTo(AppDestinations.SETTINGS) }
+                                onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) }
                             ) {
                                 MaterialSymbol("settings", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -500,89 +517,60 @@ fun MainApp() {
                 AppDestinations.DISCOVER -> {
                     // DiscoverView has its own pinned SearchBar anchor
                 }
-                AppDestinations.SETTINGS -> {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Settings",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                            )
-                        },
-                        navigationIcon = {
-                            IconButton(
-                                onClick = { navigateTo(previousRoute) }
-                            ) {
-                                MaterialSymbol(
-                                    name = "arrow_back",
-                                    active = true,
-                                    size = 20.dp,
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
             }
         },
         bottomBar = {
-            if (currentRoute != AppDestinations.SETTINGS) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    tonalElevation = 0.dp
-                ) {
-                    val destinations = listOf(
-                        Triple(AppDestinations.MAP, "grid_view", "Map"),
-                        Triple(
-                            AppDestinations.EXPLORER,
-                            if (currentRoute == AppDestinations.EXPLORER) "folder_open" else "folder",
-                            "Explorer"
-                        ),
-                        Triple(AppDestinations.TYPES, "pie_chart", "Types"),
-                        Triple(AppDestinations.DISCOVER, "explore", "Discover")
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 0.dp
+            ) {
+                val destinations = listOf(
+                    Triple(AppDestinations.MAP, "grid_view", "Map"),
+                    Triple(
+                        AppDestinations.EXPLORER,
+                        if (currentRoute == AppDestinations.EXPLORER) "folder_open" else "folder",
+                        "Explorer"
+                    ),
+                    Triple(AppDestinations.TYPES, "pie_chart", "Types"),
+                    Triple(AppDestinations.DISCOVER, "explore", "Discover")
+                )
+
+                destinations.forEach { (dest, iconName, label) ->
+                    val selected = currentRoute == dest
+                    val scale by animateFloatAsState(
+                        targetValue = if (selected) 1.08f else 1.0f,
+                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                        label = "navIconScale"
                     )
 
-                    destinations.forEach { (dest, iconName, label) ->
-                        val selected = currentRoute == dest
-                        val scale by animateFloatAsState(
-                            targetValue = if (selected) 1.08f else 1.0f,
-                            animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
-                            label = "navIconScale"
-                        )
-
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { navigateTo(dest) },
-                            icon = {
-                                MaterialSymbol(
-                                    name = iconName,
-                                    active = selected,
-                                    size = 24.dp,
-                                    tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
-                                    }
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { navigateTo(dest) },
+                        icon = {
+                            MaterialSymbol(
+                                name = iconName,
+                                active = selected,
+                                size = 24.dp,
+                                tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
                             )
+                        },
+                        label = {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                         )
-                    }
+                    )
                 }
             }
         }
@@ -592,8 +580,7 @@ fun MainApp() {
                 AppDestinations.MAP to 0,
                 AppDestinations.EXPLORER to 1,
                 AppDestinations.TYPES to 2,
-                AppDestinations.DISCOVER to 3,
-                AppDestinations.SETTINGS to 4
+                AppDestinations.DISCOVER to 3
             )
         }
 
@@ -613,26 +600,6 @@ fun MainApp() {
                 .clip(RoundedCornerShape(backCornerRadius))
         ) {
             when {
-                currentRoute == AppDestinations.SETTINGS -> {
-                    SettingsView(
-                        currentTheme = currentTheme,
-                        onSelectTheme = { selectedTheme ->
-                            currentTheme = selectedTheme
-                            prefs.edit { putString("app_theme", selectedTheme.key) }
-                        },
-                        pureBlack = pureBlack,
-                        onTogglePureBlack = { v ->
-                            pureBlack = v
-                            prefs.edit { putBoolean("pure_black", v) }
-                        },
-                        accentColor = accentColor,
-                        onSelectAccent = { a ->
-                            accentColor = a
-                            prefs.edit().putString("accent_color", a.key).apply()
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
                 !hasStoragePermission -> {
                     PermissionScreen(
                         onGrant = {
@@ -788,7 +755,7 @@ fun MainApp() {
             }
 
             // Usage Access Warning Banner
-            if (currentRoute != AppDestinations.SETTINGS && hasStoragePermission && !hasUsageAccess) {
+            if (hasStoragePermission && !hasUsageAccess) {
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     shape = RoundedCornerShape(16.dp),

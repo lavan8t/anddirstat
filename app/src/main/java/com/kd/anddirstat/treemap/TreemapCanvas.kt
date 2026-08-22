@@ -75,18 +75,36 @@ fun computeTreemapTiles(
 
         if (children == null || children.isEmpty() || isApp) {
             val baseColor = getNodeColor(node, isDark)
-            val highlight = Color(
-                red = (baseColor.red * 1.35f + 0.15f).coerceIn(0f, 1f),
-                green = (baseColor.green * 1.35f + 0.15f).coerceIn(0f, 1f),
-                blue = (baseColor.blue * 1.35f + 0.15f).coerceIn(0f, 1f),
-                alpha = 1f
-            )
-            val shadow = Color(
-                red = (baseColor.red * 0.40f).coerceIn(0f, 1f),
-                green = (baseColor.green * 0.40f).coerceIn(0f, 1f),
-                blue = (baseColor.blue * 0.40f).coerceIn(0f, 1f),
-                alpha = 1f
-            )
+            val highlight = if (isDark) {
+                Color(
+                    red = (baseColor.red * 1.15f + 0.04f).coerceIn(0f, 1f),
+                    green = (baseColor.green * 1.15f + 0.04f).coerceIn(0f, 1f),
+                    blue = (baseColor.blue * 1.15f + 0.04f).coerceIn(0f, 1f),
+                    alpha = 1f
+                )
+            } else {
+                Color(
+                    red = (baseColor.red * 1.35f + 0.15f).coerceIn(0f, 1f),
+                    green = (baseColor.green * 1.35f + 0.15f).coerceIn(0f, 1f),
+                    blue = (baseColor.blue * 1.35f + 0.15f).coerceIn(0f, 1f),
+                    alpha = 1f
+                )
+            }
+            val shadow = if (isDark) {
+                Color(
+                    red = (baseColor.red * 0.35f).coerceIn(0f, 1f),
+                    green = (baseColor.green * 0.35f).coerceIn(0f, 1f),
+                    blue = (baseColor.blue * 0.35f).coerceIn(0f, 1f),
+                    alpha = 1f
+                )
+            } else {
+                Color(
+                    red = (baseColor.red * 0.40f).coerceIn(0f, 1f),
+                    green = (baseColor.green * 0.40f).coerceIn(0f, 1f),
+                    blue = (baseColor.blue * 0.40f).coerceIn(0f, 1f),
+                    alpha = 1f
+                )
+            }
             val pkg = if (isApp) FileUtils.extractPackageName(node) else null
             val gradientColors = listOf(highlight, baseColor, shadow)
             tiles.add(TreemapTile(node, currentPath, l, t, w, h, isApp, pkg, baseColor, gradientColors))
@@ -189,7 +207,8 @@ fun TreemapCanvas(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val displayMetrics = remember { context.resources.displayMetrics }
+    var canvasSize by remember { mutableStateOf(IntSize(displayMetrics.widthPixels, displayMetrics.heightPixels)) }
 
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -517,16 +536,16 @@ private val ExtensionColorCacheLight = LruCache<String, Color>(128)
 
 fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
     val name = node.name
-    if (name == "[Free Space]") return if (isDark) Color(0xFF1E293B) else Color(0xFF64748B)
-    if (name == "[System & OS]") return if (isDark) Color(0xFF0F172A) else Color(0xFF475569)
-    if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFB45309) else Color(0xFFF59E0B)
-    if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF334155) else Color(0xFF64748B)
+    if (name == "[Free Space]") return if (isDark) Color(0xFF0F172A) else Color(0xFF64748B)
+    if (name == "[System & OS]") return if (isDark) Color(0xFF060910) else Color(0xFF475569)
+    if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFF5C2900) else Color(0xFFF59E0B)
+    if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF1E293B) else Color(0xFF64748B)
 
     val children = node.children
     if (children != null && children.any { it.name.startsWith("App Code") }) {
-        return if (isDark) Color(0xFF0D47A1) else Color(0xFF1976D2)
+        return if (isDark) Color(0xFF06224D) else Color(0xFF1976D2)
     }
-    if (node.isDirectory) return if (isDark) Color(0xFF141720) else Color(0xFF2C3240)
+    if (node.isDirectory) return if (isDark) Color(0xFF0A0C10) else Color(0xFF2C3240)
 
     val ext = if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true)) {
         "apk"
@@ -536,7 +555,7 @@ fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
     }
 
     if (ext.isEmpty() || ext == name.lowercase()) {
-        return if (isDark) Color(0xFF455A64) else Color(0xFF78909C)
+        return if (isDark) Color(0xFF263238) else Color(0xFF78909C)
     }
 
     val cache = if (isDark) ExtensionColorCacheDark else ExtensionColorCacheLight
@@ -545,25 +564,25 @@ fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
 
     val computed = when (ext) {
         "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" ->
-            if (isDark) Color(0xFF0F4C81) else Color(0xFF0055FF)
+            if (isDark) Color(0xFF08264A) else Color(0xFF0055FF)
         "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" ->
-            if (isDark) Color(0xFF6B2D8B) else Color(0xFFAA00FF)
+            if (isDark) Color(0xFF38144D) else Color(0xFFAA00FF)
         "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" ->
-            if (isDark) Color(0xFFBF4F00) else Color(0xFFFF8800)
+            if (isDark) Color(0xFF662900) else Color(0xFFFF8800)
         "apk", "apks", "xapk", "apkm", "obb", "aab" ->
-            if (isDark) Color(0xFFB71C1C) else Color(0xFFFF0055)
+            if (isDark) Color(0xFF5C0A0A) else Color(0xFFFF0055)
         "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" ->
-            if (isDark) Color(0xFF1B5E20) else Color(0xFF00CC44)
+            if (isDark) Color(0xFF0B3310) else Color(0xFF00CC44)
         "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" ->
-            if (isDark) Color(0xFF006978) else Color(0xFF00CCCC)
+            if (isDark) Color(0xFF00363D) else Color(0xFF00CCCC)
         "so", "bin", "dex", "jar", "class", "exe", "dll" ->
-            if (isDark) Color(0xFF7F0000) else Color(0xFFCC0000)
+            if (isDark) Color(0xFF450000) else Color(0xFFCC0000)
         "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py" ->
-            if (isDark) Color(0xFFC47F00) else Color(0xFFFFCC00)
+            if (isDark) Color(0xFF613F00) else Color(0xFFFFCC00)
         else -> {
             val hash = Math.abs(ext.hashCode())
             val hue = (hash * 137.507764f) % 360f
-            Color.hsl(hue = hue, saturation = 0.65f, lightness = if (isDark) 0.32f else 0.50f)
+            Color.hsl(hue = hue, saturation = 0.55f, lightness = if (isDark) 0.18f else 0.50f)
         }
     }
     cache.put(ext, computed)

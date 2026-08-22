@@ -41,10 +41,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.AccentColor
 import com.kd.anddirstat.AppTheme
-import com.kd.anddirstat.GoogleSansFlexFontFamily
-import com.kd.anddirstat.GoogleSansFlexStraightRegularFamily
+import com.kd.anddirstat.GoogleSansFlexTitleAndFamily
+import com.kd.anddirstat.GoogleSansFlexTitleDirStatFamily
 import com.kd.anddirstat.ui.components.MaterialSymbol
 
 @Composable
@@ -211,28 +212,25 @@ fun SettingsView(
                     .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = buildAnnotatedString {
-                        withStyle(
-                            SpanStyle(
-                                fontFamily = GoogleSansFlexStraightRegularFamily,
-                                fontWeight = FontWeight.Normal
-                            )
-                        ) {
-                            append("And")
-                        }
-                        withStyle(
-                            SpanStyle(
-                                fontFamily = GoogleSansFlexFontFamily,
-                                fontWeight = FontWeight.Bold
-                            )
-                        ) {
-                            append("DirStat")
-                        }
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "And",
+                        fontFamily = GoogleSansFlexTitleAndFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "DirStat",
+                        fontFamily = GoogleSansFlexTitleDirStatFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(
                     text = "v1.0.0",
                     style = MaterialTheme.typography.bodySmall,

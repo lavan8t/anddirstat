@@ -120,7 +120,7 @@ val GoogleSansFlexFontFamily = FontFamily(
 )
 
 @OptIn(ExperimentalTextApi::class)
-val GoogleSansFlexStraightRegularFamily = FontFamily(
+val GoogleSansFlexStraightFamily = FontFamily(
     Font(
         resId = R.font.google_sans_flex,
         weight = FontWeight.Normal,
@@ -129,6 +129,74 @@ val GoogleSansFlexStraightRegularFamily = FontFamily(
             FontVariation.Setting("ROND", 0f),
             FontVariation.Setting("GRAD", 0f),
             FontVariation.width(100f)
+        )
+    ),
+    Font(
+        resId = R.font.google_sans_flex,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(500),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 0f),
+            FontVariation.width(100f)
+        )
+    ),
+    Font(
+        resId = R.font.google_sans_flex,
+        weight = FontWeight.SemiBold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(600),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 50f),
+            FontVariation.width(100f)
+        )
+    ),
+    Font(
+        resId = R.font.google_sans_flex,
+        weight = FontWeight.Bold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(700),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 100f),
+            FontVariation.width(100f)
+        )
+    ),
+    Font(
+        resId = R.font.google_sans_flex,
+        weight = FontWeight.Black,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(900),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 150f),
+            FontVariation.width(100f)
+        )
+    )
+)
+
+val GoogleSansFlexStraightRegularFamily = GoogleSansFlexStraightFamily
+
+@OptIn(ExperimentalTextApi::class)
+val GoogleSansFlexTitleAndFamily = FontFamily(
+    Font(
+        resId = R.font.google_sans_flex,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(700),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 100f),
+            FontVariation.width(100f)
+        )
+    )
+)
+
+@OptIn(ExperimentalTextApi::class)
+val GoogleSansFlexTitleDirStatFamily = FontFamily(
+    Font(
+        resId = R.font.google_sans_flex,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(900),
+            FontVariation.Setting("ROND", 100f),
+            FontVariation.Setting("GRAD", 150f),
+            FontVariation.width(140f)
         )
     )
 )
