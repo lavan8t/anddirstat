@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 object MediaThumbnailCache {
-    private val memoryCache = object : LruCache<String, Bitmap>(100) {
+    private val memoryCache = object : LruCache<String, Bitmap>(20 * 1024) { // 20 MB cache
         override fun sizeOf(key: String, value: Bitmap): Int {
             return value.byteCount / 1024
         }

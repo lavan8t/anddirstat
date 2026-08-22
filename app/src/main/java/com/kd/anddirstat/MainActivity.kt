@@ -9,8 +9,9 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -88,8 +89,8 @@ import com.kd.anddirstat.ui.screens.SettingsView
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
 import androidx.core.content.edit
+import kotlin.coroutines.cancellation.CancellationException
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -474,94 +475,54 @@ fun MainApp() {
                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     tonalElevation = 0.dp
                 ) {
-                    NavigationBarItem(
-                        selected = currentRoute == AppDestinations.MAP,
-                        onClick = { navigateTo(AppDestinations.MAP) },
-                        icon = {
-                            MaterialSymbol(
-                                name = "grid_view",
-                                active = currentRoute == AppDestinations.MAP,
-                                size = 24.dp,
-                                tint = if (currentRoute == AppDestinations.MAP) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = "Map",
-                                fontWeight = if (currentRoute == AppDestinations.MAP) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
+                    val destinations = listOf(
+                        Triple(AppDestinations.MAP, "grid_view", "Map"),
+                        Triple(
+                            AppDestinations.EXPLORER,
+                            if (currentRoute == AppDestinations.EXPLORER) "folder_open" else "folder",
+                            "Explorer"
+                        ),
+                        Triple(AppDestinations.TYPES, "pie_chart", "Types"),
+                        Triple(AppDestinations.DISCOVER, "explore", "Discover")
                     )
-                    NavigationBarItem(
-                        selected = currentRoute == AppDestinations.EXPLORER,
-                        onClick = { navigateTo(AppDestinations.EXPLORER) },
-                        icon = {
-                            MaterialSymbol(
-                                name = if (currentRoute == AppDestinations.EXPLORER) "folder_open" else "folder",
-                                active = currentRoute == AppDestinations.EXPLORER,
-                                size = 24.dp,
-                                tint = if (currentRoute == AppDestinations.EXPLORER) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = "Explorer",
-                                fontWeight = if (currentRoute == AppDestinations.EXPLORER) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+
+                    destinations.forEach { (dest, iconName, label) ->
+                        val selected = currentRoute == dest
+                        val scale by animateFloatAsState(
+                            targetValue = if (selected) 1.08f else 1.0f,
+                            animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                            label = "navIconScale"
                         )
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == AppDestinations.TYPES,
-                        onClick = { navigateTo(AppDestinations.TYPES) },
-                        icon = {
-                            MaterialSymbol(
-                                name = "pie_chart",
-                                active = currentRoute == AppDestinations.TYPES,
-                                size = 24.dp,
-                                tint = if (currentRoute == AppDestinations.TYPES) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { navigateTo(dest) },
+                            icon = {
+                                MaterialSymbol(
+                                    name = iconName,
+                                    active = selected,
+                                    size = 24.dp,
+                                    tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                    }
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                             )
-                        },
-                        label = {
-                            Text(
-                                text = "Types",
-                                fontWeight = if (currentRoute == AppDestinations.TYPES) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
                         )
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == AppDestinations.DISCOVER,
-                        onClick = { navigateTo(AppDestinations.DISCOVER) },
-                        icon = {
-                            MaterialSymbol(
-                                name = "explore",
-                                active = currentRoute == AppDestinations.DISCOVER,
-                                size = 24.dp,
-                                tint = if (currentRoute == AppDestinations.DISCOVER) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = "Discover",
-                                fontWeight = if (currentRoute == AppDestinations.DISCOVER) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    )
+                    }
                 }
             }
         }

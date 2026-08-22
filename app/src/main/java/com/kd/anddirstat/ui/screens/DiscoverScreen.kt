@@ -3,6 +3,10 @@ package com.kd.anddirstat.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,8 +31,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,8 +40,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -55,7 +55,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,10 +82,6 @@ fun DiscoverView(
     var searchQuery by remember { mutableStateOf("") }
     var selectedPreset by remember { mutableStateOf<String?>("> 1 GB") }
 
-    val primaryCategory = remember(rootNode) {
-        StorageFilterHelper.findPrimaryCategory(rootNode)
-    }
-
     val filterPresets = remember {
         listOf("> 1 GB", "Duplicates", "Old Downloads", "APKs")
     }
@@ -101,7 +96,7 @@ fun DiscoverView(
     }
 
     val appsContainer = rootNode.children?.firstOrNull { it.name == "Apps & System Packages" }
-    val heavyApps = remember(appsContainer) {
+    val largeApps = remember(appsContainer) {
         appsContainer?.children?.sortedByDescending { it.size }?.take(15) ?: emptyList()
     }
 
@@ -113,14 +108,13 @@ fun DiscoverView(
         }
     }
 
-    // Single LazyColumn wrapping entire screen
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        // 1. Top search anchor (pinned / stickyHeader)
+        // 1. Full Pill Search Anchor (Pinned)
         stickyHeader {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
@@ -133,6 +127,7 @@ fun DiscoverView(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .height(56.dp)
+                        .clip(CircleShape)
                         .clickable { isSearchActive = true }
                 ) {
                     Row(
@@ -149,7 +144,7 @@ fun DiscoverView(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = "Search files, extensions or >1GB...",
+                            text = "Search files...",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
@@ -166,110 +161,10 @@ fun DiscoverView(
         }
 
         item {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // 2. Primary storage consumer card (Asymmetrical tertiaryContainer)
-        item {
-            Card(
-                shape = RoundedCornerShape(
-                    topStart = 28.dp,
-                    topEnd = 28.dp,
-                    bottomStart = 28.dp,
-                    bottomEnd = 4.dp
-                ),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(22.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = primaryCategory.name.uppercase(),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
-                        )
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.15f),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                MaterialSymbol(
-                                    name = "analytics",
-                                    active = true,
-                                    size = 20.dp,
-                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = FileUtils.formatFileSize(primaryCategory.totalSize),
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${primaryCategory.fileCount} items consuming storage",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.80f)
-                        )
-                        Button(
-                            onClick = {
-                                val sampleChild = rootNode.children?.firstOrNull { it.name.contains(primaryCategory.samplePath, ignoreCase = true) }
-                                if (sampleChild != null) {
-                                    onNodeClick(sampleChild, sampleChild.name)
-                                }
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.tertiaryContainer
-                            ),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "Review Folder",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        // 3. Filter button group (Connected capsule with shared inner dividers)
+        // 2. Filter Presets Row
         item {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -330,10 +225,10 @@ fun DiscoverView(
         }
 
         item {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // 4. Largest files horizontal gallery (Multi-browse horizontal carousel)
+        // 3. Largest Files Horizontal Carousel with Efficient Lazy Thumbnails
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -351,7 +246,10 @@ fun DiscoverView(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(displayedFiles) { entry ->
+                    items(
+                        items = displayedFiles,
+                        key = { it.path }
+                    ) { entry ->
                         val isApk = entry.node.name.endsWith(".apk", ignoreCase = true) || entry.node.name.startsWith("App Code")
                         val isBinary = !entry.node.isDirectory && (entry.node.name.endsWith(".iso", ignoreCase = true) || entry.node.name.endsWith(".bin", ignoreCase = true) || entry.node.name.endsWith(".zip", ignoreCase = true))
                         val iconColor = if (isApk) {
@@ -367,13 +265,13 @@ fun DiscoverView(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainer
                             ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                             modifier = Modifier
                                 .width(160.dp)
                                 .height(220.dp)
                                 .clickable { onNodeClick(entry.node, entry.path) }
                         ) {
                             Column(modifier = Modifier.fillMaxSize()) {
-                                // Top 2/3: Media thumbnail / centered file type icon
                                 Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -387,7 +285,6 @@ fun DiscoverView(
                                     )
                                 }
 
-                                // Bottom 1/3: Filename & exact file size
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -406,7 +303,6 @@ fun DiscoverView(
                                     Text(
                                         text = FileUtils.formatFileSize(entry.node.size),
                                         style = MaterialTheme.typography.labelLarge,
-                                        fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -419,13 +315,13 @@ fun DiscoverView(
         }
 
         item {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // 5. Heavy apps vertical list
+        // 4. Large Apps Vertical List
         item {
             Text(
-                text = "Heavy Applications",
+                text = "Large Apps",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -434,13 +330,12 @@ fun DiscoverView(
         }
 
         itemsIndexed(
-            items = heavyApps,
+            items = largeApps,
             key = { index, app -> "${app.name}_$index" }
         ) { _, app ->
             val pkgName = remember(app) { FileUtils.extractPackageName(app) }
             val appChildren = app.children
             val cacheSize = appChildren?.firstOrNull { it.name == "Cache" }?.size ?: 0L
-            val codeSize = appChildren?.firstOrNull { it.name.startsWith("App Code") }?.size ?: 0L
 
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -495,32 +390,17 @@ fun DiscoverView(
 
                     Spacer(modifier = Modifier.width(10.dp))
 
-                    // Center Zone: Thin vertical divider line
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(36.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
-                    )
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    // Right Zone: Expressive split button
+                    // Right Zone: Icon Buttons for Info & Uninstall
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Main side: App Info in Settings
                         Surface(
-                            shape = RoundedCornerShape(
-                                topStart = 12.dp,
-                                bottomStart = 12.dp,
-                                topEnd = 4.dp,
-                                bottomEnd = 4.dp
-                            ),
+                            shape = CircleShape,
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             modifier = Modifier
-                                .height(38.dp)
+                                .size(38.dp)
+                                .clip(CircleShape)
                                 .clickable {
                                     if (pkgName != null) {
                                         try {
@@ -534,30 +414,22 @@ fun DiscoverView(
                                     }
                                 }
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp)
-                            ) {
-                                Text(
-                                    text = "Info",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                            Box(contentAlignment = Alignment.Center) {
+                                MaterialSymbol(
+                                    name = "info",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
 
-                        // Trailing side: Uninstall prompt
                         Surface(
-                            shape = RoundedCornerShape(
-                                topStart = 4.dp,
-                                bottomStart = 4.dp,
-                                topEnd = 12.dp,
-                                bottomEnd = 12.dp
-                            ),
+                            shape = CircleShape,
                             color = MaterialTheme.colorScheme.errorContainer,
                             modifier = Modifier
                                 .size(38.dp)
+                                .clip(CircleShape)
                                 .clickable {
                                     if (pkgName != null) {
                                         try {
@@ -586,7 +458,7 @@ fun DiscoverView(
         }
     }
 
-    // M3 Full Screen Search Dialog
+    // Full Pill Search Dialog with Animation
     if (isSearchActive) {
         Dialog(
             onDismissRequest = {
@@ -602,161 +474,194 @@ fun DiscoverView(
                 color = MaterialTheme.colorScheme.surface
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Search TopBar
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth()
+                    // Full Pill Search Bar Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .weight(1f)
+                                .height(56.dp)
                         ) {
-                            IconButton(
-                                onClick = {
-                                    isSearchActive = false
-                                    searchQuery = ""
-                                }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 MaterialSymbol(
-                                    name = "arrow_back",
+                                    name = "search",
                                     active = true,
                                     size = 22.dp,
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            }
 
-                            TextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                placeholder = {
-                                    Text("Type extension (e.g. .mp4), name, or >500M...")
-                                },
-                                singleLine = true,
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent
-                                ),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = {
-                                    keyboardController?.hide()
-                                }),
-                                modifier = Modifier.weight(1f)
-                            )
+                                TextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    placeholder = {
+                                        Text(
+                                            text = "Search files...",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    singleLine = true,
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent
+                                    ),
+                                    textStyle = MaterialTheme.typography.bodyLarge,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = {
+                                        keyboardController?.hide()
+                                    }),
+                                    modifier = Modifier.weight(1f)
+                                )
 
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    MaterialSymbol(
-                                        name = "close",
-                                        active = true,
-                                        size = 20.dp,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { searchQuery = "" },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "close",
+                                            active = true,
+                                            size = 20.dp,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Close dialog button
+                        IconButton(
+                            onClick = {
+                                isSearchActive = false
+                                searchQuery = ""
+                            }
+                        ) {
+                            MaterialSymbol(
+                                name = "close",
+                                active = true,
+                                size = 24.dp,
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                    // Results
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        if (searchQuery.isBlank()) {
-                            item {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = "Search Storage",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Filter by extension (e.g. .apk, .mp4, .pdf), filename, or size thresholds (>100MB, >1GB)",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                    // Animated Results View
+                    AnimatedContent(
+                        targetState = searchQuery,
+                        transitionSpec = {
+                            fadeIn() togetherWith fadeOut()
+                        },
+                        label = "SearchResultsTransition",
+                        modifier = Modifier.fillMaxSize()
+                    ) { currentQuery ->
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            if (currentQuery.isBlank()) {
+                                item {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(36.dp)
+                                    ) {
+                                        Text(
+                                            text = "Type a filename, extension (e.g. .mp4), or size (>100MB)",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
-                            }
-                        } else if (searchResults.isEmpty()) {
-                            item {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(32.dp)
-                                ) {
-                                    Text(
-                                        text = "No matching files found for \"$searchQuery\"",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                            } else if (searchResults.isEmpty()) {
+                                item {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(36.dp)
+                                    ) {
+                                        Text(
+                                            text = "No files found matching \"$currentQuery\"",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
-                            }
-                        } else {
-                            itemsIndexed(searchResults) { _, entry ->
-                                ListItem(
-                                    leadingContent = {
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                                            modifier = Modifier.size(42.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = FileUtils.getNodeIcon(entry.node, false),
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(24.dp)
+                            } else {
+                                items(
+                                    items = searchResults,
+                                    key = { it.path }
+                                ) { entry ->
+                                    ListItem(
+                                        leadingContent = {
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(42.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = FileUtils.getNodeIcon(entry.node, false),
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        content = {
+                                            Text(
+                                                text = entry.node.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        supportingContent = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = FileUtils.formatFileSize(entry.node.size),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = entry.path,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false).padding(start = 12.dp)
                                                 )
                                             }
+                                        },
+                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                        modifier = Modifier.clickable {
+                                            isSearchActive = false
+                                            onNodeClick(entry.node, entry.path)
                                         }
-                                    },
-                                    content = {
-                                        Text(
-                                            text = entry.node.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    },
-                                    supportingContent = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = FileUtils.formatFileSize(entry.node.size),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            Text(
-                                                text = entry.path,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false).padding(start = 12.dp)
-                                            )
-                                        }
-                                    },
-                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                    modifier = Modifier.clickable {
-                                        isSearchActive = false
-                                        onNodeClick(entry.node, entry.path)
-                                    }
-                                )
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                    )
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                }
                             }
                         }
                     }

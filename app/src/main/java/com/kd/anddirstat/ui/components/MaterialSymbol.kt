@@ -18,17 +18,20 @@ import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.R
 
 @OptIn(ExperimentalTextApi::class)
-val MaterialSymbolsFontFamily = FontFamily(
+private fun createSymbolsFamily(filled: Boolean) = FontFamily(
     Font(
         resId = R.font.material_symbols_rounded,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(700),
             FontVariation.Setting("GRAD", 200f),
             FontVariation.Setting("opsz", 20f),
-            FontVariation.Setting("FILL", 1f)
+            FontVariation.Setting("FILL", if (filled) 1f else 0f)
         )
     )
 )
+
+val MaterialSymbolsFilledFamily = createSymbolsFamily(true)
+val MaterialSymbolsOutlinedFamily = createSymbolsFamily(false)
 
 @Composable
 fun MaterialSymbol(
@@ -41,7 +44,7 @@ fun MaterialSymbol(
     Text(
         text = name,
         style = TextStyle(
-            fontFamily = MaterialSymbolsFontFamily,
+            fontFamily = if (active) MaterialSymbolsFilledFamily else MaterialSymbolsOutlinedFamily,
             fontSize = size.value.sp,
             lineHeight = size.value.sp,
             color = tint,

@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import com.google.android.material.color.utilities.Scheme
 
 enum class AppTheme(val key: String, val title: String) {
     SYSTEM("system", "System"),
@@ -284,7 +285,6 @@ fun AndDirStatTheme(
     appTheme: AppTheme = AppTheme.SYSTEM,
     pureBlack: Boolean = false,
     accentColor: AccentColor = AccentColor.GREEN,
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -294,41 +294,81 @@ fun AndDirStatTheme(
         AppTheme.DARK -> true
     }
 
-    val context = LocalContext.current
-    val baseScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        isDark -> DarkColorScheme
-        else -> LightColorScheme
+    // Official Google material-color-utilities: generates full tonal palette from seed via HCT
+    val seed = accentColor.seed.toArgb()
+    val mdcScheme = if (isDark) Scheme.dark(seed) else Scheme.light(seed)
+    val base = if (isDark) {
+        darkColorScheme(
+            primary = Color(mdcScheme.primary),
+            onPrimary = Color(mdcScheme.onPrimary),
+            primaryContainer = Color(mdcScheme.primaryContainer),
+            onPrimaryContainer = Color(mdcScheme.onPrimaryContainer),
+            secondary = Color(mdcScheme.secondary),
+            onSecondary = Color(mdcScheme.onSecondary),
+            secondaryContainer = Color(mdcScheme.secondaryContainer),
+            onSecondaryContainer = Color(mdcScheme.onSecondaryContainer),
+            tertiary = Color(mdcScheme.tertiary),
+            onTertiary = Color(mdcScheme.onTertiary),
+            tertiaryContainer = Color(mdcScheme.tertiaryContainer),
+            onTertiaryContainer = Color(mdcScheme.onTertiaryContainer),
+            error = Color(mdcScheme.error),
+            onError = Color(mdcScheme.onError),
+            errorContainer = Color(mdcScheme.errorContainer),
+            onErrorContainer = Color(mdcScheme.onErrorContainer),
+            background = Color(mdcScheme.background),
+            onBackground = Color(mdcScheme.onBackground),
+            surface = Color(mdcScheme.surface),
+            onSurface = Color(mdcScheme.onSurface),
+            surfaceVariant = Color(mdcScheme.surfaceVariant),
+            onSurfaceVariant = Color(mdcScheme.onSurfaceVariant),
+            outline = Color(mdcScheme.outline),
+            inverseSurface = Color(mdcScheme.inverseSurface),
+            inverseOnSurface = Color(mdcScheme.inverseOnSurface),
+            inversePrimary = Color(mdcScheme.inversePrimary),
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(mdcScheme.primary),
+            onPrimary = Color(mdcScheme.onPrimary),
+            primaryContainer = Color(mdcScheme.primaryContainer),
+            onPrimaryContainer = Color(mdcScheme.onPrimaryContainer),
+            secondary = Color(mdcScheme.secondary),
+            onSecondary = Color(mdcScheme.onSecondary),
+            secondaryContainer = Color(mdcScheme.secondaryContainer),
+            onSecondaryContainer = Color(mdcScheme.onSecondaryContainer),
+            tertiary = Color(mdcScheme.tertiary),
+            onTertiary = Color(mdcScheme.onTertiary),
+            tertiaryContainer = Color(mdcScheme.tertiaryContainer),
+            onTertiaryContainer = Color(mdcScheme.onTertiaryContainer),
+            error = Color(mdcScheme.error),
+            onError = Color(mdcScheme.onError),
+            errorContainer = Color(mdcScheme.errorContainer),
+            onErrorContainer = Color(mdcScheme.onErrorContainer),
+            background = Color(mdcScheme.background),
+            onBackground = Color(mdcScheme.onBackground),
+            surface = Color(mdcScheme.surface),
+            onSurface = Color(mdcScheme.onSurface),
+            surfaceVariant = Color(mdcScheme.surfaceVariant),
+            onSurfaceVariant = Color(mdcScheme.onSurfaceVariant),
+            outline = Color(mdcScheme.outline),
+            inverseSurface = Color(mdcScheme.inverseSurface),
+            inverseOnSurface = Color(mdcScheme.inverseOnSurface),
+            inversePrimary = Color(mdcScheme.inversePrimary),
+        )
     }
 
-    // Apply pureBlack override when dark + pureBlack, then tint primary with accentColor.seed
-    val accent = accentColor.seed
-    val accentContainer = accent.copy(alpha = 0.25f)
-    val colorScheme = baseScheme.let { s ->
-        val withAccent = s.copy(
-            primary = accent,
-            onPrimary = if (isDark) Color.Black else Color.White,
-            primaryContainer = accentContainer,
-            onPrimaryContainer = accent,
-            inversePrimary = accent.copy(alpha = 0.7f)
+    val colorScheme = if (isDark && pureBlack) {
+        base.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceContainer = Color(0xFF0A0B0E),
+            surfaceContainerLow = Color(0xFF050507),
+            surfaceContainerHigh = Color(0xFF121418),
+            surfaceContainerHighest = Color(0xFF1A1C22),
+            surfaceVariant = Color(0xFF1C1D22),
+            outlineVariant = Color(0xFF2C2D35)
         )
-        if (isDark && pureBlack) {
-            withAccent.copy(
-                background = Color.Black,
-                surface = Color.Black,
-                surfaceContainer = Color(0xFF0A0B0E),
-                surfaceContainerLow = Color(0xFF050507),
-                surfaceContainerHigh = Color(0xFF121418),
-                surfaceContainerHighest = Color(0xFF1A1C22),
-                surfaceVariant = Color(0xFF1C1D22),
-                outlineVariant = Color(0xFF2C2D35)
-            )
-        } else {
-            withAccent
-        }
-    }
+    } else base
 
     val view = LocalView.current
     if (!view.isInEditMode) {
