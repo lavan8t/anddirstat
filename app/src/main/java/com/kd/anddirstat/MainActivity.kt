@@ -609,7 +609,7 @@ fun MainApp() {
                                 Text(
                                     text = "DirStat",
                                     fontFamily = GoogleSansFlexTitleDirStatFamily,
-                                    fontWeight = FontWeight.Black,
+                                    fontWeight = FontWeight.Light,
                                     fontSize = 22.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )

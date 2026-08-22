@@ -319,7 +319,7 @@ fun SettingsView(
                     Text(
                         text = "DirStat",
                         fontFamily = GoogleSansFlexTitleDirStatFamily,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Light,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

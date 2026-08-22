@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,11 +80,12 @@ class SettingsActivity : ComponentActivity() {
                                     )
                                 }
                             },
-                            colors = TopAppBarDefaults.largeTopAppBarColors(
+                            colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface,
                                 scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
                                 titleContentColor = MaterialTheme.colorScheme.onSurface,
-                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                                actionIconContentColor = Color.Unspecified
                             ),
                             scrollBehavior = scrollBehavior
                         )

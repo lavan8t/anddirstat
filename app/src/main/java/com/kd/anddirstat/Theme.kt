@@ -201,10 +201,10 @@ val GoogleSansFlexTitleDirStatFamily = FontFamily(
     Font(
         resId = R.font.google_sans_flex,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(900),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 150f),
-            FontVariation.width(140f)
+            FontVariation.weight(300),
+            FontVariation.Setting("ROND", 0f),
+            FontVariation.Setting("GRAD", 0f),
+            FontVariation.width(85f)
         )
     )
 )

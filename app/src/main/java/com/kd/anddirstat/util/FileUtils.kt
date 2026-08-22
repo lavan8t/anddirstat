@@ -36,6 +36,7 @@ import androidx.core.content.FileProvider
 import com.kd.anddirstat.model.CompactNode
 import java.io.File
 import java.util.Locale
+import kotlin.math.abs
 
 data class StorageVolumeInfo(
     val id: String,
@@ -635,8 +636,8 @@ object FileUtils {
                 if (ext.isEmpty()) {
                     if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
                 } else {
-                    val hash = Math.abs(ext.hashCode())
-                    val hue = (hash * 137.507764f) % 360f
+                    val hash = abs(ext.hashCode())
+                    val hue = (hash * 137.50777f) % 360f
                     Color.hsl(hue = hue, saturation = 0.90f, lightness = if (isDark) 0.70f else 0.42f)
                 }
             }
