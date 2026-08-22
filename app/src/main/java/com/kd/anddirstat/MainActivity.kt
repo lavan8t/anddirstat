@@ -141,12 +141,15 @@ fun MainApp() {
         mutableStateOf(AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM)
     }
     var pureBlack by remember { mutableStateOf(prefs.getBoolean("pure_black", false)) }
+    var dynamicTheme by remember {
+        mutableStateOf(prefs.getBoolean("dynamic_theme", android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S))
+    }
     val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
     var accentColor by remember {
         mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
     }
 
-    AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
+    AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, dynamicTheme = dynamicTheme, accentColor = accentColor) {
         val systemDark = isSystemInDarkTheme()
         val isDark = when (currentTheme) {
             AppTheme.SYSTEM -> systemDark
@@ -209,6 +212,9 @@ fun MainApp() {
                     }
                     "pure_black" -> {
                         pureBlack = prefs.getBoolean("pure_black", false)
+                    }
+                    "dynamic_theme" -> {
+                        dynamicTheme = prefs.getBoolean("dynamic_theme", android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S)
                     }
                     "accent_color" -> {
                         val newAccent = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
@@ -916,7 +922,7 @@ fun MainApp() {
                                 FileTypesView(
                                     rootNode = rootNode!!,
                                     stats = extensionStats,
-                                    totalDeviceSize = rootNode!!.size,
+                                    totalDeviceSize = if (deviceTotalBytes > 0L) deviceTotalBytes else rootNode!!.size,
                                     onNodeClick = { node, path ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedNode = node

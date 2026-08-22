@@ -43,6 +43,9 @@ class SettingsActivity : ComponentActivity() {
                 mutableStateOf(AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM)
             }
             var pureBlack by remember { mutableStateOf(prefs.getBoolean("pure_black", false)) }
+            var dynamicTheme by remember {
+                mutableStateOf(prefs.getBoolean("dynamic_theme", android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S))
+            }
             val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
             var accentColor by remember {
                 mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
@@ -50,7 +53,7 @@ class SettingsActivity : ComponentActivity() {
 
             val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
-            AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
+            AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, dynamicTheme = dynamicTheme, accentColor = accentColor) {
                 Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
@@ -105,6 +108,11 @@ class SettingsActivity : ComponentActivity() {
                         onTogglePureBlack = { v ->
                             pureBlack = v
                             prefs.edit { putBoolean("pure_black", v) }
+                        },
+                        dynamicTheme = dynamicTheme,
+                        onToggleDynamicTheme = { v ->
+                            dynamicTheme = v
+                            prefs.edit { putBoolean("dynamic_theme", v) }
                         },
                         accentColor = accentColor,
                         onSelectAccent = { a ->

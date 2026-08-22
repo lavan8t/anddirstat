@@ -162,15 +162,20 @@ fun ExplorerView(
 
                             Box(
                                 contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                                    }
                             ) {
                                 if (appPkg != null) {
                                     AppIconView(
                                         packageName = appPkg,
                                         contentDescription = child.name,
                                         modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .size(28.dp)
+                                            .clip(RoundedCornerShape(6.dp))
                                     )
                                 } else {
                                     Icon(
@@ -222,16 +227,6 @@ fun ExplorerView(
                             )
                         }
                     },
-                    trailingContent = if (selectedNodes.isNotEmpty()) {
-                        {
-                            Checkbox(
-                                checked = isSelected,
-                                onCheckedChange = {
-                                    selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
-                                }
-                            )
-                        }
-                    } else null,
                     colors = ListItemDefaults.colors(
                         containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent
                     ),

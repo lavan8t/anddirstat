@@ -41,7 +41,7 @@ enum class AppTheme(val key: String, val title: String) {
     DARK("dark", "Dark")
 }
 
-// Accent colors — Android Green is default, Neon palette for AMOLED
+// Accent colors — vibrant seed palettes
 enum class AccentColor(
     val key: String,
     val label: String,
@@ -292,6 +292,7 @@ val Material3Typography = Typography(
 fun AndDirStatTheme(
     appTheme: AppTheme = AppTheme.SYSTEM,
     pureBlack: Boolean = false,
+    dynamicTheme: Boolean = true,
     accentColor: AccentColor = AccentColor.GREEN,
     content: @Composable () -> Unit
 ) {
@@ -302,80 +303,85 @@ fun AndDirStatTheme(
         AppTheme.DARK -> true
     }
 
-    // Official Google material-color-utilities: generates vibrant dynamic scheme
-    val seed = accentColor.seed.toArgb()
-    val hct = Hct.fromInt(seed)
-    val dynamicScheme = SchemeVibrant(hct, isDark, 0.0)
-    val dyn = MaterialDynamicColors()
-
-    val base = if (isDark) {
-        darkColorScheme(
-            primary = Color(dyn.primary().getArgb(dynamicScheme)),
-            onPrimary = Color(dyn.onPrimary().getArgb(dynamicScheme)),
-            primaryContainer = Color(dyn.primaryContainer().getArgb(dynamicScheme)),
-            onPrimaryContainer = Color(dyn.onPrimaryContainer().getArgb(dynamicScheme)),
-            secondary = Color(dyn.secondary().getArgb(dynamicScheme)),
-            onSecondary = Color(dyn.onSecondary().getArgb(dynamicScheme)),
-            secondaryContainer = Color(dyn.secondaryContainer().getArgb(dynamicScheme)),
-            onSecondaryContainer = Color(dyn.onSecondaryContainer().getArgb(dynamicScheme)),
-            tertiary = Color(dyn.tertiary().getArgb(dynamicScheme)),
-            onTertiary = Color(dyn.onTertiary().getArgb(dynamicScheme)),
-            tertiaryContainer = Color(dyn.tertiaryContainer().getArgb(dynamicScheme)),
-            onTertiaryContainer = Color(dyn.onTertiaryContainer().getArgb(dynamicScheme)),
-            error = Color(dyn.error().getArgb(dynamicScheme)),
-            onError = Color(dyn.onError().getArgb(dynamicScheme)),
-            errorContainer = Color(dyn.errorContainer().getArgb(dynamicScheme)),
-            onErrorContainer = Color(dyn.onErrorContainer().getArgb(dynamicScheme)),
-            background = Color(dyn.background().getArgb(dynamicScheme)),
-            onBackground = Color(dyn.onBackground().getArgb(dynamicScheme)),
-            surface = Color(dyn.surface().getArgb(dynamicScheme)),
-            onSurface = Color(dyn.onSurface().getArgb(dynamicScheme)),
-            surfaceVariant = Color(dyn.surfaceVariant().getArgb(dynamicScheme)),
-            onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
-            outline = Color(dyn.outline().getArgb(dynamicScheme)),
-            outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
-            surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
-            surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
-            surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
-            surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
-            inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
-            inverseOnSurface = Color(dyn.inverseOnSurface().getArgb(dynamicScheme)),
-            inversePrimary = Color(dyn.inversePrimary().getArgb(dynamicScheme)),
-        )
+    val context = LocalContext.current
+    val base = if (dynamicTheme && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
-        lightColorScheme(
-            primary = Color(dyn.primary().getArgb(dynamicScheme)),
-            onPrimary = Color(dyn.onPrimary().getArgb(dynamicScheme)),
-            primaryContainer = Color(dyn.primaryContainer().getArgb(dynamicScheme)),
-            onPrimaryContainer = Color(dyn.onPrimaryContainer().getArgb(dynamicScheme)),
-            secondary = Color(dyn.secondary().getArgb(dynamicScheme)),
-            onSecondary = Color(dyn.onSecondary().getArgb(dynamicScheme)),
-            secondaryContainer = Color(dyn.secondaryContainer().getArgb(dynamicScheme)),
-            onSecondaryContainer = Color(dyn.onSecondaryContainer().getArgb(dynamicScheme)),
-            tertiary = Color(dyn.tertiary().getArgb(dynamicScheme)),
-            onTertiary = Color(dyn.onTertiary().getArgb(dynamicScheme)),
-            tertiaryContainer = Color(dyn.tertiaryContainer().getArgb(dynamicScheme)),
-            onTertiaryContainer = Color(dyn.onTertiaryContainer().getArgb(dynamicScheme)),
-            error = Color(dyn.error().getArgb(dynamicScheme)),
-            onError = Color(dyn.onError().getArgb(dynamicScheme)),
-            errorContainer = Color(dyn.errorContainer().getArgb(dynamicScheme)),
-            onErrorContainer = Color(dyn.onErrorContainer().getArgb(dynamicScheme)),
-            background = Color(dyn.background().getArgb(dynamicScheme)),
-            onBackground = Color(dyn.onBackground().getArgb(dynamicScheme)),
-            surface = Color(dyn.surface().getArgb(dynamicScheme)),
-            onSurface = Color(dyn.onSurface().getArgb(dynamicScheme)),
-            surfaceVariant = Color(dyn.surfaceVariant().getArgb(dynamicScheme)),
-            onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
-            outline = Color(dyn.outline().getArgb(dynamicScheme)),
-            outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
-            surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
-            surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
-            surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
-            surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
-            inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
-            inverseOnSurface = Color(dyn.inverseOnSurface().getArgb(dynamicScheme)),
-            inversePrimary = Color(dyn.inversePrimary().getArgb(dynamicScheme)),
-        )
+        // Official Google material-color-utilities: generates vibrant dynamic scheme
+        val seed = accentColor.seed.toArgb()
+        val hct = Hct.fromInt(seed)
+        val dynamicScheme = SchemeVibrant(hct, isDark, 0.0)
+        val dyn = MaterialDynamicColors()
+
+        if (isDark) {
+            darkColorScheme(
+                primary = Color(dyn.primary().getArgb(dynamicScheme)),
+                onPrimary = Color(dyn.onPrimary().getArgb(dynamicScheme)),
+                primaryContainer = Color(dyn.primaryContainer().getArgb(dynamicScheme)),
+                onPrimaryContainer = Color(dyn.onPrimaryContainer().getArgb(dynamicScheme)),
+                secondary = Color(dyn.secondary().getArgb(dynamicScheme)),
+                onSecondary = Color(dyn.onSecondary().getArgb(dynamicScheme)),
+                secondaryContainer = Color(dyn.secondaryContainer().getArgb(dynamicScheme)),
+                onSecondaryContainer = Color(dyn.onSecondaryContainer().getArgb(dynamicScheme)),
+                tertiary = Color(dyn.tertiary().getArgb(dynamicScheme)),
+                onTertiary = Color(dyn.onTertiary().getArgb(dynamicScheme)),
+                tertiaryContainer = Color(dyn.tertiaryContainer().getArgb(dynamicScheme)),
+                onTertiaryContainer = Color(dyn.onTertiaryContainer().getArgb(dynamicScheme)),
+                error = Color(dyn.error().getArgb(dynamicScheme)),
+                onError = Color(dyn.onError().getArgb(dynamicScheme)),
+                errorContainer = Color(dyn.errorContainer().getArgb(dynamicScheme)),
+                onErrorContainer = Color(dyn.onErrorContainer().getArgb(dynamicScheme)),
+                background = Color(dyn.background().getArgb(dynamicScheme)),
+                onBackground = Color(dyn.onBackground().getArgb(dynamicScheme)),
+                surface = Color(dyn.surface().getArgb(dynamicScheme)),
+                onSurface = Color(dyn.onSurface().getArgb(dynamicScheme)),
+                surfaceVariant = Color(dyn.surfaceVariant().getArgb(dynamicScheme)),
+                onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
+                outline = Color(dyn.outline().getArgb(dynamicScheme)),
+                outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
+                surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
+                surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
+                surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
+                surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
+                inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
+                inverseOnSurface = Color(dyn.inverseOnSurface().getArgb(dynamicScheme)),
+                inversePrimary = Color(dyn.inversePrimary().getArgb(dynamicScheme)),
+            )
+        } else {
+            lightColorScheme(
+                primary = Color(dyn.primary().getArgb(dynamicScheme)),
+                onPrimary = Color(dyn.onPrimary().getArgb(dynamicScheme)),
+                primaryContainer = Color(dyn.primaryContainer().getArgb(dynamicScheme)),
+                onPrimaryContainer = Color(dyn.onPrimaryContainer().getArgb(dynamicScheme)),
+                secondary = Color(dyn.secondary().getArgb(dynamicScheme)),
+                onSecondary = Color(dyn.onSecondary().getArgb(dynamicScheme)),
+                secondaryContainer = Color(dyn.secondaryContainer().getArgb(dynamicScheme)),
+                onSecondaryContainer = Color(dyn.onSecondaryContainer().getArgb(dynamicScheme)),
+                tertiary = Color(dyn.tertiary().getArgb(dynamicScheme)),
+                onTertiary = Color(dyn.onTertiary().getArgb(dynamicScheme)),
+                tertiaryContainer = Color(dyn.tertiaryContainer().getArgb(dynamicScheme)),
+                onTertiaryContainer = Color(dyn.onTertiaryContainer().getArgb(dynamicScheme)),
+                error = Color(dyn.error().getArgb(dynamicScheme)),
+                onError = Color(dyn.onError().getArgb(dynamicScheme)),
+                errorContainer = Color(dyn.errorContainer().getArgb(dynamicScheme)),
+                onErrorContainer = Color(dyn.onErrorContainer().getArgb(dynamicScheme)),
+                background = Color(dyn.background().getArgb(dynamicScheme)),
+                onBackground = Color(dyn.onBackground().getArgb(dynamicScheme)),
+                surface = Color(dyn.surface().getArgb(dynamicScheme)),
+                onSurface = Color(dyn.onSurface().getArgb(dynamicScheme)),
+                surfaceVariant = Color(dyn.surfaceVariant().getArgb(dynamicScheme)),
+                onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
+                outline = Color(dyn.outline().getArgb(dynamicScheme)),
+                outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
+                surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
+                surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
+                surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
+                surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
+                inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
+                inverseOnSurface = Color(dyn.inverseOnSurface().getArgb(dynamicScheme)),
+                inversePrimary = Color(dyn.inversePrimary().getArgb(dynamicScheme)),
+            )
+        }
     }
 
     val colorScheme = if (isDark && pureBlack) {

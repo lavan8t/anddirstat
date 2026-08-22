@@ -35,8 +35,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.os.Build
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +58,8 @@ fun SettingsView(
     onSelectTheme: (AppTheme) -> Unit,
     pureBlack: Boolean,
     onTogglePureBlack: (Boolean) -> Unit,
+    dynamicTheme: Boolean,
+    onToggleDynamicTheme: (Boolean) -> Unit,
     accentColor: AccentColor,
     onSelectAccent: (AccentColor) -> Unit,
     modifier: Modifier = Modifier
@@ -188,37 +193,103 @@ fun SettingsView(
             )
         }
 
-        // All accent colors as large vibrant circles — shows actual generated color
+        // Card 1: Dynamic Theme Toggle Card
         item {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+            val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            val textColor = if (isDynamicSupported) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+
+            Surface(
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
             ) {
-                items(AccentColor.entries) { ac ->
-                    val isSelected = accentColor == ac
-                    val actualColor = ac.getActualColor(isDarkActive)
-                    Box(
-                        modifier = Modifier
-                            .size(if (isSelected) 54.dp else 46.dp)
-                            .clip(CircleShape)
-                            .background(actualColor)
-                            .then(
-                                if (isSelected) Modifier.border(
-                                    3.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape
-                                ) else Modifier
-                            )
-                            .clickable { onSelectAccent(ac) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isSelected) {
-                            MaterialSymbol(
-                                name = "check",
-                                active = true,
-                                size = 24.dp,
-                                tint = if (isDarkActive) Color.Black else Color.White
-                            )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = isDynamicSupported) { onToggleDynamicTheme(!dynamicTheme) }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Dynamic color",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = textColor
+                        )
+                        Text(
+                            text = if (isDynamicSupported) "Material You wallpaper theming" else "Requires Android 12+",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDynamicSupported) 0.8f else 0.4f)
+                        )
+                    }
+                    Switch(
+                        checked = dynamicTheme && isDynamicSupported,
+                        onCheckedChange = onToggleDynamicTheme,
+                        enabled = isDynamicSupported,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
+
+        // Card 2: Custom Accent Colors Row (greyed out when dynamic theming is active)
+        item {
+            val isCustomActive = !dynamicTheme || Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+
+            Surface(
+                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = if (isCustomActive) 1.0f else 0.35f
+                        }
+                ) {
+                    items(AccentColor.entries) { ac ->
+                        val isSelected = isCustomActive && accentColor == ac
+                        val actualColor = ac.getActualColor(isDarkActive)
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (isSelected) Modifier.border(
+                                        2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape
+                                    ) else Modifier
+                                )
+                                .padding(if (isSelected) 3.5.dp else 0.dp)
+                                .clip(CircleShape)
+                                .background(actualColor)
+                                .clickable(enabled = isCustomActive) { onSelectAccent(ac) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                MaterialSymbol(
+                                    name = "check",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = if (isDarkActive) Color.Black else Color.White
+                                )
+                            }
                         }
                     }
                 }
