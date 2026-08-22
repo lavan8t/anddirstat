@@ -363,23 +363,6 @@ fun MainApp() {
         }
     }
 
-    PredictiveBackHandler(enabled = currentRoute == AppDestinations.EXPLORER && explorerStack.isNotEmpty()) { progress ->
-        try {
-            isPredictiveBackActive = true
-            progress.collect { backEvent ->
-                predictiveBackProgress = backEvent.progress
-            }
-            val prev = explorerStack.last()
-            explorerStack = explorerStack.dropLast(1)
-            explorerNode = prev.node
-            explorerPath = prev.path
-        } catch (_: CancellationException) {
-        } finally {
-            isPredictiveBackActive = false
-            predictiveBackProgress = 0f
-        }
-    }
-
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -510,38 +493,9 @@ fun MainApp() {
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             )
                         },
-                        navigationIcon = {
-                            if (explorerStack.isNotEmpty()) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier
-                                        .padding(start = 12.dp, end = 4.dp)
-                                        .size(38.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = {
-                                            val prev = explorerStack.last()
-                                            explorerStack = explorerStack.dropLast(1)
-                                            explorerNode = prev.node
-                                            explorerPath = prev.path
-                                        },
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "arrow_back",
-                                            active = true,
-                                            size = 20.dp,
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                            titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -884,27 +838,11 @@ fun MainApp() {
                             }
                             AppDestinations.EXPLORER -> {
                                 ExplorerView(
-                                    currentNode = explorerNode ?: rootNode!!,
-                                    currentPath = explorerPath,
-                                    canGoBack = explorerStack.isNotEmpty(),
-                                    onNavigateBack = {
-                                        if (explorerStack.isNotEmpty()) {
-                                            val prev = explorerStack.last()
-                                            explorerStack = explorerStack.dropLast(1)
-                                            explorerNode = prev.node
-                                            explorerPath = prev.path
-                                        }
-                                    },
+                                    rootNode = rootNode!!,
                                     onNodeClick = { child, childPath ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        if (child.isDirectory && child.children != null && child.children!!.isNotEmpty()) {
-                                            explorerStack = explorerStack + NavEntry(explorerNode ?: rootNode!!, explorerPath)
-                                            explorerNode = child
-                                            explorerPath = childPath
-                                        } else {
-                                            selectedNode = child
-                                            selectedPath = childPath
-                                        }
+                                        selectedNode = child
+                                        selectedPath = childPath
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )

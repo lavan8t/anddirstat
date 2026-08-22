@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -23,11 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -58,20 +57,52 @@ import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FileUtils
 import java.util.Locale
 
+data class ExplorerTreeRow(
+    val node: CompactNode,
+    val path: String,
+    val depth: Int,
+    val isExpanded: Boolean,
+    val hasChildren: Boolean,
+    val parentSize: Long
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExplorerView(
-    currentNode: CompactNode,
-    currentPath: String,
-    canGoBack: Boolean,
-    onNavigateBack: () -> Unit,
+    rootNode: CompactNode,
     onNodeClick: (CompactNode, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val children = currentNode.children ?: emptyArray()
-    val parentSize = currentNode.size.toDouble()
-    var selectedNodes by remember(currentNode) { mutableStateOf(setOf<CompactNode>()) }
+    var expandedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
+    var selectedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
     val isDark = isSystemInDarkTheme()
+
+    fun flattenTree(
+        parent: CompactNode,
+        parentPath: String,
+        depth: Int,
+        outList: ArrayList<ExplorerTreeRow>
+    ) {
+        val children = parent.children ?: return
+        val valid = children.filter { it.size > 0L }.sortedByDescending { it.size }
+        for (child in valid) {
+            val childPath = if (parentPath == "Device Storage") child.name
+                else if (parentPath.endsWith("/")) "$parentPath${child.name}"
+                else "$parentPath/${child.name}"
+            val isDirWithChildren = child.isDirectory && child.children?.isNotEmpty() == true
+            val isExpanded = expandedNodes.contains(child)
+            outList.add(ExplorerTreeRow(child, childPath, depth, isExpanded, isDirWithChildren, parent.size))
+            if (isDirWithChildren && isExpanded) {
+                flattenTree(child, childPath, depth + 1, outList)
+            }
+        }
+    }
+
+    val visibleRows = remember(rootNode, expandedNodes) {
+        val list = ArrayList<ExplorerTreeRow>(128)
+        flattenTree(rootNode, rootNode.name, 0, list)
+        list
+    }
 
     BackHandler(enabled = selectedNodes.isNotEmpty()) {
         selectedNodes = emptySet()
@@ -84,49 +115,13 @@ fun ExplorerView(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (canGoBack && selectedNodes.isEmpty()) {
-                item(key = "__parent_dir__") {
-                    ListItem(
-                        leadingContent = {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                        contentDescription = "Parent",
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        },
-                        headlineContent = {
-                            Text(
-                                text = ".. Parent Directory",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.combinedClickable(
-                            onClick = { onNavigateBack() },
-                            onLongClick = null
-                        )
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-            }
-
-            itemsIndexed(
-                items = children,
-                key = { index, item -> "${item.name}_$index" }
-            ) { _, child ->
-                val fraction = if (parentSize > 0.0) (child.size.toDouble() / parentSize).coerceIn(0.0, 1.0) else 0.0
+            items(
+                items = visibleRows,
+                key = { "${it.path}_${it.depth}" }
+            ) { row ->
+                val child = row.node
+                val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
                 val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
-                val childPath = if (currentPath == "Device Storage") child.name else if (currentPath.endsWith("/")) "$currentPath${child.name}" else "$currentPath/${child.name}"
                 val isApp = child.children?.any { it.name.startsWith("App Code") } == true
                 val appPkg = if (isApp) FileUtils.extractPackageName(child) else null
                 val icon = FileUtils.getNodeIcon(child, isApp)
@@ -134,25 +129,53 @@ fun ExplorerView(
 
                 ListItem(
                     leadingContent = {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(36.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (appPkg != null) {
-                                AppIconView(
-                                    packageName = appPkg,
-                                    contentDescription = child.name,
+                            if (row.depth > 0) {
+                                Spacer(modifier = Modifier.width((row.depth * 18).dp))
+                            }
+
+                            if (row.hasChildren) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                )
+                                        .size(28.dp)
+                                        .clickable {
+                                            expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
+                                        }
+                                ) {
+                                    MaterialSymbol(
+                                        name = if (row.isExpanded) "expand_more" else "chevron_right",
+                                        active = true,
+                                        size = 20.dp,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             } else {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = childColor,
-                                    modifier = Modifier.size(28.dp)
-                                )
+                                Spacer(modifier = Modifier.width(28.dp))
+                            }
+
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                if (appPkg != null) {
+                                    AppIconView(
+                                        packageName = appPkg,
+                                        contentDescription = child.name,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = childColor,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
                             }
                         }
                     },
@@ -187,7 +210,7 @@ fun ExplorerView(
                                 progress = { fraction.toFloat() },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(5.dp)
+                                    .height(4.dp)
                                     .clip(CircleShape),
                                 color = childColor,
                                 trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -213,15 +236,23 @@ fun ExplorerView(
                             if (selectedNodes.isNotEmpty()) {
                                 selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
                             } else {
-                                onNodeClick(child, childPath)
+                                if (row.hasChildren) {
+                                    expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
+                                } else {
+                                    onNodeClick(child, row.path)
+                                }
                             }
                         },
                         onLongClick = {
-                            selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                            if (row.hasChildren) {
+                                onNodeClick(child, row.path)
+                            } else {
+                                selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                            }
                         }
                     )
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
             }
         }
 
@@ -276,11 +307,11 @@ fun ExplorerView(
                     }
                     TextButton(
                         onClick = {
-                            selectedNodes = if (selectedNodes.size == children.size) emptySet() else children.toSet()
+                            selectedNodes = emptySet()
                         }
                     ) {
                         Text(
-                            text = if (selectedNodes.size == children.size) "Deselect" else "Select All",
+                            text = "Clear",
                             fontWeight = FontWeight.Bold
                         )
                     }

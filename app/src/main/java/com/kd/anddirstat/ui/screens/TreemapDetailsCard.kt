@@ -163,23 +163,28 @@ fun ExpressiveNodeDetailsSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            val isSpecialNode = nameLower == "[system & os]" || nameLower == "system & os" ||
+                                nameLower == "[free space]" || nameLower == "free space"
 
-            Surface(
-                shape = CircleShape,
-                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.size(44.dp)
-            ) {
-                IconButton(
-                    onClick = onToggleSelect,
-                    modifier = Modifier.fillMaxSize()
+            if (!isSpecialNode) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Surface(
+                    shape = CircleShape,
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    MaterialSymbol(
-                        name = if (isSelected) "check_circle" else "check_circle_outline",
-                        active = isSelected,
-                        size = 24.dp,
-                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    IconButton(
+                        onClick = onToggleSelect,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        MaterialSymbol(
+                            name = if (isSelected) "check_circle" else "check_circle_outline",
+                            active = isSelected,
+                            size = 24.dp,
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
