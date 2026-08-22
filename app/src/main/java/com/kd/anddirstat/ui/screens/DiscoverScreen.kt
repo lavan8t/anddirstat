@@ -415,6 +415,33 @@ fun DiscoverView(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            if (pkgName != null) {
+                                val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
+                                if (launchIntent != null) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                try {
+                                                    context.startActivity(launchIntent)
+                                                } catch (_: Exception) {}
+                                            }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            MaterialSymbol(
+                                                name = "open_in_new",
+                                                active = true,
+                                                size = 18.dp,
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             Surface(
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest,

@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -59,6 +60,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -176,6 +178,7 @@ fun MainApp() {
         var currentScale by remember { mutableStateOf(1f) }
         var resetZoomKey by remember { mutableStateOf(0) }
         var discoverSearchQuery by remember { mutableStateOf("") }
+        var selectedTreeNodes by remember { mutableStateOf(setOf<CompactNode>()) }
 
         fun applyFilter(freeSpace: Boolean, systemApps: Boolean, hiddenFiles: Boolean = showHiddenFiles) {
             val raw = rawScannedNode ?: return
@@ -339,6 +342,20 @@ fun MainApp() {
             }
             selectedNode = null
             selectedPath = null
+        } catch (_: CancellationException) {
+        } finally {
+            isPredictiveBackActive = false
+            predictiveBackProgress = 0f
+        }
+    }
+
+    PredictiveBackHandler(enabled = selectedTreeNodes.isNotEmpty() && currentRoute == AppDestinations.TREE && selectedNode == null) { progress ->
+        try {
+            isPredictiveBackActive = true
+            progress.collect { backEvent ->
+                predictiveBackProgress = backEvent.progress
+            }
+            selectedTreeNodes = emptySet()
         } catch (_: CancellationException) {
         } finally {
             isPredictiveBackActive = false
@@ -721,6 +738,7 @@ fun MainApp() {
                             rootNode = rootNode!!,
                             rootPath = rootNode!!.name,
                             selectedNode = selectedNode,
+                            selectedNodes = selectedTreeNodes,
                             resetKey = resetZoomKey,
                             isDark = isDark,
                             pureBlack = pureBlack,
@@ -731,6 +749,66 @@ fun MainApp() {
                             },
                         )
 
+                        // Floating Selection Bar for Treemap
+                        AnimatedVisibility(
+                            visible = selectedTreeNodes.isNotEmpty() && currentRoute == AppDestinations.TREE,
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 96.dp, start = 16.dp, end = 16.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(24.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shadowElevation = 8.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = { selectedTreeNodes = emptySet() },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "close",
+                                                active = true,
+                                                size = 20.dp,
+                                                tint = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "${selectedTreeNodes.size} selected",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = FileUtils.formatFileSize(selectedTreeNodes.sumOf { it.size }),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    TextButton(
+                                        onClick = { selectedTreeNodes = emptySet() }
+                                    ) {
+                                        Text(
+                                            text = "Clear",
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Universal file/app details ModalBottomSheet
@@ -750,11 +828,22 @@ fun MainApp() {
                             ExpressiveNodeDetailsSheet(
                                 node = selectedNode!!,
                                 path = selectedPath!!,
+                                isSelected = selectedTreeNodes.contains(selectedNode),
+                                onToggleSelect = {
+                                    val n = selectedNode
+                                    if (n != null) {
+                                        selectedTreeNodes = if (selectedTreeNodes.contains(n)) selectedTreeNodes - n else selectedTreeNodes + n
+                                    }
+                                },
                                 onDismiss = {
                                     selectedNode = null
                                     selectedPath = null
                                 },
                                 onDeleted = {
+                                    val n = selectedNode
+                                    if (n != null) {
+                                        selectedTreeNodes = selectedTreeNodes - n
+                                    }
                                     selectedNode = null
                                     selectedPath = null
                                     triggerScan()

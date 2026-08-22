@@ -199,6 +199,7 @@ fun TreemapCanvas(
     rootNode: CompactNode,
     rootPath: String,
     selectedNode: CompactNode?,
+    selectedNodes: Set<CompactNode> = emptySet(),
     resetKey: Int = 0,
     isDark: Boolean = true,
     pureBlack: Boolean = false,
@@ -334,6 +335,22 @@ fun TreemapCanvas(
                 topLeft = Offset(sLeft, sTop),
                 size = Size(drawW, drawH)
             )
+
+            val isMarked = selectedNodes.contains(tile.node)
+            if (isMarked) {
+                // Marked selection tint + border
+                drawRect(
+                    color = Color(0x6600E676),
+                    topLeft = Offset(sLeft, sTop),
+                    size = Size(drawW, drawH)
+                )
+                drawRect(
+                    color = Color(0xFF00E676),
+                    topLeft = Offset(sLeft, sTop),
+                    size = Size(drawW, drawH),
+                    style = Stroke(width = if (currentScale > 1.5f) 3.5f else 2.5f)
+                )
+            }
 
             if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
                 val bmp = AppIconCache.get(context, tile.pkgName)

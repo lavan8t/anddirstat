@@ -26,6 +26,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import androidx.core.view.WindowCompat
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.screens.SettingsView
 
@@ -34,6 +35,7 @@ class SettingsActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
         setContent {
             val prefs = remember { getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
             val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key

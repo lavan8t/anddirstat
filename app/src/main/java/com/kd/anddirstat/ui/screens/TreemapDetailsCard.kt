@@ -46,6 +46,8 @@ import java.util.Locale
 fun ExpressiveNodeDetailsSheet(
     node: CompactNode,
     path: String,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onDismiss: () -> Unit,
     onDeleted: () -> Unit,
     modifier: Modifier = Modifier
@@ -154,17 +156,37 @@ fun ExpressiveNodeDetailsSheet(
                 if (dateFormatted != null) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Modified: $dateFormatted",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        text = dateFormatted,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Surface(
+                shape = CircleShape,
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.size(44.dp)
+            ) {
+                IconButton(
+                    onClick = onToggleSelect,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    MaterialSymbol(
+                        name = if (isSelected) "check_circle" else "check_circle_outline",
+                        active = isSelected,
+                        size = 24.dp,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // Total Size Banner (No exact bytes, no pills)
+        // Total Size Card
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -179,14 +201,13 @@ fun ExpressiveNodeDetailsSheet(
             ) {
                 Text(
                     text = "Total Size",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = FileUtils.formatFileSize(node.size),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Black,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -218,12 +239,32 @@ fun ExpressiveNodeDetailsSheet(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Action Buttons — Icons only (no cancel, no cross/close button)
+        // Action Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             if (isAppNode && pkgName != null) {
+                val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
+                if (launchIntent != null) {
+                    IconButton(
+                        onClick = {
+                            try {
+                                context.startActivity(launchIntent)
+                                onDismiss()
+                            } catch (_: Exception) {}
+                        },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
+
                 IconButton(
                     onClick = {
                         try {
@@ -233,14 +274,32 @@ fun ExpressiveNodeDetailsSheet(
                         } catch (_: Exception) {}
                     },
                     colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     ),
                     modifier = Modifier.size(52.dp)
                 ) {
-                    MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                    MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+
+                IconButton(
+                    onClick = {
+                        try {
+                            val uninstallIntent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkgName"))
+                            context.startActivity(uninstallIntent)
+                            onDismiss()
+                        } catch (_: Exception) {}
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
                 }
             }
+
             if (isRealFile && !realFile!!.isDirectory) {
                 IconButton(
                     onClick = {
