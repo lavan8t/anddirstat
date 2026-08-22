@@ -425,32 +425,7 @@ fun MainApp() {
                     )
                 }
                 AppDestinations.DISCOVER -> {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Discover",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                            )
-                        },
-                        actions = {
-                            IconButton(
-                                onClick = { triggerScan() },
-                                enabled = !isLoading && hasStoragePermission
-                            ) {
-                                MaterialSymbol(
-                                    name = "refresh",
-                                    active = true,
-                                    size = 20.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
+                    // DiscoverView has its own pinned SearchBar anchor
                 }
                 AppDestinations.SETTINGS -> {
                     TopAppBar(

@@ -5,6 +5,13 @@ import com.kd.anddirstat.model.ExtensionStat
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.treemap.getNodeColor
 
+data class StorageCategorySummary(
+    val name: String,
+    val totalSize: Long,
+    val fileCount: Int,
+    val samplePath: String
+)
+
 object StorageFilterHelper {
 
     fun filterStorageTree(
@@ -134,5 +141,90 @@ object StorageFilterHelper {
         }
         collect(rootNode, rootNode.name)
         return list.sortedByDescending { it.node.size }.take(limit)
+    }
+
+    fun findPrimaryCategory(rootNode: CompactNode): StorageCategorySummary {
+        val stats = aggregateExtensionStats(rootNode).filter {
+            it.extension != "[Free Space]" && it.extension != "[System & OS]"
+        }
+
+        var videoSize = 0L; var videoCount = 0
+        var imageSize = 0L; var imageCount = 0
+        var audioSize = 0L; var audioCount = 0
+        var appSize = 0L; var appCount = 0
+        var archiveSize = 0L; var archiveCount = 0
+        var docSize = 0L; var docCount = 0
+
+        stats.forEach { stat ->
+            when (stat.category) {
+                "Video" -> { videoSize += stat.totalSize; videoCount += stat.count }
+                "Image" -> { imageSize += stat.totalSize; imageCount += stat.count }
+                "Audio" -> { audioSize += stat.totalSize; audioCount += stat.count }
+                "App Package", "App Cache", "App Data" -> { appSize += stat.totalSize; appCount += stat.count }
+                "Archive" -> { archiveSize += stat.totalSize; archiveCount += stat.count }
+                "Document" -> { docSize += stat.totalSize; docCount += stat.count }
+            }
+        }
+
+        val categories = listOf(
+            StorageCategorySummary("Videos & Movies", videoSize, videoCount, "Movies"),
+            StorageCategorySummary("Applications & Data", appSize, appCount, "Apps & System Packages"),
+            StorageCategorySummary("Photos & Images", imageSize, imageCount, "DCIM"),
+            StorageCategorySummary("Downloads & Archives", archiveSize, archiveCount, "Download"),
+            StorageCategorySummary("Audio & Music", audioSize, audioCount, "Music"),
+            StorageCategorySummary("Documents & Notes", docSize, docCount, "Documents")
+        )
+
+        return categories.maxByOrNull { it.totalSize } ?: StorageCategorySummary("Media & Files", rootNode.size, 1, "Files")
+    }
+
+    fun filterByPreset(rootNode: CompactNode, preset: String): List<TopFileEntry> {
+        val allFiles = aggregateTopFiles(rootNode, limit = 500)
+        return when (preset) {
+            "> 1 GB" -> allFiles.filter { it.node.size >= 1024L * 1024L * 1024L }
+            "Duplicates" -> {
+                val grouped = allFiles.groupBy { "${it.node.name}_${it.node.size}" }
+                grouped.filter { it.value.size > 1 }.values.flatten()
+            }
+            "Old Downloads" -> allFiles.filter { it.path.contains("Download", ignoreCase = true) }
+            "APKs" -> allFiles.filter {
+                val n = it.node.name.lowercase()
+                n.endsWith(".apk") || n.endsWith(".xapk") || n.endsWith(".apks") || n.endsWith(".apkm") || n.startsWith("app code")
+            }
+            else -> allFiles
+        }
+    }
+
+    fun searchTree(rootNode: CompactNode, rawQuery: String): List<TopFileEntry> {
+        val query = rawQuery.trim()
+        if (query.isEmpty()) return emptyList()
+
+        val allFiles = aggregateTopFiles(rootNode, limit = 1000)
+
+        // Check size threshold query: e.g. "> 100MB", "> 1GB", "> 500M"
+        if (query.startsWith(">") || query.startsWith("<")) {
+            val isGreater = query.startsWith(">")
+            val numStr = query.substring(1).trim().lowercase()
+            val multiplier = when {
+                numStr.endsWith("gb") || numStr.endsWith("g") -> 1024L * 1024L * 1024L
+                numStr.endsWith("mb") || numStr.endsWith("m") -> 1024L * 1024L
+                numStr.endsWith("kb") || numStr.endsWith("k") -> 1024L
+                else -> 1L
+            }
+            val numPart = numStr.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+            val targetBytes = (numPart * multiplier).toLong()
+            return if (isGreater) {
+                allFiles.filter { it.node.size >= targetBytes }
+            } else {
+                allFiles.filter { it.node.size <= targetBytes }
+            }
+        }
+
+        // Extension or name query
+        val cleanQuery = query.removePrefix(".").lowercase()
+        return allFiles.filter {
+            it.node.name.contains(cleanQuery, ignoreCase = true) ||
+            it.path.contains(cleanQuery, ignoreCase = true)
+        }
     }
 }
