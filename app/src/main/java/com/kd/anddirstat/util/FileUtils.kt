@@ -109,4 +109,17 @@ object FileUtils {
             else -> Icons.AutoMirrored.Outlined.InsertDriveFile
         }
     }
+
+    fun getExtensionIcon(extension: String): ImageVector {
+        val ext = extension.lowercase().removePrefix(".")
+        return when (ext) {
+            "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> Icons.Outlined.Movie
+            "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> Icons.Outlined.MusicNote
+            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" -> Icons.Outlined.Image
+            "apk", "apks", "xapk", "apkm", "obb", "aab" -> Icons.Outlined.Apps
+            "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" -> Icons.Outlined.Description
+            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" -> Icons.Outlined.Archive
+            else -> Icons.AutoMirrored.Outlined.InsertDriveFile
+        }
+    }
 }

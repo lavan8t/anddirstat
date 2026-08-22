@@ -15,15 +15,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +41,14 @@ fun FileTypesView(
     totalDeviceSize: Long,
     modifier: Modifier = Modifier
 ) {
+    val visibleStats = remember(stats) {
+        stats.filter {
+            val name = it.extension.lowercase().trim()
+            name != "[system & os]" && name != "system & os" &&
+            name != "[free space]" && name != "free space"
+        }
+    }
+
     LazyColumn(
         contentPadding = PaddingValues(vertical = 8.dp),
         modifier = modifier
@@ -48,27 +56,25 @@ fun FileTypesView(
             .background(MaterialTheme.colorScheme.background)
     ) {
         itemsIndexed(
-            items = stats,
+            items = visibleStats,
             key = { index, item -> "${item.extension}_$index" }
         ) { _, stat ->
             val percent = if (totalDeviceSize > 0L) (stat.totalSize.toDouble() / totalDeviceSize.toDouble() * 100.0) else 0.0
             val fraction = (percent / 100.0).coerceIn(0.0, 1.0)
+            val icon = remember(stat.extension) { FileUtils.getExtensionIcon(stat.extension) }
 
             ListItem(
                 leadingContent = {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = stat.color.copy(alpha = 0.18f),
-                        modifier = Modifier.size(42.dp)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = stat.extension.take(4).uppercase(),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = stat.color
-                            )
-                        }
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = stat.extension,
+                            tint = stat.color,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 },
                 headlineContent = {

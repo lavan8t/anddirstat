@@ -106,28 +106,25 @@ fun ExplorerView(
 
             ListItem(
                 leadingContent = {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = childColor.copy(alpha = 0.16f),
-                        modifier = Modifier.size(42.dp)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            if (appPkg != null) {
-                                AppIconView(
-                                    packageName = appPkg,
-                                    contentDescription = child.name,
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = childColor,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                        if (appPkg != null) {
+                            AppIconView(
+                                packageName = appPkg,
+                                contentDescription = child.name,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = childColor,
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
                     }
                 },

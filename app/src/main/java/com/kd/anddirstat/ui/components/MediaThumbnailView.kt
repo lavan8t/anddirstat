@@ -120,27 +120,17 @@ fun MediaThumbnailView(
             modifier = modifier.fillMaxSize()
         )
     } else {
-        // Material theme semantic fallback
+        // Material theme semantic fallback (no bg fill, clean icon)
         Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(fallbackTint.copy(alpha = 0.12f)),
+            modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Surface(
-                shape = CircleShape,
-                color = fallbackTint.copy(alpha = 0.20f),
-                modifier = Modifier.size(52.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = FileUtils.getNodeIcon(node, false),
-                        contentDescription = null,
-                        tint = fallbackTint,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
+            Icon(
+                imageVector = FileUtils.getNodeIcon(node, false),
+                contentDescription = null,
+                tint = fallbackTint,
+                modifier = Modifier.size(36.dp)
+            )
         }
     }
 }

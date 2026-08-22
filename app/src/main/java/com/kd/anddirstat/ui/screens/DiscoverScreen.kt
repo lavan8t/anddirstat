@@ -133,19 +133,16 @@ fun DiscoverView(
                 ) { entry ->
                     ListItem(
                         leadingContent = {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                                modifier = Modifier.size(42.dp)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.size(36.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = FileUtils.getNodeIcon(entry.node, false),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = FileUtils.getNodeIcon(entry.node, false),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
                         },
                         headlineContent = {

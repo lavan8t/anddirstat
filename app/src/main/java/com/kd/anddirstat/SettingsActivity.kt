@@ -80,7 +80,7 @@ class SettingsActivity : ComponentActivity() {
                                         MaterialSymbol(
                                             name = "arrow_back",
                                             active = true,
-                                            size = 20.dp,
+                                            size = 22.dp,
                                             tint = MaterialTheme.colorScheme.onSurface
                                         )
                                     }

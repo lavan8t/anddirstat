@@ -123,19 +123,16 @@ fun ExpressiveNodeDetailsSheet(
                     )
                 }
             } else {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = materialItemColor.copy(alpha = 0.18f),
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier.size(56.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = FileUtils.getNodeIcon(node, isAppNode),
-                            contentDescription = null,
-                            tint = materialItemColor,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = FileUtils.getNodeIcon(node, isAppNode),
+                        contentDescription = null,
+                        tint = materialItemColor,
+                        modifier = Modifier.size(40.dp)
+                    )
                 }
             }
 

@@ -375,7 +375,7 @@ fun MainApp() {
                                     onClick = { showFilterMenu = true },
                                     enabled = !isLoading && hasStoragePermission && rawScannedNode != null
                                 ) {
-                                    MaterialSymbol("tune", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    MaterialSymbol("tune", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 DropdownMenu(
                                     expanded = showFilterMenu,
@@ -430,12 +430,12 @@ fun MainApp() {
                                 onClick = { triggerScan() },
                                 enabled = !isLoading && hasStoragePermission
                             ) {
-                                MaterialSymbol("refresh", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                MaterialSymbol("refresh", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             IconButton(
                                 onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) }
                             ) {
-                                MaterialSymbol("settings", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                MaterialSymbol("settings", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -466,7 +466,7 @@ fun MainApp() {
                                     MaterialSymbol(
                                         name = "arrow_back",
                                         active = true,
-                                        size = 20.dp,
+                                        size = 22.dp,
                                         tint = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
@@ -480,7 +480,7 @@ fun MainApp() {
                                 MaterialSymbol(
                                     name = "refresh",
                                     active = true,
-                                    size = 20.dp,
+                                    size = 22.dp,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -508,7 +508,7 @@ fun MainApp() {
                                 MaterialSymbol(
                                     name = "refresh",
                                     active = true,
-                                    size = 20.dp,
+                                    size = 22.dp,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -539,7 +539,7 @@ fun MainApp() {
                                     MaterialSymbol(
                                         name = "search",
                                         active = true,
-                                        size = 20.dp,
+                                        size = 22.dp,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
@@ -571,7 +571,7 @@ fun MainApp() {
                                             MaterialSymbol(
                                                 name = "close",
                                                 active = true,
-                                                size = 18.dp,
+                                                size = 20.dp,
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -587,7 +587,7 @@ fun MainApp() {
                                 MaterialSymbol(
                                     name = "refresh",
                                     active = true,
-                                    size = 20.dp,
+                                    size = 22.dp,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
