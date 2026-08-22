@@ -6,6 +6,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.LruCache
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -103,17 +106,75 @@ fun computeTreemapTiles(
     return tiles
 }
 
-fun findTileAt(tiles: List<TreemapTile>, targetX: Float, targetY: Float): TreemapTile? {
-    for (i in tiles.indices) {
-        val tile = tiles[i]
-        if (targetX >= tile.left && targetX <= tile.left + tile.width &&
-            targetY >= tile.top && targetY <= tile.top + tile.height) {
-            return tile
+class IntArrayList(initialCapacity: Int = 8) {
+    var data = IntArray(initialCapacity)
+    var size = 0
+        private set
+
+    fun add(value: Int) {
+        if (size == data.size) {
+            data = data.copyOf(data.size * 2)
         }
+        data[size++] = value
     }
-    return null
+
+    fun get(index: Int): Int = data[index]
 }
 
+class SpatialTileGrid(
+    val tiles: List<TreemapTile>,
+    val canvasWidth: Float,
+    val canvasHeight: Float,
+    val gridCols: Int = 64,
+    val gridRows: Int = 64
+) {
+    private val buckets: Array<IntArrayList?> = arrayOfNulls(gridCols * gridRows)
+    val nodeToTileMap: HashMap<CompactNode, TreemapTile> = HashMap(tiles.size)
+
+    init {
+        val invW = if (canvasWidth > 0f) gridCols / canvasWidth else 0f
+        val invH = if (canvasHeight > 0f) gridRows / canvasHeight else 0f
+
+        for (i in tiles.indices) {
+            val tile = tiles[i]
+            nodeToTileMap[tile.node] = tile
+
+            val minC = (tile.left * invW).toInt().coerceIn(0, gridCols - 1)
+            val maxC = ((tile.left + tile.width) * invW).toInt().coerceIn(0, gridCols - 1)
+            val minR = (tile.top * invH).toInt().coerceIn(0, gridRows - 1)
+            val maxR = ((tile.top + tile.height) * invH).toInt().coerceIn(0, gridRows - 1)
+
+            for (r in minR..maxR) {
+                val rowOffset = r * gridCols
+                for (c in minC..maxC) {
+                    val idx = rowOffset + c
+                    var list = buckets[idx]
+                    if (list == null) {
+                        list = IntArrayList(8)
+                        buckets[idx] = list
+                    }
+                    list.add(i)
+                }
+            }
+        }
+    }
+
+    fun findTileAt(x: Float, y: Float): TreemapTile? {
+        if (x < 0f || x > canvasWidth || y < 0f || y > canvasHeight) return null
+        val c = (x / canvasWidth * gridCols).toInt().coerceIn(0, gridCols - 1)
+        val r = (y / canvasHeight * gridRows).toInt().coerceIn(0, gridRows - 1)
+        val bucket = buckets[r * gridCols + c] ?: return null
+
+        for (k in bucket.size - 1 downTo 0) {
+            val tile = tiles[bucket.get(k)]
+            if (x >= tile.left && x <= tile.left + tile.width &&
+                y >= tile.top && y <= tile.top + tile.height) {
+                return tile
+            }
+        }
+        return null
+    }
+}
 
 @Composable
 fun TreemapCanvas(
@@ -144,6 +205,12 @@ fun TreemapCanvas(
         }
     }
 
+    val spatialGrid = remember(precalculatedTiles, canvasSize.width, canvasSize.height) {
+        if (canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.isNotEmpty()) {
+            SpatialTileGrid(precalculatedTiles, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+        } else null
+    }
+
     LaunchedEffect(resetKey) {
         if (resetKey > 0) {
             scale = 1f
@@ -152,10 +219,16 @@ fun TreemapCanvas(
         }
     }
 
-    val selectedTile = remember(selectedNode, precalculatedTiles) {
-        if (selectedNode == null) null
-        else precalculatedTiles.firstOrNull { it.node === selectedNode }
+    val selectedTile = remember(selectedNode, spatialGrid) {
+        if (selectedNode == null || spatialGrid == null) null
+        else spatialGrid.nodeToTileMap[selectedNode]
     }
+
+    val selectionFadeAlpha by animateFloatAsState(
+        targetValue = if (selectedNode != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "selectionFade"
+    )
 
     val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
@@ -193,7 +266,7 @@ fun TreemapCanvas(
                     }
                 }
             }
-            .pointerInput(precalculatedTiles) {
+            .pointerInput(spatialGrid) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val upOrCancel = waitForUpOrCancellation()
@@ -203,7 +276,7 @@ fun TreemapCanvas(
                         val touchX = (upOrCancel.position.x - curOffset.x) / curScale
                         val touchY = (upOrCancel.position.y - curOffset.y) / curScale
 
-                        val hit = findTileAt(precalculatedTiles, touchX, touchY)
+                        val hit = spatialGrid?.findTileAt(touchX, touchY)
                         if (hit != null) {
                             triggerCrispHaptic(context)
                             onNodeSelected(hit.node, hit.path)
@@ -240,12 +313,18 @@ fun TreemapCanvas(
             val isSelected = selectedNode != null && tile.node === selectedNode
 
             if (isAmoled) {
-                // AMOLED: outline borders only when unselected, solid color fill when selected
+                // AMOLED: outline borders only when unselected, animated smooth fill when selected
                 if (isSelected) {
+                    drawRect(
+                        color = tile.baseColor.copy(alpha = selectionFadeAlpha),
+                        topLeft = Offset(sLeft, sTop),
+                        size = Size(sW, sH)
+                    )
                     drawRect(
                         color = tile.baseColor,
                         topLeft = Offset(sLeft, sTop),
-                        size = Size(sW, sH)
+                        size = Size(sW, sH),
+                        style = Stroke(width = if (currentScale > 2f) 1.5f else 1.0f)
                     )
                 } else {
                     drawRect(
@@ -298,19 +377,27 @@ fun TreemapCanvas(
             }
         }
 
-        // Selected tile crisp white border overlay
+        // Selected tile crisp overlay with smooth animated fade
         val sel = selectedTile
-        if (selectedNode != null && sel != null) {
+        if (selectedNode != null && sel != null && selectionFadeAlpha > 0.01f) {
             val selLeft = sel.left * currentScale + currentOffset.x
             val selTop = sel.top * currentScale + currentOffset.y
             val selW = sel.width * currentScale
             val selH = sel.height * currentScale
 
+            // Smooth highlight overlay
             drawRect(
-                color = SelectionBorderColor,
+                color = Color.White.copy(alpha = 0.20f * selectionFadeAlpha),
+                topLeft = Offset(selLeft, selTop),
+                size = Size(selW, selH)
+            )
+
+            // Crisp selection border
+            drawRect(
+                color = SelectionBorderColor.copy(alpha = selectionFadeAlpha),
                 topLeft = Offset(selLeft, selTop),
                 size = Size(selW, selH),
-                style = Stroke(width = 4.5f)
+                style = Stroke(width = 4f)
             )
         }
     }

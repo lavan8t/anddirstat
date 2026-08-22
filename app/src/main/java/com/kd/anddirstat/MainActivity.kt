@@ -78,6 +78,7 @@ import com.kd.anddirstat.model.NavEntry
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.scanner.StorageFilterHelper
 import com.kd.anddirstat.scanner.StorageScanner
+import com.kd.anddirstat.scanner.TreeCacheManager
 import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.ui.components.AppIconCache
 import com.kd.anddirstat.ui.components.MaterialSymbol
@@ -240,7 +241,21 @@ fun MainApp() {
 
     LaunchedEffect(hasStoragePermission) {
         if (hasStoragePermission && rootNode == null && !isLoading) {
-            triggerScan()
+            val cached = TreeCacheManager.loadTree(context)
+            if (cached != null) {
+                rawScannedNode = cached
+                deviceTotalBytes = cached.size
+                val freeSpacePref = prefs.getBoolean("show_free_space", true)
+                val systemAppsPref = prefs.getBoolean("show_system_apps", true)
+                val filtered = StorageFilterHelper.filterStorageTree(cached, freeSpacePref, systemAppsPref, deviceTotalBytes)
+                rootNode = filtered
+                explorerNode = filtered
+                explorerPath = filtered?.name ?: "Device Storage"
+                extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
+                topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+            } else {
+                triggerScan()
+            }
         }
     }
 

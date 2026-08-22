@@ -10,37 +10,79 @@ import android.os.Process
 import android.os.StatFs
 import android.os.storage.StorageManager
 import com.kd.anddirstat.model.CompactNode
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class StorageScanner(private val context: Context) {
 
+    // Strictly bounded to maximum 3 worker threads for minimal memory and CPU contention
+    private val scanDispatcher = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
+
     suspend fun scanStorage(
         includeFreeSpace: Boolean = true,
+        useCacheIfValid: Boolean = false,
         onProgress: ((phase: String, detail: String) -> Unit)? = null
-    ): CompactNode = withContext(Dispatchers.IO) {
+    ): CompactNode = withContext(scanDispatcher) {
+        if (useCacheIfValid) {
+            val cached = TreeCacheManager.loadTree(context)
+            if (cached != null) {
+                return@withContext cached
+            }
+        }
+
         val dataDir = Environment.getDataDirectory()
         val stat = StatFs(dataDir.path)
         val deviceTotalBytes = stat.totalBytes
         val freeBytes = stat.availableBytes
+        val targetUsedBytes = maxOf(1L, deviceTotalBytes - freeBytes)
 
-        // 1. Files in user storage (/storage/emulated/0)
-        onProgress?.invoke("Scanning Files", "Reading storage directory...")
-        val rootPath = Environment.getExternalStorageDirectory()
-        val mediaRootNode = CompactNode(name = "Files", isDirectory = true)
-        scanDir(rootPath, mediaRootNode, onProgress)
+        val startTimeMs = System.currentTimeMillis()
+        val totalScannedBytes = AtomicLong(0L)
+        val scannedFilesCount = AtomicInteger(0)
 
-        // 2. Apps & System packages with individual Code, Data, and Cache split
-        onProgress?.invoke("Scanning Applications", "Enumerating installed packages...")
-        val (appsNode, totalAppsSize) = scanAllInstalledApplications(onProgress)
+        fun updateProgress(phase: String, detail: String) {
+            val elapsedMs = System.currentTimeMillis() - startTimeMs
+            val bytes = totalScannedBytes.get()
+            val etaStr = if (elapsedMs > 600 && bytes > 1024 * 1024) {
+                val bytesPerMs = bytes.toDouble() / elapsedMs.toDouble()
+                val remainingBytes = maxOf(0L, targetUsedBytes - bytes)
+                val etaSec = (remainingBytes / (bytesPerMs * 1000.0)).toInt()
+                if (etaSec in 1..3600) " (~${etaSec}s left)" else ""
+            } else ""
 
-        // 3. System & OS partition calculation
-        onProgress?.invoke("Finalizing Treemap", "Computing storage layout...")
+            onProgress?.invoke("$phase$etaStr", detail)
+        }
+
+        // Parallel scan: Run applications and storage directories across max 3 threads
+        val filesDeferred = async(scanDispatcher) {
+            updateProgress("Scanning Files", "Reading storage...")
+            val rootPath = Environment.getExternalStorageDirectory()
+            val mediaRootNode = CompactNode(name = "Files", isDirectory = true)
+            scanDir(rootPath, mediaRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
+                updateProgress(phase, detail)
+            }
+            mediaRootNode
+        }
+
+        val appsDeferred = async(scanDispatcher) {
+            updateProgress("Scanning Applications", "Enumerating packages...")
+            scanAllInstalledApplications(totalScannedBytes) { phase, detail ->
+                updateProgress(phase, detail)
+            }
+        }
+
+        val mediaRootNode = filesDeferred.await()
+        val (appsNode, totalAppsSize) = appsDeferred.await()
+
+        updateProgress("Finalizing", "Assembling storage layout...")
         val accounted = mediaRootNode.size + totalAppsSize + freeBytes
         val systemSize = if (deviceTotalBytes > accounted) (deviceTotalBytes - accounted) else 0L
 
-        // 4. Assemble root hierarchy: [System & OS] -> [Free Space] -> [Apps] -> [Files]
         val rootChildren = mutableListOf<CompactNode>()
 
         if (systemSize > 0L) {
@@ -53,7 +95,6 @@ class StorageScanner(private val context: Context) {
             )
         }
 
-        // Place Free Space directly between System partition and Apps / User Storage
         if (includeFreeSpace && freeBytes > 0L) {
             rootChildren.add(
                 CompactNode(
@@ -78,15 +119,21 @@ class StorageScanner(private val context: Context) {
             systemSize + totalAppsSize + mediaRootNode.size
         }
 
-        CompactNode(
+        val finalRoot = CompactNode(
             name = "Device Storage",
             isDirectory = true,
             size = effectiveTotal,
             children = rootChildren.toTypedArray()
         )
+
+        // Save tree to persistent cache for instant startup
+        TreeCacheManager.saveTree(context, finalRoot)
+
+        finalRoot
     }
 
     private fun scanAllInstalledApplications(
+        totalScannedBytes: AtomicLong,
         onProgress: ((phase: String, detail: String) -> Unit)? = null
     ): Pair<CompactNode?, Long> {
         val pm = context.packageManager
@@ -146,7 +193,6 @@ class StorageScanner(private val context: Context) {
                 }
             }
 
-            // Fallback for code size: base APK + all split APKs
             if (codeSize == 0L) {
                 try {
                     val baseApk = File(appInfo.sourceDir)
@@ -163,7 +209,6 @@ class StorageScanner(private val context: Context) {
                 }
             }
 
-            // Fallback for external app data directories if stats manager not available
             if (dataSize == 0L && cacheSize == 0L) {
                 try {
                     val extData = File("/storage/emulated/0/Android/data/${appInfo.packageName}")
@@ -196,6 +241,7 @@ class StorageScanner(private val context: Context) {
             }
 
             if (appTotal > 0L) {
+                totalScannedBytes.addAndGet(appTotal)
                 val fullLabel = if (appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0) "$label (System)" else label
                 appParts.sortByDescending { it.size }
                 appNodes.add(
@@ -235,6 +281,8 @@ class StorageScanner(private val context: Context) {
     private fun scanDir(
         dir: File,
         parentNode: CompactNode,
+        totalScannedBytes: AtomicLong,
+        scannedFilesCount: AtomicInteger,
         onProgress: ((phase: String, detail: String) -> Unit)? = null
     ) {
         val entries = dir.listFiles() ?: return
@@ -243,10 +291,13 @@ class StorageScanner(private val context: Context) {
 
         for (entry in entries) {
             if (entry.isDirectory) {
-                val rel = entry.path.removePrefix("/storage/emulated/0/").removePrefix("/storage/emulated/0")
-                onProgress?.invoke("Scanning Files", rel.ifEmpty { entry.name })
+                val count = scannedFilesCount.incrementAndGet()
+                if (count % 30 == 0) {
+                    val rel = entry.path.removePrefix("/storage/emulated/0/").removePrefix("/storage/emulated/0")
+                    onProgress?.invoke("Scanning Files", rel.ifEmpty { entry.name })
+                }
                 val dirNode = CompactNode(name = entry.name, isDirectory = true)
-                scanDir(entry, dirNode, onProgress)
+                scanDir(entry, dirNode, totalScannedBytes, scannedFilesCount, onProgress)
                 if (dirNode.size > 0L) {
                     tempChildren.add(dirNode)
                     accumulatedSize += dirNode.size
@@ -256,7 +307,9 @@ class StorageScanner(private val context: Context) {
                 if (fileSize > 0L) {
                     tempChildren.add(CompactNode(name = entry.name, isDirectory = false, size = fileSize))
                     accumulatedSize += fileSize
+                    totalScannedBytes.addAndGet(fileSize)
                 }
+                scannedFilesCount.incrementAndGet()
             }
         }
 
