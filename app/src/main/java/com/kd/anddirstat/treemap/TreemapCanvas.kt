@@ -517,6 +517,7 @@ fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
     val name = node.name
     if (name == "[Free Space]") return if (isDark) Color(0xFF0F172A) else Color(0xFF64748B)
     if (name == "[System & OS]") return if (isDark) Color(0xFF060910) else Color(0xFF475569)
+    if (name == "[Recycle Bin]" || name.startsWith(".trashed")) return if (isDark) Color(0xFF4A101D) else Color(0xFFE11D48)
     if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFF5C2900) else Color(0xFFF59E0B)
     if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF1E293B) else Color(0xFF64748B)
 

@@ -16,12 +16,20 @@ object StorageFilterHelper {
     ): CompactNode? {
         if (rawRoot == null) return null
 
-        fun filterHidden(node: CompactNode): CompactNode? {
-            if (!showHiddenFiles && node.name.startsWith(".")) {
+        val trashedItems = mutableListOf<CompactNode>()
+
+        fun processNode(node: CompactNode): CompactNode? {
+            val name = node.name
+            val isTrash = name.startsWith(".trashed") || name.equals(".trash", ignoreCase = true) || name.equals(".recycle", ignoreCase = true)
+            if (isTrash) {
+                trashedItems.add(node)
+                return null
+            }
+            if (!showHiddenFiles && name.startsWith(".")) {
                 return null
             }
             if (!node.isDirectory || node.children == null) return node
-            val filteredKids = node.children!!.mapNotNull { filterHidden(it) }
+            val filteredKids = node.children!!.mapNotNull { processNode(it) }
             val newSize = filteredKids.sumOf { it.size }
             return CompactNode(
                 name = node.name,
@@ -35,7 +43,7 @@ object StorageFilterHelper {
 
         val newChildren = mutableListOf<CompactNode>()
         for (rawChild in rawChildren) {
-            val child = if (!showHiddenFiles) filterHidden(rawChild) else rawChild
+            val child = processNode(rawChild)
             if (child == null) continue
             when {
                 child.name == "[Free Space]" -> {
@@ -68,6 +76,20 @@ object StorageFilterHelper {
             }
         }
 
+        if (trashedItems.isNotEmpty()) {
+            val trashTotal = trashedItems.sumOf { it.size }
+            if (trashTotal > 0L) {
+                newChildren.add(
+                    CompactNode(
+                        name = "[Recycle Bin]",
+                        isDirectory = true,
+                        size = trashTotal,
+                        children = trashedItems.toTypedArray()
+                    )
+                )
+            }
+        }
+
         val totalSize = if (showFreeSpace && deviceTotalBytes > 0L) {
             deviceTotalBytes
         } else {
@@ -92,8 +114,15 @@ object StorageFilterHelper {
                 statsMap[name] = Pair(cur.first + node.size, cur.second + 1)
                 return
             }
+            if (name == "[Recycle Bin]") {
+                val cur = statsMap[name] ?: Pair(0L, 0)
+                statsMap[name] = Pair(cur.first + node.size, cur.second + 1)
+                return
+            }
             if (!node.isDirectory) {
-                val ext = if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true)) {
+                val ext = if (name.startsWith(".trashed")) {
+                    ".trashed"
+                } else if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true)) {
                     ".apk"
                 } else if (name == "Cache" || name == "App Cache") {
                     "Cache"
@@ -118,6 +147,7 @@ object StorageFilterHelper {
             val category = when {
                 ext == "[Free Space]" -> "Free Storage"
                 ext == "[System & OS]" -> "System / Reserved"
+                ext == "[Recycle Bin]" || ext == ".trashed" -> "Recycle Bin"
                 ext == "Cache" -> "App Cache"
                 ext == "Data" -> "App Data"
                 ext in listOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".ts", ".wmv", ".m4v") -> "Video"

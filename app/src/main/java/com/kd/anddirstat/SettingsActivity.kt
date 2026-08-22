@@ -4,11 +4,6 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,7 +16,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,91 +43,70 @@ class SettingsActivity : ComponentActivity() {
             var accentColor by remember {
                 mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
             }
-            var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", true)) }
-
-            var entered by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) {
-                entered = true
-            }
 
             AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
-                AnimatedVisibility(
-                    visible = entered,
-                    enter = fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-                            slideInHorizontally(
-                                initialOffsetX = { it / 3 },
-                                animationSpec = tween(220, easing = FastOutSlowInEasing)
-                            ),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        topBar = {
-                            TopAppBar(
-                                title = {
-                                    Text(
-                                        text = "Settings",
-                                        style = MaterialTheme.typography.titleLarge.copy(
-                                            fontWeight = FontWeight.Bold
-                                        )
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    topBar = {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "Settings",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.Bold
                                     )
-                                },
-                                navigationIcon = {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        modifier = Modifier
-                                            .padding(start = 12.dp, end = 4.dp)
-                                            .size(38.dp)
-                                    ) {
-                                        IconButton(
-                                            onClick = { finish() },
-                                            modifier = Modifier.fillMaxSize()
-                                        ) {
-                                            MaterialSymbol(
-                                                name = "arrow_back",
-                                                active = true,
-                                                size = 20.dp,
-                                                tint = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                    }
-                                },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                                 )
+                            },
+                            navigationIcon = {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier
+                                        .padding(start = 12.dp, end = 4.dp)
+                                        .size(38.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = { finish() },
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "arrow_back",
+                                            active = true,
+                                            size = 20.dp,
+                                            tint = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                             )
-                        }
-                    ) { paddingValues ->
-                        SettingsView(
-                            currentTheme = currentTheme,
-                            onSelectTheme = { selectedTheme ->
-                                currentTheme = selectedTheme
-                                prefs.edit { putString("app_theme", selectedTheme.key) }
-                            },
-                            pureBlack = pureBlack,
-                            onTogglePureBlack = { v ->
-                                pureBlack = v
-                                prefs.edit { putBoolean("pure_black", v) }
-                            },
-                            accentColor = accentColor,
-                            onSelectAccent = { a ->
-                                accentColor = a
-                                prefs.edit { putString("accent_color", a.key) }
-                            },
-                            showHiddenFiles = showHiddenFiles,
-                            onToggleShowHiddenFiles = { h ->
-                                showHiddenFiles = h
-                                prefs.edit { putBoolean("show_hidden_files", h) }
-                            },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(paddingValues)
                         )
                     }
+                ) { paddingValues ->
+                    SettingsView(
+                        currentTheme = currentTheme,
+                        onSelectTheme = { selectedTheme ->
+                            currentTheme = selectedTheme
+                            prefs.edit { putString("app_theme", selectedTheme.key) }
+                        },
+                        pureBlack = pureBlack,
+                        onTogglePureBlack = { v ->
+                            pureBlack = v
+                            prefs.edit { putBoolean("pure_black", v) }
+                        },
+                        accentColor = accentColor,
+                        onSelectAccent = { a ->
+                            accentColor = a
+                            prefs.edit { putString("accent_color", a.key) }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                    )
                 }
             }
         }
