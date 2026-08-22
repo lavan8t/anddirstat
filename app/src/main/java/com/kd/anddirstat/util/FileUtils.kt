@@ -42,13 +42,22 @@ object FileUtils {
     }
 
     fun resolveActualFile(path: String): File? {
+        val direct = File(path)
+        if (direct.exists()) return direct
+
         val externalRoot = Environment.getExternalStorageDirectory().absolutePath
         val relative = when {
+            path.startsWith("Device Storage/Files/") -> path.removePrefix("Device Storage/Files/")
+            path.startsWith("Device Storage/") -> path.removePrefix("Device Storage/")
             path.startsWith("Files/") -> path.removePrefix("Files/")
-            path == "Files" -> ""
-            else -> null
-        } ?: return null
-        return File(externalRoot, relative)
+            path == "Files" || path == "Device Storage" -> ""
+            path.startsWith("/storage/emulated/0/") -> path.removePrefix("/storage/emulated/0/")
+            path.startsWith(externalRoot) -> path.removePrefix(externalRoot).removePrefix("/")
+            else -> path
+        }
+        val f = File(externalRoot, relative)
+        if (f.exists()) return f
+        return null
     }
 
     fun extractPackageName(node: CompactNode): String? {
@@ -56,11 +65,46 @@ object FileUtils {
         if (name.startsWith("App Code (") && name.endsWith(")")) {
             return name.substringAfter("App Code (").substringBefore(".apk)").removeSuffix(")")
         }
-        val appCodeChild = node.children?.firstOrNull { it.name.startsWith("App Code (") }
+        if (name.startsWith("APK (") && name.endsWith(")")) {
+            return name.substringAfter("APK (").substringBefore(".apk)").removeSuffix(")")
+        }
+        val appCodeChild = node.children?.firstOrNull { it.name.startsWith("App Code (") || it.name.startsWith("APK (") }
         if (appCodeChild != null) {
-            return appCodeChild.name.substringAfter("App Code (").substringBefore(".apk)").removeSuffix(")")
+            val childName = appCodeChild.name
+            return if (childName.startsWith("App Code (")) {
+                childName.substringAfter("App Code (").substringBefore(".apk)").removeSuffix(")")
+            } else {
+                childName.substringAfter("APK (").substringBefore(".apk)").removeSuffix(")")
+            }
         }
         return null
+    }
+
+    fun uninstallApp(context: Context, packageName: String) {
+        val uri = Uri.parse("package:$packageName")
+        val intent = Intent(Intent.ACTION_DELETE, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                @Suppress("DEPRECATION")
+                val fallback = Intent(Intent.ACTION_UNINSTALL_PACKAGE, uri).apply {
+                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallback)
+            } catch (_: Exception) {
+                Toast.makeText(context, "Cannot launch uninstaller for $packageName", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun uninstallApps(context: Context, packageNames: List<String>) {
+        packageNames.distinct().forEach { pkg ->
+            uninstallApp(context, pkg)
+        }
     }
 
     fun openFile(context: Context, file: File) {

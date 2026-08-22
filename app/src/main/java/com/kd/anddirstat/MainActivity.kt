@@ -788,6 +788,9 @@ fun MainApp() {
                     if (showTreeDeleteDialog && selectedTreeNodes.isNotEmpty()) {
                         val count = selectedTreeNodes.size
                         val totalBytes = selectedTreeNodes.sumOf { it.size }
+                        val hasApps = selectedTreeNodes.any { FileUtils.extractPackageName(it) != null }
+                        val allApps = selectedTreeNodes.all { FileUtils.extractPackageName(it) != null }
+
                         AlertDialog(
                             onDismissRequest = { showTreeDeleteDialog = false },
                             icon = {
@@ -799,7 +802,13 @@ fun MainApp() {
                             },
                             title = {
                                 Text(
-                                    text = if (count == 1) "Delete 1 item?" else "Delete $count items?",
+                                    text = when {
+                                        allApps && count == 1 -> "Uninstall 1 app?"
+                                        allApps -> "Uninstall $count apps?"
+                                        hasApps -> "Delete / Uninstall $count items?"
+                                        count == 1 -> "Delete 1 item?"
+                                        else -> "Delete $count items?"
+                                    },
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -815,17 +824,30 @@ fun MainApp() {
                                 TextButton(
                                     onClick = {
                                         showTreeDeleteDialog = false
+                                        val packagesToUninstall = mutableListOf<String>()
                                         selectedTreeNodes.forEach { node ->
-                                            try {
-                                                val f = FileUtils.resolveActualFile(node.name)
-                                                if (f != null && f.exists()) f.deleteRecursively()
-                                            } catch (_: Exception) {}
+                                            val pkg = FileUtils.extractPackageName(node)
+                                            if (pkg != null) {
+                                                packagesToUninstall.add(pkg)
+                                            } else {
+                                                try {
+                                                    val f = FileUtils.resolveActualFile(node.name)
+                                                    if (f != null && f.exists()) f.deleteRecursively()
+                                                } catch (_: Exception) {}
+                                            }
+                                        }
+                                        if (packagesToUninstall.isNotEmpty()) {
+                                            FileUtils.uninstallApps(context, packagesToUninstall)
                                         }
                                         selectedTreeNodes = emptySet()
                                         triggerScan()
                                     }
                                 ) {
-                                    Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else "Delete",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             },
                             dismissButton = {

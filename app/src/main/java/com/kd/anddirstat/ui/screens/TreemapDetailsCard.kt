@@ -295,11 +295,10 @@ fun ExpressiveNodeDetailsSheet(
 
                 IconButton(
                     onClick = {
-                        try {
-                            val uninstallIntent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkgName"))
-                            context.startActivity(uninstallIntent)
-                            onDismiss()
-                        } catch (_: Exception) {}
+                        if (pkgName != null) {
+                            FileUtils.uninstallApp(context, pkgName)
+                        }
+                        onDismiss()
                     },
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.error,

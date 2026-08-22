@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,6 +81,7 @@ fun ExplorerView(
     var selectedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
+    val context = LocalContext.current
 
     fun flattenTree(
         parent: CompactNode,
@@ -328,6 +330,9 @@ fun ExplorerView(
         if (showDeleteDialog && selectedNodes.isNotEmpty()) {
             val count = selectedNodes.size
             val totalBytes = selectedNodes.sumOf { it.size }
+            val hasApps = selectedNodes.any { FileUtils.extractPackageName(it) != null }
+            val allApps = selectedNodes.all { FileUtils.extractPackageName(it) != null }
+
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
                 icon = {
@@ -339,7 +344,13 @@ fun ExplorerView(
                 },
                 title = {
                     Text(
-                        text = if (count == 1) "Delete 1 item?" else "Delete $count items?",
+                        text = when {
+                            allApps && count == 1 -> "Uninstall 1 app?"
+                            allApps -> "Uninstall $count apps?"
+                            hasApps -> "Delete / Uninstall $count items?"
+                            count == 1 -> "Delete 1 item?"
+                            else -> "Delete $count items?"
+                        },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -355,16 +366,29 @@ fun ExplorerView(
                     TextButton(
                         onClick = {
                             showDeleteDialog = false
+                            val packagesToUninstall = mutableListOf<String>()
                             selectedNodes.forEach { node ->
-                                try {
-                                    val f = FileUtils.resolveActualFile(node.name)
-                                    if (f != null && f.exists()) f.deleteRecursively()
-                                } catch (_: Exception) {}
+                                val pkg = FileUtils.extractPackageName(node)
+                                if (pkg != null) {
+                                    packagesToUninstall.add(pkg)
+                                } else {
+                                    try {
+                                        val f = FileUtils.resolveActualFile(node.name)
+                                        if (f != null && f.exists()) f.deleteRecursively()
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                            if (packagesToUninstall.isNotEmpty()) {
+                                FileUtils.uninstallApps(context, packagesToUninstall)
                             }
                             selectedNodes = emptySet()
                         }
                     ) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else "Delete",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 },
                 dismissButton = {
