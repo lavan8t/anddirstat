@@ -181,10 +181,40 @@ object StorageFilterHelper {
 
 
 
+    fun getScreenshots(rootNode: CompactNode, limit: Int = 100): List<TopFileEntry> {
+        val result = mutableListOf<TopFileEntry>()
+        fun traverse(node: CompactNode, currentPath: String) {
+            val name = node.name
+            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+                name == "Apps & System Packages" || name.startsWith(".trashed")) return
+
+            val path = if (currentPath == "Device Storage") name else "$currentPath/$name"
+            if (!node.isDirectory) {
+                val isImage = name.endsWith(".png", ignoreCase = true) || name.endsWith(".jpg", ignoreCase = true) ||
+                        name.endsWith(".jpeg", ignoreCase = true) || name.endsWith(".webp", ignoreCase = true)
+                val isScreenshot = isImage && (
+                        path.contains("screenshot", ignoreCase = true) ||
+                        path.contains("screen_shot", ignoreCase = true) ||
+                        name.startsWith("Screenshot", ignoreCase = true) ||
+                        name.startsWith("Screen_Shot", ignoreCase = true) ||
+                        name.contains("screenshot", ignoreCase = true)
+                )
+                if (isScreenshot) {
+                    result.add(TopFileEntry(node, path))
+                }
+            } else {
+                node.children?.forEach { traverse(it, path) }
+            }
+        }
+        traverse(rootNode, rootNode.name)
+        return result.sortedByDescending { it.node.size }.take(limit)
+    }
+
     fun filterByPreset(rootNode: CompactNode, preset: String): List<TopFileEntry> {
         val allFiles = aggregateTopFiles(rootNode, limit = 500)
         return when (preset) {
             "> 1 GB" -> allFiles.filter { it.node.size >= 1024L * 1024L * 1024L }
+            "Screenshots" -> getScreenshots(rootNode)
             "Duplicates" -> {
                 val grouped = allFiles.groupBy { "${it.node.name}_${it.node.size}" }
                 grouped.filter { it.value.size > 1 }.values.flatten()

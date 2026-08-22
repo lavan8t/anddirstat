@@ -46,6 +46,7 @@ import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,7 +64,7 @@ fun ExpressiveNodeDetailsSheet(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showDeleteConfirmation by remember { mutableStateOf(false) }
-    val realFile = remember(path) { FileUtils.resolveActualFile(path) }
+    val realFile = remember(path, node.name) { FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name) }
     val isRealFile = realFile != null && realFile.exists()
     val appChildren = node.children
     val pkgName = remember(node, path) { FileUtils.extractPackageName(node, path, context) }
@@ -269,101 +270,111 @@ fun ExpressiveNodeDetailsSheet(
             if (isAppNode && pkgName != null) {
                 val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
                 if (launchIntent != null) {
-                    AppTooltip(text = "Open application") {
-                        IconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                try {
-                                    context.startActivity(launchIntent)
-                                    onDismiss()
-                                } catch (_: Exception) {}
-                            },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.size(52.dp)
-                        ) {
-                            MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
-                }
-
-                AppTooltip(text = "Application details") {
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             try {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
-                                )
+                                context.startActivity(launchIntent)
+                                onDismiss()
                             } catch (_: Exception) {}
                         },
                         colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier.size(52.dp)
                     ) {
-                        MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
 
-                AppTooltip(text = "Uninstall application") {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val targetPkg = pkgName ?: FileUtils.extractPackageName(node, path, context)
-                            if (targetPkg != null) {
-                                FileUtils.uninstallApp(context, targetPkg)
-                            }
-                            onDismiss()
-                        },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError
-                        ),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
-                    }
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        try {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
+                            )
+                        } catch (_: Exception) {}
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val targetPkg = pkgName ?: FileUtils.extractPackageName(node, path, context)
+                        if (targetPkg != null) {
+                            FileUtils.uninstallApp(context, targetPkg)
+                        }
+                        onDismiss()
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
                 }
             }
 
-            if (isRealFile) {
-                val isDir = realFile!!.isDirectory
+            if (!isAppNode) {
+                val targetFile = realFile ?: File(path)
+                val isDir = targetFile.isDirectory || node.isDirectory
                 if (!isDir) {
-                    AppTooltip(text = "Open file") {
-                        IconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                FileUtils.openFile(context, realFile)
-                                onDismiss()
-                            },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.size(52.dp)
-                        ) {
-                            MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
-                }
-                AppTooltip(text = if (isDir) "Delete folder" else "Delete file") {
                     IconButton(
                         onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            showDeleteConfirmation = true
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            FileUtils.openFile(context, targetFile)
+                            onDismiss()
                         },
                         colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier.size(52.dp)
                     ) {
-                        MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                        MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
                     }
+                }
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showDeleteConfirmation = true
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                }
+
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleSelect()
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol(
+                        name = if (isSelected) "check_circle" else "radio_button_unchecked",
+                        active = isSelected,
+                        size = 24.dp,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

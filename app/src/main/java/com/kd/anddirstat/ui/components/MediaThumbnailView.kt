@@ -1,21 +1,22 @@
 package com.kd.anddirstat.ui.components
 
+import android.content.ContentUris
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.util.FileUtils
@@ -35,7 +37,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 object MediaThumbnailCache {
-    private val memoryCache = object : LruCache<String, Bitmap>(20 * 1024) { // 20 MB cache
+    private val memoryCache = object : LruCache<String, Bitmap>(32 * 1024) { // 32 MB cache
         override fun sizeOf(key: String, value: Bitmap): Int {
             return value.byteCount / 1024
         }
@@ -47,52 +49,101 @@ object MediaThumbnailCache {
         memoryCache.put(path, bitmap)
     }
 
-    suspend fun loadThumbnail(path: String, isVideo: Boolean): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun loadThumbnail(context: Context, path: String, altName: String, isVideo: Boolean): Bitmap? = withContext(Dispatchers.IO) {
         val cached = get(path)
         if (cached != null) return@withContext cached
 
-        val actual = FileUtils.resolveActualFile(path) ?: return@withContext null
-        if (!actual.exists() || !actual.canRead()) return@withContext null
+        val actual = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(altName)
+        if (actual == null || !actual.exists() || !actual.canRead()) return@withContext null
 
         try {
             var bmp: Bitmap? = null
-            if (isVideo) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    try {
-                        bmp = ThumbnailUtils.createVideoThumbnail(actual, Size(320, 320), null)
-                    } catch (_: Exception) {}
+
+            // 1. ContentResolver / MediaStore query
+            try {
+                val baseUri = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                val proj = arrayOf(MediaStore.MediaColumns._ID)
+                context.contentResolver.query(
+                    baseUri,
+                    proj,
+                    "${MediaStore.MediaColumns.DATA}=?",
+                    arrayOf(actual.absolutePath),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                        val itemUri = ContentUris.withAppendedId(baseUri, id)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            bmp = context.contentResolver.loadThumbnail(itemUri, Size(320, 320), null)
+                        }
+                    }
                 }
-                if (bmp == null) {
-                    try {
-                        val retriever = android.media.MediaMetadataRetriever()
-                        retriever.setDataSource(actual.absolutePath)
-                        bmp = retriever.getFrameAtTime(1000000) ?: retriever.frameAtTime
-                        retriever.release()
-                    } catch (_: Exception) {}
-                }
-            } else {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    try {
-                        bmp = ThumbnailUtils.createImageThumbnail(actual, Size(320, 320), null)
-                    } catch (_: Exception) {}
-                }
-                if (bmp == null) {
-                    try {
-                        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(actual.absolutePath, boundsOptions)
-                        val sampleSize = maxOf(1, maxOf(boundsOptions.outWidth / 320, boundsOptions.outHeight / 320))
+            } catch (_: Exception) {}
+
+            // 2. ThumbnailUtils Android 10+
+            if (bmp == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    bmp = if (isVideo) {
+                        ThumbnailUtils.createVideoThumbnail(actual, Size(320, 320), null)
+                    } else {
+                        ThumbnailUtils.createImageThumbnail(actual, Size(320, 320), null)
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 3. Fallback for Video: MediaMetadataRetriever
+            if (bmp == null && isVideo) {
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    retriever.setDataSource(actual.absolutePath)
+                    bmp = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ?: retriever.frameAtTime
+                    retriever.release()
+                } catch (_: Exception) {}
+            }
+
+            // 4. Fallback for Images: BitmapFactory
+            if (bmp == null && !isVideo) {
+                try {
+                    val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(actual.absolutePath, boundsOptions)
+                    if (boundsOptions.outWidth > 0 && boundsOptions.outHeight > 0) {
+                        var sampleSize = 1
+                        val halfH = boundsOptions.outHeight / 2
+                        val halfW = boundsOptions.outWidth / 2
+                        while (halfH / sampleSize >= 320 && halfW / sampleSize >= 320) {
+                            sampleSize *= 2
+                        }
                         val decodeOptions = BitmapFactory.Options().apply {
                             inSampleSize = sampleSize
                             inPreferredConfig = Bitmap.Config.RGB_565
                         }
                         bmp = BitmapFactory.decodeFile(actual.absolutePath, decodeOptions)
-                    } catch (_: Exception) {}
-                }
+                    }
+                } catch (_: Exception) {}
             }
-            if (bmp != null) {
-                put(path, bmp)
+
+            // 5. Fallback: Search DCIM/.thumbnails
+            if (bmp == null) {
+                try {
+                    val dcimThumbDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), ".thumbnails")
+                    if (dcimThumbDir.exists() && dcimThumbDir.isDirectory) {
+                        val baseName = actual.nameWithoutExtension
+                        val matchingThumb = dcimThumbDir.listFiles()?.firstOrNull {
+                            it.name.contains(baseName, ignoreCase = true)
+                        }
+                        if (matchingThumb != null) {
+                            bmp = BitmapFactory.decodeFile(matchingThumb.absolutePath)
+                        }
+                    }
+                } catch (_: Exception) {}
             }
-            bmp
+
+            val finalBmp = bmp
+            if (finalBmp != null) {
+                put(path, finalBmp)
+            }
+            finalBmp
         } catch (_: Exception) {
             null
         }
@@ -106,6 +157,7 @@ fun MediaThumbnailView(
     modifier: Modifier = Modifier,
     fallbackTint: Color = MaterialTheme.colorScheme.primary
 ) {
+    val context = LocalContext.current
     val nameLower = remember(node.name) { node.name.lowercase() }
     val isVideo = remember(nameLower) {
         nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") ||
@@ -118,13 +170,13 @@ fun MediaThumbnailView(
         nameLower.endsWith(".bmp") || nameLower.endsWith(".svg")
     }
 
-    var thumbnailBitmap by remember(path) {
+    var thumbnailBitmap by remember(path, node.name) {
         mutableStateOf(MediaThumbnailCache.get(path))
     }
 
-    LaunchedEffect(path, isVideo, isImage) {
+    LaunchedEffect(path, node.name, isVideo, isImage) {
         if ((isVideo || isImage) && thumbnailBitmap == null) {
-            thumbnailBitmap = MediaThumbnailCache.loadThumbnail(path, isVideo)
+            thumbnailBitmap = MediaThumbnailCache.loadThumbnail(context, path, node.name, isVideo)
         }
     }
 
@@ -136,7 +188,6 @@ fun MediaThumbnailView(
             modifier = modifier.fillMaxSize()
         )
     } else {
-        // Material theme semantic fallback (no bg fill, clean icon)
         Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center

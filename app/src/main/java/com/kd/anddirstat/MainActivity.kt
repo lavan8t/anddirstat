@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.kd.anddirstat.model.AppDestinations
 import com.kd.anddirstat.model.CompactNode
+import com.kd.anddirstat.ui.screens.SettingsView
 import com.kd.anddirstat.model.ExtensionStat
 import com.kd.anddirstat.model.NavEntry
 import com.kd.anddirstat.model.TopFileEntry
@@ -185,6 +186,7 @@ fun MainApp() {
         var showVolumeSelectionDialog by remember { mutableStateOf(false) }
         var detectedVolumes by remember { mutableStateOf(emptyList<StorageVolumeInfo>()) }
         var selectedVolumeIds by remember { mutableStateOf(setOf<String>()) }
+        var showSettingsSheet by remember { mutableStateOf(false) }
 
         var isTreeDeleting by remember { mutableStateOf(false) }
         var treeDeleteCurrentCount by remember { mutableStateOf(0) }
@@ -439,13 +441,14 @@ fun MainApp() {
                         },
                         actions = {
                             Box {
-                                AppTooltip(text = "Display options") {
-                                    IconButton(
-                                        onClick = { showFilterMenu = true },
-                                        enabled = !isLoading && hasStoragePermission && rawScannedNode != null
-                                    ) {
-                                        MaterialSymbol("filter_list", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                    }
+                                IconButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showFilterMenu = true
+                                    },
+                                    enabled = !isLoading && hasStoragePermission && rawScannedNode != null
+                                ) {
+                                    MaterialSymbol("filter_list", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                                 }
 
                                 DropdownMenu(
@@ -480,6 +483,7 @@ fun MainApp() {
                                             )
                                         },
                                         onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             val newVal = !showSystemOS
                                             showSystemOS = newVal
                                             prefs.edit().putBoolean("show_system_os", newVal).apply()
@@ -510,6 +514,7 @@ fun MainApp() {
                                             )
                                         },
                                         onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             val newVal = !showSystemApps
                                             showSystemApps = newVal
                                             prefs.edit().putBoolean("show_system_apps", newVal).apply()
@@ -540,6 +545,7 @@ fun MainApp() {
                                             )
                                         },
                                         onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             val newVal = !showFreeSpace
                                             showFreeSpace = newVal
                                             prefs.edit().putBoolean("show_free_space", newVal).apply()
@@ -570,6 +576,7 @@ fun MainApp() {
                                             )
                                         },
                                         onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             val newVal = !showHiddenFiles
                                             showHiddenFiles = newVal
                                             prefs.edit().putBoolean("show_hidden_files", newVal).apply()
@@ -578,20 +585,22 @@ fun MainApp() {
                                     )
                                 }
                             }
-                            AppTooltip(text = "Rescan storage") {
-                                IconButton(
-                                    onClick = { triggerScan() },
-                                    enabled = !isLoading && hasStoragePermission
-                                ) {
-                                    MaterialSymbol("refresh", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                }
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    triggerScan()
+                                },
+                                enabled = !isLoading && hasStoragePermission
+                            ) {
+                                MaterialSymbol("refresh", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                             }
-                            AppTooltip(text = "Settings") {
-                                IconButton(
-                                    onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) }
-                                ) {
-                                    MaterialSymbol("settings", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showSettingsSheet = true
                                 }
+                            ) {
+                                MaterialSymbol("settings", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -1154,6 +1163,43 @@ fun MainApp() {
                                     selectedPath = null
                                     performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                 }
+                            )
+                        }
+                    }
+
+                    // In-Activity Instant Settings ModalBottomSheet
+                    if (showSettingsSheet) {
+                        val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                        ModalBottomSheet(
+                            onDismissRequest = { showSettingsSheet = false },
+                            sheetState = settingsSheetState,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 0.dp,
+                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                            dragHandle = { BottomSheetDefaults.DragHandle() }
+                        ) {
+                            SettingsView(
+                                currentTheme = currentTheme,
+                                onSelectTheme = { theme: AppTheme ->
+                                    currentTheme = theme
+                                    prefs.edit().putString("app_theme", theme.key).apply()
+                                },
+                                pureBlack = pureBlack,
+                                onTogglePureBlack = { pb: Boolean ->
+                                    pureBlack = pb
+                                    prefs.edit().putBoolean("pure_black", pb).apply()
+                                },
+                                dynamicTheme = dynamicTheme,
+                                onToggleDynamicTheme = { dt: Boolean ->
+                                    dynamicTheme = dt
+                                    prefs.edit().putBoolean("dynamic_theme", dt).apply()
+                                },
+                                accentColor = accentColor,
+                                onSelectAccent = { color: AccentColor ->
+                                    accentColor = color
+                                    prefs.edit().putString("accent_color", color.key).apply()
+                                },
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }

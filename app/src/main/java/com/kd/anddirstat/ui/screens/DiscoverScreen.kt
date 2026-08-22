@@ -4,6 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -12,6 +16,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,21 +28,30 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -46,9 +60,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,8 +121,15 @@ fun DiscoverView(
     var deleteIsTrash by remember { mutableStateOf(true) }
 
     val filterPresets = remember {
-        listOf("> 1 GB", "Duplicates", "Old Downloads", "APKs")
+        listOf("> 1 GB", "Screenshots", "Duplicates", "Old Downloads", "APKs")
     }
+
+    val rawScreenshots = remember(rootNode) { StorageFilterHelper.getScreenshots(rootNode) }
+    var reviewedScreenshots by remember(rootNode) { mutableStateOf(setOf<String>()) }
+    val activeScreenshots = remember(rawScreenshots, reviewedScreenshots) {
+        rawScreenshots.filter { !reviewedScreenshots.contains(it.path) }
+    }
+    var showScreenshotsPage by remember { mutableStateOf(false) }
 
     val displayedFiles = remember(rootNode, selectedPreset, topFiles) {
         if (selectedPreset != null) {
@@ -326,8 +350,80 @@ fun DiscoverView(
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
+            // Screenshots Cleaner Button Banner
+            if (rawScreenshots.isNotEmpty()) {
+                item(key = "screenshots_cleaner_banner") {
+                    Card(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showScreenshotsPage = true
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        MaterialSymbol(
+                                            name = "screenshot_monitor",
+                                            active = true,
+                                            size = 24.dp,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        text = "Screenshots Cleaner",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (activeScreenshots.isNotEmpty())
+                                            "${activeScreenshots.size} screenshots • ${FileUtils.formatFileSize(activeScreenshots.sumOf { it.node.size })}"
+                                        else
+                                            "All ${rawScreenshots.size} screenshots reviewed",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showScreenshotsPage = true
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Clean", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
 
             // 2. Largest Files Horizontal Carousel with Efficient Lazy Thumbnails
@@ -777,5 +873,307 @@ fun DiscoverView(
             currentFileName = deleteCurrentFileName,
             isTrash = deleteIsTrash
         )
+
+        if (showScreenshotsPage) {
+            ScreenshotsCleanerPage(
+                activeScreenshots = activeScreenshots,
+                totalCount = rawScreenshots.size,
+                onBack = { showScreenshotsPage = false },
+                onTrash = { entry ->
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            try {
+                                val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
+                                if (f != null && f.exists()) {
+                                    FileUtils.deleteOrTrashFile(f, context)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        reviewedScreenshots = reviewedScreenshots + entry.path
+                        Toast.makeText(context, "Moved to Recycle Bin", Toast.LENGTH_SHORT).show()
+                        onRefresh()
+                    }
+                },
+                onKeep = { entry ->
+                    reviewedScreenshots = reviewedScreenshots + entry.path
+                },
+                onReset = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    reviewedScreenshots = emptySet()
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScreenshotsCleanerPage(
+    activeScreenshots: List<TopFileEntry>,
+    totalCount: Int,
+    onBack: () -> Unit,
+    onTrash: (TopFileEntry) -> Unit,
+    onKeep: (TopFileEntry) -> Unit,
+    onReset: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    BackHandler(onBack = onBack)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = "Screenshots Cleaner",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (activeScreenshots.isNotEmpty()) {
+                            Text(
+                                text = "${activeScreenshots.size} of $totalCount remaining (${FileUtils.formatFileSize(activeScreenshots.sumOf { it.node.size })})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        MaterialSymbol("arrow_back", active = true, size = 24.dp)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (activeScreenshots.isNotEmpty()) {
+                val currentScreenshot = activeScreenshots.first()
+                val animOffsetX = remember(currentScreenshot.path) { Animatable(0f) }
+
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(28.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .offset { IntOffset(animOffsetX.value.roundToInt(), 0) }
+                            .graphicsLayer {
+                                rotationZ = (animOffsetX.value / 25f).coerceIn(-12f, 12f)
+                            }
+                            .pointerInput(currentScreenshot.path) {
+                                detectHorizontalDragGestures(
+                                    onDragEnd = {
+                                        scope.launch {
+                                            if (animOffsetX.value < -160f) {
+                                                animOffsetX.animateTo(-800f, tween(150))
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                onTrash(currentScreenshot)
+                                            } else if (animOffsetX.value > 160f) {
+                                                animOffsetX.animateTo(800f, tween(150))
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onKeep(currentScreenshot)
+                                            } else {
+                                                animOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                            }
+                                        }
+                                    },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        scope.launch {
+                                            animOffsetX.snapTo(animOffsetX.value + dragAmount)
+                                        }
+                                    }
+                                )
+                            }
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            MediaThumbnailView(
+                                node = currentScreenshot.node,
+                                path = currentScreenshot.path,
+                                fallbackTint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // Dynamic Left (Trash) Overlay
+                            val leftAlpha = (-animOffsetX.value / 150f).coerceIn(0f, 0.85f)
+                            if (leftAlpha > 0.05f) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.error.copy(alpha = leftAlpha)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        MaterialSymbol(name = "delete", active = true, size = 44.dp, tint = MaterialTheme.colorScheme.onError)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text("TRASH", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onError)
+                                    }
+                                }
+                            }
+
+                            // Dynamic Right (Keep) Overlay
+                            val rightAlpha = (animOffsetX.value / 150f).coerceIn(0f, 0.85f)
+                            if (rightAlpha > 0.05f) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = rightAlpha)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        MaterialSymbol(name = "check", active = true, size = 44.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text("KEEP", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                }
+                            }
+
+                            // Bottom file metadata info
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp)
+                                ) {
+                                    Text(
+                                        text = currentScreenshot.node.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${FileUtils.formatFileSize(currentScreenshot.node.size)} • ${currentScreenshot.path}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "← Swipe left to trash  •  Swipe right to keep →",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Action buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                scope.launch {
+                                    animOffsetX.animateTo(-800f, tween(150))
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onTrash(currentScreenshot)
+                                }
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                        ) {
+                            MaterialSymbol("delete", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Trash", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    animOffsetX.animateTo(800f, tween(150))
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onKeep(currentScreenshot)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                        ) {
+                            MaterialSymbol("check", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Keep", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    MaterialSymbol(
+                        name = "check_circle",
+                        active = true,
+                        size = 64.dp,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "All Caught Up!",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You've reviewed all $totalCount screenshots on your device.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(onClick = onReset) {
+                            Text("Review again", fontWeight = FontWeight.Bold)
+                        }
+                        Button(onClick = onBack) {
+                            Text("Done", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
