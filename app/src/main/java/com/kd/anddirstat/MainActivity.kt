@@ -1,0 +1,792 @@
+package com.kd.anddirstat
+
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import com.kd.anddirstat.model.AppDestinations
+import com.kd.anddirstat.model.CompactNode
+import com.kd.anddirstat.model.ExtensionStat
+import com.kd.anddirstat.model.NavEntry
+import com.kd.anddirstat.model.TopFileEntry
+import com.kd.anddirstat.scanner.StorageFilterHelper
+import com.kd.anddirstat.scanner.StorageScanner
+import com.kd.anddirstat.treemap.TreemapCanvas
+import com.kd.anddirstat.ui.components.AppIconCache
+import com.kd.anddirstat.ui.components.MaterialSymbol
+import com.kd.anddirstat.ui.screens.DiscoverView
+import com.kd.anddirstat.ui.screens.ExplorerView
+import com.kd.anddirstat.ui.screens.ExpressiveNodeDetailsCard
+import com.kd.anddirstat.ui.screens.FileTypesView
+import com.kd.anddirstat.ui.screens.LoadingScreen
+import com.kd.anddirstat.ui.screens.PermissionScreen
+import com.kd.anddirstat.ui.screens.SettingsView
+import com.kd.anddirstat.util.FileUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        setContent {
+            AndDirStatTheme {
+                MainApp()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainApp() {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
+
+    var hasStoragePermission by remember { mutableStateOf(FileUtils.checkStoragePermission(context)) }
+    var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
+    var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
+    var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
+    var showFilterMenu by remember { mutableStateOf(false) }
+
+    var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
+    var deviceTotalBytes by remember { mutableLongStateOf(0L) }
+    var rootNode by remember { mutableStateOf<CompactNode?>(null) }
+    var extensionStats by remember { mutableStateOf<List<ExtensionStat>>(emptyList()) }
+    var topFiles by remember { mutableStateOf<List<TopFileEntry>>(emptyList()) }
+    var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
+    var selectedPath by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    var scanPhase by remember { mutableStateOf("Analyzing storage...") }
+    var scanDetail by remember { mutableStateOf("Starting scan...") }
+
+    var currentRoute by remember { mutableStateOf(AppDestinations.MAP) }
+    var previousRoute by remember { mutableStateOf(AppDestinations.MAP) }
+
+    var explorerNode by remember { mutableStateOf<CompactNode?>(null) }
+    var explorerPath by remember { mutableStateOf("Device Storage") }
+    var explorerStack by remember { mutableStateOf<List<NavEntry>>(emptyList()) }
+
+    var currentScale by remember { mutableStateOf(1f) }
+    var resetZoomKey by remember { mutableStateOf(0) }
+
+    fun applyFilter(freeSpace: Boolean, systemApps: Boolean) {
+        val raw = rawScannedNode ?: return
+        val filtered = StorageFilterHelper.filterStorageTree(raw, freeSpace, systemApps, deviceTotalBytes)
+        rootNode = filtered
+        explorerNode = filtered
+        explorerPath = filtered?.name ?: "Device Storage"
+        explorerStack = emptyList()
+        extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
+        topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+        if (selectedNode != null) {
+            selectedNode = null
+            selectedPath = null
+        }
+    }
+
+    fun navigateTo(dest: String) {
+        if (currentRoute == dest) return
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        previousRoute = currentRoute
+        currentRoute = dest
+    }
+
+    fun triggerScan() {
+        if (!hasStoragePermission || isLoading) return
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        isLoading = true
+        scanPhase = "Analyzing storage..."
+        scanDetail = "Starting scan..."
+        scope.launch {
+            val freeSpacePref = prefs.getBoolean("show_free_space", true)
+            val systemAppsPref = prefs.getBoolean("show_system_apps", true)
+            showFreeSpace = freeSpacePref
+            showSystemApps = systemAppsPref
+            val scanner = StorageScanner(context)
+            val scanned = scanner.scanStorage(includeFreeSpace = true) { phase, detail ->
+                scanPhase = phase
+                scanDetail = detail
+            }
+            rawScannedNode = scanned
+            deviceTotalBytes = scanned.size
+
+            val filtered = StorageFilterHelper.filterStorageTree(scanned, freeSpacePref, systemAppsPref, deviceTotalBytes)
+            rootNode = filtered
+            explorerNode = filtered
+            explorerPath = filtered?.name ?: "Device Storage"
+            explorerStack = emptyList()
+            extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
+            topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+            selectedNode = null
+            selectedPath = null
+            isLoading = false
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+            // Prefetch app icons asynchronously in background IO
+            launch(Dispatchers.IO) {
+                val appsParent = scanned.children?.firstOrNull { it.name == "Apps & System Packages" }
+                appsParent?.children?.forEach { appNode ->
+                    val pkg = FileUtils.extractPackageName(appNode)
+                    if (pkg != null) {
+                        AppIconCache.get(context, pkg)
+                    }
+                }
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasStoragePermission = granted
+        if (granted) triggerScan()
+    }
+
+    val manageStorageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        hasStoragePermission = FileUtils.checkStoragePermission(context)
+        hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
+        if (hasStoragePermission) triggerScan()
+    }
+
+    LaunchedEffect(hasStoragePermission) {
+        if (hasStoragePermission && rootNode == null && !isLoading) {
+            triggerScan()
+        }
+    }
+
+    PredictiveBackHandler(enabled = currentRoute == AppDestinations.SETTINGS) { progress ->
+        try {
+            progress.collect { }
+            currentRoute = previousRoute
+        } catch (_: CancellationException) {
+        }
+    }
+
+    PredictiveBackHandler(enabled = selectedNode != null) { progress ->
+        try {
+            progress.collect { }
+            selectedNode = null
+            selectedPath = null
+        } catch (_: CancellationException) {
+        }
+    }
+
+    PredictiveBackHandler(enabled = currentRoute == AppDestinations.EXPLORER && explorerStack.isNotEmpty()) { progress ->
+        try {
+            progress.collect { }
+            val prev = explorerStack.last()
+            explorerStack = explorerStack.dropLast(1)
+            explorerNode = prev.node
+            explorerPath = prev.path
+        } catch (_: CancellationException) {
+        }
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        topBar = {
+            when (currentRoute) {
+                AppDestinations.MAP -> {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "AndDirStat",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Black
+                                )
+                            )
+                        },
+                        actions = {
+                            Box {
+                                IconButton(
+                                    onClick = { showFilterMenu = true },
+                                    enabled = !isLoading && hasStoragePermission && rawScannedNode != null
+                                ) {
+                                    MaterialSymbol("tune", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                DropdownMenu(
+                                    expanded = showFilterMenu,
+                                    onDismissRequest = { showFilterMenu = false },
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                ) {
+                                    Text(
+                                        text = "Treemap Filters",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Show System Apps",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Checkbox(
+                                                checked = showSystemApps,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showSystemApps
+                                            showSystemApps = newVal
+                                            prefs.edit().putBoolean("show_system_apps", newVal).apply()
+                                            applyFilter(showFreeSpace, newVal)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Show Free Space",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Checkbox(
+                                                checked = showFreeSpace,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showFreeSpace
+                                            showFreeSpace = newVal
+                                            prefs.edit().putBoolean("show_free_space", newVal).apply()
+                                            applyFilter(newVal, showSystemApps)
+                                        }
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { triggerScan() },
+                                enabled = !isLoading && hasStoragePermission
+                            ) {
+                                MaterialSymbol("refresh", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(
+                                onClick = { navigateTo(AppDestinations.SETTINGS) }
+                            ) {
+                                MaterialSymbol("settings", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+                AppDestinations.EXPLORER -> {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "Explorer",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        },
+                        navigationIcon = {
+                            if (explorerStack.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        val prev = explorerStack.last()
+                                        explorerStack = explorerStack.dropLast(1)
+                                        explorerNode = prev.node
+                                        explorerPath = prev.path
+                                    }
+                                ) {
+                                    MaterialSymbol(
+                                        name = "arrow_back",
+                                        active = true,
+                                        size = 20.dp,
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { triggerScan() },
+                                enabled = !isLoading && hasStoragePermission
+                            ) {
+                                MaterialSymbol(
+                                    name = "refresh",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+                AppDestinations.TYPES -> {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "File Types",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { triggerScan() },
+                                enabled = !isLoading && hasStoragePermission
+                            ) {
+                                MaterialSymbol(
+                                    name = "refresh",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+                AppDestinations.DISCOVER -> {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "Discover",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { triggerScan() },
+                                enabled = !isLoading && hasStoragePermission
+                            ) {
+                                MaterialSymbol(
+                                    name = "refresh",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+                AppDestinations.SETTINGS -> {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "Settings",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(
+                                onClick = { navigateTo(previousRoute) }
+                            ) {
+                                MaterialSymbol(
+                                    name = "arrow_back",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+            }
+        },
+        bottomBar = {
+            if (currentRoute != AppDestinations.SETTINGS) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 0.dp
+                ) {
+                    NavigationBarItem(
+                        selected = currentRoute == AppDestinations.MAP,
+                        onClick = { navigateTo(AppDestinations.MAP) },
+                        icon = {
+                            MaterialSymbol(
+                                name = "grid_view",
+                                active = currentRoute == AppDestinations.MAP,
+                                size = 24.dp,
+                                tint = if (currentRoute == AppDestinations.MAP) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = "Map",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (currentRoute == AppDestinations.MAP) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == AppDestinations.EXPLORER,
+                        onClick = { navigateTo(AppDestinations.EXPLORER) },
+                        icon = {
+                            MaterialSymbol(
+                                name = if (currentRoute == AppDestinations.EXPLORER) "folder_open" else "folder",
+                                active = currentRoute == AppDestinations.EXPLORER,
+                                size = 24.dp,
+                                tint = if (currentRoute == AppDestinations.EXPLORER) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = "Explorer",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (currentRoute == AppDestinations.EXPLORER) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == AppDestinations.TYPES,
+                        onClick = { navigateTo(AppDestinations.TYPES) },
+                        icon = {
+                            MaterialSymbol(
+                                name = "pie_chart",
+                                active = currentRoute == AppDestinations.TYPES,
+                                size = 24.dp,
+                                tint = if (currentRoute == AppDestinations.TYPES) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = "Types",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (currentRoute == AppDestinations.TYPES) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == AppDestinations.DISCOVER,
+                        onClick = { navigateTo(AppDestinations.DISCOVER) },
+                        icon = {
+                            MaterialSymbol(
+                                name = "explore",
+                                active = currentRoute == AppDestinations.DISCOVER,
+                                size = 24.dp,
+                                tint = if (currentRoute == AppDestinations.DISCOVER) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = "Discover",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (currentRoute == AppDestinations.DISCOVER) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when {
+                !hasStoragePermission -> {
+                    PermissionScreen(
+                        onGrant = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                manageStorageLauncher.launch(intent)
+                            } else {
+                                permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                            }
+                        }
+                    )
+                }
+                isLoading -> {
+                    LoadingScreen(
+                        phase = scanPhase,
+                        detail = scanDetail
+                    )
+                }
+                rootNode != null -> {
+                    // Treemap Canvas is retained in GPU memory
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = if (currentRoute == AppDestinations.MAP) 1f else 0f
+                            }
+                    ) {
+                        TreemapCanvas(
+                            rootNode = rootNode!!,
+                            rootPath = rootNode!!.name,
+                            selectedNode = selectedNode,
+                            resetKey = resetZoomKey,
+                            onScaleChanged = { currentScale = it },
+                            onNodeSelected = { node, path ->
+                                selectedNode = node
+                                selectedPath = path
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Scrim overlay when node details are open
+                        if (currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.40f))
+                                    .clickable {
+                                        selectedNode = null
+                                        selectedPath = null
+                                    }
+                            )
+                        }
+
+                        // Material 3 Expressive Transforming Detail Card
+                        AnimatedVisibility(
+                            visible = currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null,
+                            enter = fadeIn(tween(220)) + scaleIn(
+                                initialScale = 0.50f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                )
+                            ) + slideInVertically(
+                                initialOffsetY = { -it / 2 },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                )
+                            ),
+                            exit = fadeOut(tween(160)) + scaleOut(
+                                targetScale = 0.50f,
+                                animationSpec = tween(160)
+                            ) + slideOutVertically(
+                                targetOffsetY = { -it / 3 },
+                                animationSpec = tween(160)
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            if (selectedNode != null && selectedPath != null) {
+                                ExpressiveNodeDetailsCard(
+                                    node = selectedNode!!,
+                                    path = selectedPath!!,
+                                    onDismiss = {
+                                        selectedNode = null
+                                        selectedPath = null
+                                    },
+                                    onDeleted = {
+                                        selectedNode = null
+                                        selectedPath = null
+                                        triggerScan()
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (currentRoute == AppDestinations.EXPLORER) {
+                        ExplorerView(
+                            currentNode = explorerNode ?: rootNode!!,
+                            currentPath = explorerPath,
+                            canGoBack = explorerStack.isNotEmpty(),
+                            onNavigateBack = {
+                                if (explorerStack.isNotEmpty()) {
+                                    val prev = explorerStack.last()
+                                    explorerStack = explorerStack.dropLast(1)
+                                    explorerNode = prev.node
+                                    explorerPath = prev.path
+                                }
+                            },
+                            onNodeClick = { child, childPath ->
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (child.isDirectory && child.children != null && child.children!!.isNotEmpty()) {
+                                    explorerStack = explorerStack + NavEntry(explorerNode ?: rootNode!!, explorerPath)
+                                    explorerNode = child
+                                    explorerPath = childPath
+                                } else {
+                                    selectedNode = child
+                                    selectedPath = childPath
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (currentRoute == AppDestinations.TYPES) {
+                        FileTypesView(
+                            stats = extensionStats,
+                            totalDeviceSize = rootNode!!.size,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (currentRoute == AppDestinations.DISCOVER) {
+                        DiscoverView(
+                            rootNode = rootNode!!,
+                            topFiles = topFiles,
+                            onNodeClick = { node, path ->
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedNode = node
+                                selectedPath = path
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (currentRoute == AppDestinations.SETTINGS) {
+                        SettingsView(
+                            showFreeSpace = showFreeSpace,
+                            onToggleFreeSpace = { enabled ->
+                                showFreeSpace = enabled
+                                prefs.edit().putBoolean("show_free_space", enabled).apply()
+                                applyFilter(enabled, showSystemApps)
+                            },
+                            showSystemApps = showSystemApps,
+                            onToggleSystemApps = { enabled ->
+                                showSystemApps = enabled
+                                prefs.edit().putBoolean("show_system_apps", enabled).apply()
+                                applyFilter(showFreeSpace, enabled)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            // Usage Access Warning Banner
+            if (currentRoute != AppDestinations.SETTINGS && hasStoragePermission && !hasUsageAccess) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .align(Alignment.TopCenter)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Grant Usage Access to index app cache & data",
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        FilledTonalButton(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                manageStorageLauncher.launch(intent)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Grant", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
