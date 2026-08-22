@@ -27,11 +27,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
-enum class AppTheme(val key: String, val title: String, val subtitle: String) {
-    SYSTEM("system", "System Default", "Follows system appearance"),
-    LIGHT("light", "Light Mode", "Standard bright appearance"),
-    DARK("dark", "Dark Mode", "Material 3 dark surface"),
-    AMOLED("amoled", "AMOLED Black", "Pure pitch-black for OLED displays")
+enum class AppTheme(val key: String, val title: String) {
+    SYSTEM("system", "System"),
+    LIGHT("light", "Light"),
+    DARK("dark", "Dark")
+}
+
+// Accent colors — Android Green is default, Neon palette for AMOLED
+enum class AccentColor(
+    val key: String,
+    val label: String,
+    val seed: Color,
+    val neon: Boolean = false
+) {
+    GREEN("green", "Android", Color(0xFF1DB954)),
+    BLUE("blue", "Blue", Color(0xFF2196F3)),
+    PURPLE("purple", "Purple", Color(0xFF9C27B0)),
+    ORANGE("orange", "Orange", Color(0xFFFF6D00)),
+    TEAL("teal", "Teal", Color(0xFF009688)),
+    NEON_GREEN("neon_green", "Neon ⚡", Color(0xFF39FF14), true),
+    NEON_PINK("neon_pink", "Neon 🌸", Color(0xFFFF10F0), true),
+    NEON_CYAN("neon_cyan", "Neon 💎", Color(0xFF00FFFF), true),
+    NEON_YELLOW("neon_yellow", "Neon ☀", Color(0xFFFFFF00), true)
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -265,7 +282,9 @@ val Material3Typography = Typography(
 @Composable
 fun AndDirStatTheme(
     appTheme: AppTheme = AppTheme.SYSTEM,
-    dynamicColor: Boolean = true,
+    pureBlack: Boolean = false,
+    accentColor: AccentColor = AccentColor.GREEN,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -273,32 +292,41 @@ fun AndDirStatTheme(
         AppTheme.SYSTEM -> systemDark
         AppTheme.LIGHT -> false
         AppTheme.DARK -> true
-        AppTheme.AMOLED -> true
     }
 
     val context = LocalContext.current
-    val colorScheme = when (appTheme) {
-        AppTheme.AMOLED -> AmoledColorScheme
-        AppTheme.LIGHT -> {
-            if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                dynamicLightColorScheme(context)
-            } else {
-                LightColorScheme
-            }
+    val baseScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        AppTheme.DARK -> {
-            if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                dynamicDarkColorScheme(context)
-            } else {
-                DarkColorScheme
-            }
-        }
-        AppTheme.SYSTEM -> {
-            if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (systemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            } else {
-                if (systemDark) DarkColorScheme else LightColorScheme
-            }
+        isDark -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    // Apply pureBlack override when dark + pureBlack, then tint primary with accentColor.seed
+    val accent = accentColor.seed
+    val accentContainer = accent.copy(alpha = 0.25f)
+    val colorScheme = baseScheme.let { s ->
+        val withAccent = s.copy(
+            primary = accent,
+            onPrimary = if (isDark) Color.Black else Color.White,
+            primaryContainer = accentContainer,
+            onPrimaryContainer = accent,
+            inversePrimary = accent.copy(alpha = 0.7f)
+        )
+        if (isDark && pureBlack) {
+            withAccent.copy(
+                background = Color.Black,
+                surface = Color.Black,
+                surfaceContainer = Color(0xFF0A0B0E),
+                surfaceContainerLow = Color(0xFF050507),
+                surfaceContainerHigh = Color(0xFF121418),
+                surfaceContainerHighest = Color(0xFF1A1C22),
+                surfaceVariant = Color(0xFF1C1D22),
+                outlineVariant = Color(0xFF2C2D35)
+            )
+        } else {
+            withAccent
         }
     }
 

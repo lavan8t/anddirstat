@@ -65,6 +65,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import com.kd.anddirstat.model.AppDestinations
 import com.kd.anddirstat.model.CompactNode
@@ -110,8 +112,13 @@ fun MainApp() {
     var currentTheme by remember {
         mutableStateOf(AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM)
     }
+    var pureBlack by remember { mutableStateOf(prefs.getBoolean("pure_black", false)) }
+    val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
+    var accentColor by remember {
+        mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
+    }
 
-    AndDirStatTheme(appTheme = currentTheme) {
+    AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
         var hasStoragePermission by remember { mutableStateOf(FileUtils.checkStoragePermission(context)) }
         var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
         var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
@@ -601,50 +608,48 @@ fun MainApp() {
                                 selectedNode = node
                                 selectedPath = path
                             },
-                            modifier = Modifier.fillMaxSize()
                         )
 
-                        // Material 3 Expressive Detail Overlay (Synchronized Scrim + Card)
-                        AnimatedVisibility(
-                            visible = currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null,
-                            enter = fadeIn(tween(140)) + scaleIn(
-                                initialScale = 0.94f,
-                                animationSpec = tween(140)
-                            ),
-                            exit = fadeOut(tween(100)) + scaleOut(
-                                targetScale = 0.94f,
-                                animationSpec = tween(100)
-                            ),
-                            modifier = Modifier.fillMaxSize()
+                    }
+
+                    // Node details as a proper system Dialog window (covers TopBar + NavBar)
+                    if (currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null) {
+                        Dialog(
+                            onDismissRequest = {
+                                selectedNode = null
+                                selectedPath = null
+                            },
+                            properties = DialogProperties(
+                                usePlatformDefaultWidth = false,
+                                decorFitsSystemWindows = false
+                            )
                         ) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.50f))
+                                    .background(Color.Black.copy(alpha = 0.55f))
                                     .clickable {
                                         selectedNode = null
                                         selectedPath = null
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (selectedNode != null && selectedPath != null) {
-                                    ExpressiveNodeDetailsCard(
-                                        node = selectedNode!!,
-                                        path = selectedPath!!,
-                                        onDismiss = {
-                                            selectedNode = null
-                                            selectedPath = null
-                                        },
-                                        onDeleted = {
-                                            selectedNode = null
-                                            selectedPath = null
-                                            triggerScan()
-                                        },
-                                        modifier = Modifier
-                                            .padding(horizontal = 16.dp)
-                                            .clickable(enabled = false) { }
-                                    )
-                                }
+                                ExpressiveNodeDetailsCard(
+                                    node = selectedNode!!,
+                                    path = selectedPath!!,
+                                    onDismiss = {
+                                        selectedNode = null
+                                        selectedPath = null
+                                    },
+                                    onDeleted = {
+                                        selectedNode = null
+                                        selectedPath = null
+                                        triggerScan()
+                                    },
+                                    modifier = Modifier
+                                        .padding(horizontal = 16.dp)
+                                        .clickable(enabled = false) { }
+                                )
                             }
                         }
                     }
@@ -698,6 +703,16 @@ fun MainApp() {
                             onSelectTheme = { selectedTheme ->
                                 currentTheme = selectedTheme
                                 prefs.edit().putString("app_theme", selectedTheme.key).apply()
+                            },
+                            pureBlack = pureBlack,
+                            onTogglePureBlack = { v ->
+                                pureBlack = v
+                                prefs.edit().putBoolean("pure_black", v).apply()
+                            },
+                            accentColor = accentColor,
+                            onSelectAccent = { a ->
+                                accentColor = a
+                                prefs.edit().putString("accent_color", a.key).apply()
                             },
                             modifier = Modifier.fillMaxSize()
                         )
