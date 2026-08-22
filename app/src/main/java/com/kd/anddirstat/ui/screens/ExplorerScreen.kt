@@ -51,7 +51,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,11 +80,12 @@ fun ExplorerView(
     onNodeClick: (CompactNode, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expandedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
-    var selectedNodes by remember(rootNode) { mutableStateOf(setOf<CompactNode>()) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    val isDark = isSystemInDarkTheme()
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
+    var expandedNodes by remember(rootNode) { mutableStateOf(setOf(rootNode)) }
+    var selectedRows by remember(rootNode) { mutableStateOf(mapOf<CompactNode, String>()) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     fun flattenTree(
         parent: CompactNode,
@@ -112,8 +115,8 @@ fun ExplorerView(
         list
     }
 
-    BackHandler(enabled = selectedNodes.isNotEmpty()) {
-        selectedNodes = emptySet()
+    BackHandler(enabled = selectedRows.isNotEmpty()) {
+        selectedRows = emptyMap()
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -131,7 +134,7 @@ fun ExplorerView(
                 val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
                 val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
                 val isApp = child.children?.any { it.name.startsWith("App Code") } == true
-                val appPkg = if (isApp) FileUtils.extractPackageName(child) else null
+                val appPkg = if (isApp) FileUtils.extractPackageName(child, row.path, context) else null
                 val icon = FileUtils.getNodeIcon(child, isApp)
                 val isSelectable = remember(child) {
                     val n = child.name.trim().lowercase()
@@ -139,7 +142,7 @@ fun ExplorerView(
                     n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
                     n != "[free space]" && n != "free space"
                 }
-                val isSelected = isSelectable && selectedNodes.contains(child)
+                val isSelected = isSelectable && selectedRows.containsKey(child)
 
                 ListItem(
                     leadingContent = {
@@ -157,6 +160,7 @@ fun ExplorerView(
                                         .size(40.dp)
                                         .clip(CircleShape)
                                         .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
                                         }
                                 ) {
@@ -178,7 +182,8 @@ fun ExplorerView(
                                     .then(
                                         if (isSelectable) {
                                             Modifier.clickable {
-                                                selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to row.path)
                                             }
                                         } else Modifier
                                     )
@@ -246,10 +251,12 @@ fun ExplorerView(
                     ),
                     modifier = Modifier.combinedClickable(
                         onClick = {
-                            if (selectedNodes.isNotEmpty() && isSelectable) {
-                                selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                            if (selectedRows.isNotEmpty() && isSelectable) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to row.path)
                             } else {
                                 if (row.hasChildren) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
                                 } else {
                                     onNodeClick(child, row.path)
@@ -260,7 +267,8 @@ fun ExplorerView(
                             if (row.hasChildren) {
                                 onNodeClick(child, row.path)
                             } else if (isSelectable) {
-                                selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to row.path)
                             }
                         }
                     )
@@ -271,7 +279,7 @@ fun ExplorerView(
 
         // Floating Selection Bar
         AnimatedVisibility(
-            visible = selectedNodes.isNotEmpty(),
+            visible = selectedRows.isNotEmpty(),
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
@@ -294,7 +302,10 @@ fun ExplorerView(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AppTooltip(text = "Clear selection") {
                             IconButton(
-                                onClick = { selectedNodes = emptySet() },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedRows = emptyMap()
+                                },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 MaterialSymbol(
@@ -308,13 +319,13 @@ fun ExplorerView(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "${selectedNodes.size} selected",
+                                text = "${selectedRows.size} selected",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = FileUtils.formatFileSize(selectedNodes.sumOf { it.size }),
+                                text = FileUtils.formatFileSize(selectedRows.keys.sumOf { it.size }),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -327,7 +338,10 @@ fun ExplorerView(
                             modifier = Modifier.size(38.dp)
                         ) {
                             IconButton(
-                                onClick = { showDeleteDialog = true },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showDeleteDialog = true
+                                },
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 MaterialSymbol(
@@ -343,11 +357,12 @@ fun ExplorerView(
             }
         }
 
-        if (showDeleteDialog && selectedNodes.isNotEmpty()) {
-            val count = selectedNodes.size
-            val totalBytes = selectedNodes.sumOf { it.size }
-            val hasApps = selectedNodes.any { FileUtils.extractPackageName(it) != null }
-            val allApps = selectedNodes.all { FileUtils.extractPackageName(it) != null }
+        if (showDeleteDialog && selectedRows.isNotEmpty()) {
+            val count = selectedRows.size
+            val totalBytes = selectedRows.keys.sumOf { it.size }
+            val hasApps = selectedRows.any { (node, path) -> FileUtils.extractPackageName(node, path, context) != null }
+            val allApps = selectedRows.all { (node, path) -> FileUtils.extractPackageName(node, path, context) != null }
+            val allAlreadyTrashed = selectedRows.all { (node, path) -> node.name.startsWith(".trashed") || path.contains(".trashed") || path.contains("[Recycle Bin]") }
 
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
@@ -364,8 +379,10 @@ fun ExplorerView(
                             allApps && count == 1 -> "Uninstall 1 app?"
                             allApps -> "Uninstall $count apps?"
                             hasApps -> "Delete / Uninstall $count items?"
-                            count == 1 -> "Delete 1 item?"
-                            else -> "Delete $count items?"
+                            allAlreadyTrashed && count == 1 -> "Delete 1 item permanently?"
+                            allAlreadyTrashed -> "Delete $count items permanently?"
+                            count == 1 -> "Move 1 item to Recycle Bin?"
+                            else -> "Move $count items to Recycle Bin?"
                         },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
@@ -373,7 +390,11 @@ fun ExplorerView(
                 },
                 text = {
                     Text(
-                        text = "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently",
+                        text = when {
+                            allApps -> "$count applications will be uninstalled from device."
+                            allAlreadyTrashed -> "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently"
+                            else -> "Selected items will be moved to the Recycle Bin.\n\n${FileUtils.formatFileSize(totalBytes)} to be moved"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -382,26 +403,29 @@ fun ExplorerView(
                     TextButton(
                         onClick = {
                             showDeleteDialog = false
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val packagesToUninstall = mutableListOf<String>()
-                            selectedNodes.forEach { node ->
-                                val pkg = FileUtils.extractPackageName(node)
+                            selectedRows.forEach { (node, path) ->
+                                val pkg = FileUtils.extractPackageName(node, path, context)
                                 if (pkg != null) {
                                     packagesToUninstall.add(pkg)
                                 } else {
                                     try {
-                                        val f = FileUtils.resolveActualFile(node.name)
-                                        if (f != null && f.exists()) f.deleteRecursively()
+                                        val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
+                                        if (f != null && f.exists()) {
+                                            FileUtils.deleteOrTrashFile(f)
+                                        }
                                     } catch (_: Exception) {}
                                 }
                             }
                             if (packagesToUninstall.isNotEmpty()) {
                                 FileUtils.uninstallApps(context, packagesToUninstall)
                             }
-                            selectedNodes = emptySet()
+                            selectedRows = emptyMap()
                         }
                     ) {
                         Text(
-                            text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else "Delete",
+                            text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else if (allAlreadyTrashed) "Delete" else "Move to Bin",
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold
                         )

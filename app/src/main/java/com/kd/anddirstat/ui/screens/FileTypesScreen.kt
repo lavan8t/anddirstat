@@ -37,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -178,6 +180,7 @@ fun FileTypesView(
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
+    val haptic = LocalHapticFeedback.current
     var expandedCategories by remember(rootNode) { mutableStateOf(setOf<String>()) }
     var expandedExtensions by remember(rootNode) { mutableStateOf(setOf<String>()) }
     val overview = remember(rootNode, totalDeviceSize) { calculateStorageOverview(rootNode, totalDeviceSize) }
@@ -385,6 +388,7 @@ fun FileTypesView(
                                     .size(40.dp)
                                     .clip(CircleShape)
                                     .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
                                     }
                             ) {
@@ -402,6 +406,7 @@ fun FileTypesView(
                                     .size(44.dp)
                                     .clip(CircleShape)
                                     .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
                                     }
                             ) {
@@ -473,6 +478,7 @@ fun FileTypesView(
                         containerColor = if (isCatExpanded) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else Color.Transparent
                     ),
                     modifier = Modifier.clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
                     }
                 )
@@ -500,6 +506,7 @@ fun FileTypesView(
                                                 .size(36.dp)
                                                 .clip(CircleShape)
                                                 .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
                                                 }
                                         ) {
@@ -522,6 +529,7 @@ fun FileTypesView(
                                             .clip(CircleShape)
                                             .clickable {
                                                 if (hasFiles) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
                                                 }
                                             }
@@ -594,6 +602,7 @@ fun FileTypesView(
                             ),
                             modifier = if (hasFiles) {
                                 Modifier.clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
                                 }
                             } else Modifier
@@ -675,6 +684,7 @@ fun FileTypesView(
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onNodeClick(fileNode, filePath)
                                 }
                             )

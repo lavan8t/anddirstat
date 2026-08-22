@@ -269,10 +269,13 @@ class StorageScanner(private val context: Context) {
                 }
             }
 
-            if (codeSize > 0L) {
-                appParts.add(CompactNode(name = "App Code (${appInfo.packageName}.apk)", isDirectory = false, size = codeSize))
-                appTotal += codeSize
-            }
+            val fullLabel = if (appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0) "$label (System)" else label
+            FileUtils.AppPackageRegistry.register(fullLabel, appInfo.packageName)
+            FileUtils.AppPackageRegistry.register(label, appInfo.packageName)
+
+            appParts.add(CompactNode(name = "App Code (${appInfo.packageName}.apk)", isDirectory = false, size = maxOf(0L, codeSize)))
+            appTotal += codeSize
+
             if (dataSize > 0L) {
                 appParts.add(CompactNode(name = "Data", isDirectory = false, size = dataSize))
                 appTotal += dataSize
@@ -284,14 +287,13 @@ class StorageScanner(private val context: Context) {
 
             if (appTotal > 0L) {
                 totalScannedBytes.addAndGet(appTotal)
-                val fullLabel = if (appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0) "$label (System)" else label
                 appParts.sortByDescending { it.size }
                 appNodes.add(
                     CompactNode(
                         name = fullLabel,
                         isDirectory = true,
                         size = appTotal,
-                        children = if (appParts.isNotEmpty()) appParts.toTypedArray() else null
+                        children = appParts.toTypedArray()
                     )
                 )
                 totalAppsSize += appTotal

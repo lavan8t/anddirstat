@@ -35,7 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
@@ -59,13 +61,15 @@ fun ExpressiveNodeDetailsSheet(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val realFile = remember(path) { FileUtils.resolveActualFile(path) }
     val isRealFile = realFile != null && realFile.exists()
     val appChildren = node.children
-    val isAppNode = appChildren != null && appChildren.any {
-        it.name.startsWith("App Code") || it.name == "Data" || it.name == "Cache"
-    }
+    val pkgName = remember(node, path) { FileUtils.extractPackageName(node, path, context) }
+    val isAppNode = pkgName != null || (appChildren != null && appChildren.any {
+        it.name.startsWith("App Code")
+    })
 
     val nameLower = remember(node.name) { node.name.lowercase() }
     val isMediaFile = remember(nameLower) {
@@ -88,7 +92,6 @@ fun ExpressiveNodeDetailsSheet(
     val codeSize = appChildren?.firstOrNull { it.name.startsWith("App Code") }?.size ?: 0L
     val dataSize = appChildren?.firstOrNull { it.name == "Data" }?.size ?: 0L
     val cacheSize = appChildren?.firstOrNull { it.name == "Cache" }?.size ?: 0L
-    val pkgName = remember(node) { FileUtils.extractPackageName(node) }
 
     val dateFormatted = remember(realFile) {
         if (realFile != null && realFile.exists() && realFile.lastModified() > 0) {
@@ -183,7 +186,10 @@ fun ExpressiveNodeDetailsSheet(
                         modifier = Modifier.size(44.dp)
                     ) {
                         IconButton(
-                            onClick = onToggleSelect,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onToggleSelect()
+                            },
                             modifier = Modifier.fillMaxSize()
                         ) {
                             MaterialSymbol(
@@ -265,6 +271,7 @@ fun ExpressiveNodeDetailsSheet(
                     AppTooltip(text = "Open application") {
                         IconButton(
                             onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 try {
                                     context.startActivity(launchIntent)
                                     onDismiss()
@@ -284,6 +291,7 @@ fun ExpressiveNodeDetailsSheet(
                 AppTooltip(text = "Application details") {
                     IconButton(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             try {
                                 context.startActivity(
                                     Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
@@ -303,8 +311,10 @@ fun ExpressiveNodeDetailsSheet(
                 AppTooltip(text = "Uninstall application") {
                     IconButton(
                         onClick = {
-                            if (pkgName != null) {
-                                FileUtils.uninstallApp(context, pkgName)
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val targetPkg = pkgName ?: FileUtils.extractPackageName(node, path, context)
+                            if (targetPkg != null) {
+                                FileUtils.uninstallApp(context, targetPkg)
                             }
                             onDismiss()
                         },
@@ -323,6 +333,7 @@ fun ExpressiveNodeDetailsSheet(
                 AppTooltip(text = "Open file") {
                     IconButton(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             FileUtils.openFile(context, realFile)
                             onDismiss()
                         },
@@ -337,7 +348,10 @@ fun ExpressiveNodeDetailsSheet(
                 }
                 AppTooltip(text = "Delete file") {
                     IconButton(
-                        onClick = { showDeleteConfirmation = true },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showDeleteConfirmation = true
+                        },
                         colors = IconButtonDefaults.iconButtonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError
@@ -351,6 +365,7 @@ fun ExpressiveNodeDetailsSheet(
         }
 
         if (showDeleteConfirmation && realFile != null) {
+            val isAlreadyTrashed = realFile.name.startsWith(".trashed") || realFile.parentFile?.name?.startsWith(".trashed") == true || realFile.parentFile?.name == "[Recycle Bin]"
             AlertDialog(
                 onDismissRequest = { showDeleteConfirmation = false },
                 icon = {
@@ -362,14 +377,14 @@ fun ExpressiveNodeDetailsSheet(
                 },
                 title = {
                     Text(
-                        text = "Delete file?",
+                        text = if (isAlreadyTrashed) "Delete permanently?" else "Move to Recycle Bin?",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 text = {
                     Text(
-                        text = "This action is permanent and cannot be undone.\n\n${displayName}",
+                        text = if (isAlreadyTrashed) "This file will be permanently removed from device storage.\n\n${displayName}" else "This file will be moved to the Recycle Bin.\n\n${displayName}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -378,15 +393,17 @@ fun ExpressiveNodeDetailsSheet(
                     TextButton(
                         onClick = {
                             showDeleteConfirmation = false
-                            if (realFile.delete()) {
-                                Toast.makeText(context, "Deleted ${realFile.name}", Toast.LENGTH_SHORT).show()
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (FileUtils.deleteOrTrashFile(realFile)) {
+                                val msg = if (isAlreadyTrashed) "Deleted ${realFile.name}" else "Moved to Recycle Bin"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 onDeleted()
                             } else {
                                 Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
                             }
                         }
                     ) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        Text(if (isAlreadyTrashed) "Delete" else "Move to Bin", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {

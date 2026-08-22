@@ -319,22 +319,31 @@ fun TreemapCanvas(
                 continue
             }
 
-            // Ensure even tiny tiles are always cleanly visible with minimum 1px bounds — never black or skipped
             val drawW = maxOf(1f, sW)
             val drawH = maxOf(1f, sH)
 
-            // Hardware-accelerated 3D cushion gradient across all tiles
-            val brush = Brush.linearGradient(
-                colors = tile.gradientColors,
-                start = Offset(sLeft, sTop),
-                end = Offset(sLeft + drawW, sTop + drawH)
-            )
+            if (isAmoled) {
+                // AMOLED mode: pure black background with colored borders alone
+                drawRect(
+                    color = tile.baseColor,
+                    topLeft = Offset(sLeft, sTop),
+                    size = Size(drawW, drawH),
+                    style = Stroke(width = if (currentScale > 1.5f) 2.5f else 1.5f)
+                )
+            } else {
+                // Hardware-accelerated 3D cushion gradient across all tiles
+                val brush = Brush.linearGradient(
+                    colors = tile.gradientColors,
+                    start = Offset(sLeft, sTop),
+                    end = Offset(sLeft + drawW, sTop + drawH)
+                )
 
-            drawRect(
-                brush = brush,
-                topLeft = Offset(sLeft, sTop),
-                size = Size(drawW, drawH)
-            )
+                drawRect(
+                    brush = brush,
+                    topLeft = Offset(sLeft, sTop),
+                    size = Size(drawW, drawH)
+                )
+            }
 
             val isMarked = selectedNodes.contains(tile.node)
             if (isMarked) {

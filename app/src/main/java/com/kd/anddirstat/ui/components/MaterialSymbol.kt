@@ -22,9 +22,9 @@ private fun createSymbolsFamily(filled: Boolean) = FontFamily(
     Font(
         resId = R.font.material_symbols_rounded,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(700),
-            FontVariation.Setting("GRAD", 200f),
-            FontVariation.Setting("opsz", 20f),
+            FontVariation.weight(600),
+            FontVariation.Setting("GRAD", 0f),
+            FontVariation.Setting("opsz", 24f),
             FontVariation.Setting("FILL", if (filled) 1f else 0f)
         )
     )

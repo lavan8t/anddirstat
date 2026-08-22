@@ -58,7 +58,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,8 +83,9 @@ fun DiscoverView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var selectedPreset by remember { mutableStateOf<String?>("> 1 GB") }
-    var selectedNodes by remember(rootNode, searchQuery) { mutableStateOf(setOf<CompactNode>()) }
+    var selectedEntries by remember(rootNode, searchQuery) { mutableStateOf(setOf<TopFileEntry>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val filterPresets = remember {
@@ -156,14 +159,14 @@ fun DiscoverView(
                             else -> RoundedCornerShape(4.dp)
                         }
                         val isApp = entry.node.children?.any { it.name.startsWith("App Code") } == true
-                        val appPkg = if (isApp) FileUtils.extractPackageName(entry.node) else null
+                        val appPkg = if (isApp) FileUtils.extractPackageName(entry.node, entry.path, context) else null
                         val isSelectable = remember(entry.node) {
                             val n = entry.node.name.trim().lowercase()
                             n != "[system & os]" && n != "system & os" &&
                             n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
                             n != "[free space]" && n != "free space"
                         }
-                        val isSelected = isSelectable && selectedNodes.contains(entry.node)
+                        val isSelected = isSelectable && selectedEntries.contains(entry)
 
                         Surface(
                             shape = shape,
@@ -173,15 +176,17 @@ fun DiscoverView(
                                 .padding(horizontal = 16.dp)
                                 .combinedClickable(
                                     onClick = {
-                                        if (selectedNodes.isNotEmpty() && isSelectable) {
-                                            selectedNodes = if (isSelected) selectedNodes - entry.node else selectedNodes + entry.node
+                                        if (selectedEntries.isNotEmpty() && isSelectable) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
                                         } else {
                                             onNodeClick(entry.node, entry.path)
                                         }
                                     },
                                     onLongClick = {
                                         if (isSelectable) {
-                                            selectedNodes = if (isSelected) selectedNodes - entry.node else selectedNodes + entry.node
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
                                         }
                                     }
                                 )
@@ -200,7 +205,8 @@ fun DiscoverView(
                                         .then(
                                             if (isSelectable) {
                                                 Modifier.clickable {
-                                                    selectedNodes = if (isSelected) selectedNodes - entry.node else selectedNodes + entry.node
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
                                                 }
                                             } else Modifier
                                         )
@@ -281,6 +287,7 @@ fun DiscoverView(
                         FilterChip(
                             selected = isSelected,
                             onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 selectedPreset = if (isSelected) null else preset
                             },
                             label = {
@@ -414,7 +421,7 @@ fun DiscoverView(
                 items = largeApps,
                 key = { index, app -> "${app.name}_$index" }
             ) { index, app ->
-                val pkgName = remember(app) { FileUtils.extractPackageName(app) }
+                val pkgName = remember(app) { FileUtils.extractPackageName(app, null, context) }
                 val appChildren = app.children
                 val cacheSize = appChildren?.firstOrNull { it.name == "Cache" }?.size ?: 0L
 
@@ -489,6 +496,7 @@ fun DiscoverView(
                                                 .size(36.dp)
                                                 .clip(CircleShape)
                                                 .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     try {
                                                         context.startActivity(launchIntent)
                                                     } catch (_: Exception) {}
@@ -515,6 +523,7 @@ fun DiscoverView(
                                         .size(36.dp)
                                         .clip(CircleShape)
                                         .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             if (pkgName != null) {
                                                 try {
                                                     context.startActivity(
@@ -546,6 +555,7 @@ fun DiscoverView(
                                         .size(36.dp)
                                         .clip(CircleShape)
                                         .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             if (pkgName != null) {
                                                 FileUtils.uninstallApp(context, pkgName)
                                             }
@@ -574,7 +584,7 @@ fun DiscoverView(
 
     // Floating Selection Bar for Search Results
         AnimatedVisibility(
-            visible = selectedNodes.isNotEmpty(),
+            visible = selectedEntries.isNotEmpty(),
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
@@ -596,7 +606,10 @@ fun DiscoverView(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AppTooltip(text = "Clear selection") {
-                            IconButton(onClick = { selectedNodes = emptySet() }) {
+                            IconButton(onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedEntries = emptySet()
+                            }) {
                                 MaterialSymbol(
                                     name = "close",
                                     active = true,
@@ -607,7 +620,7 @@ fun DiscoverView(
                         }
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "${selectedNodes.size} selected",
+                            text = "${selectedEntries.size} selected",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -621,7 +634,10 @@ fun DiscoverView(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .clickable { showDeleteDialog = true }
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showDeleteDialog = true
+                                }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 MaterialSymbol(
@@ -637,11 +653,12 @@ fun DiscoverView(
             }
         }
 
-        if (showDeleteDialog && selectedNodes.isNotEmpty()) {
-            val count = selectedNodes.size
-            val totalBytes = selectedNodes.sumOf { it.size }
-            val hasApps = selectedNodes.any { FileUtils.extractPackageName(it) != null }
-            val allApps = selectedNodes.all { FileUtils.extractPackageName(it) != null }
+        if (showDeleteDialog && selectedEntries.isNotEmpty()) {
+            val count = selectedEntries.size
+            val totalBytes = selectedEntries.sumOf { it.node.size }
+            val hasApps = selectedEntries.any { FileUtils.extractPackageName(it.node, it.path, context) != null }
+            val allApps = selectedEntries.all { FileUtils.extractPackageName(it.node, it.path, context) != null }
+            val allAlreadyTrashed = selectedEntries.all { it.node.name.startsWith(".trashed") || it.path.contains(".trashed") }
 
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
@@ -658,8 +675,10 @@ fun DiscoverView(
                             allApps && count == 1 -> "Uninstall 1 app?"
                             allApps -> "Uninstall $count apps?"
                             hasApps -> "Delete / Uninstall $count items?"
-                            count == 1 -> "Delete 1 item?"
-                            else -> "Delete $count items?"
+                            allAlreadyTrashed && count == 1 -> "Delete 1 item permanently?"
+                            allAlreadyTrashed -> "Delete $count items permanently?"
+                            count == 1 -> "Move 1 item to Recycle Bin?"
+                            else -> "Move $count items to Recycle Bin?"
                         },
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
@@ -667,7 +686,11 @@ fun DiscoverView(
                 },
                 text = {
                     Text(
-                        text = "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently",
+                        text = when {
+                            allApps -> "$count applications will be uninstalled from device."
+                            allAlreadyTrashed -> "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently"
+                            else -> "Selected items will be moved to the Recycle Bin.\n\n${FileUtils.formatFileSize(totalBytes)} to be moved"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -676,26 +699,29 @@ fun DiscoverView(
                     TextButton(
                         onClick = {
                             showDeleteDialog = false
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val packagesToUninstall = mutableListOf<String>()
-                            selectedNodes.forEach { node ->
-                                val pkg = FileUtils.extractPackageName(node)
+                            selectedEntries.forEach { entry ->
+                                val pkg = FileUtils.extractPackageName(entry.node, entry.path, context)
                                 if (pkg != null) {
                                     packagesToUninstall.add(pkg)
                                 } else {
                                     try {
-                                        val f = FileUtils.resolveActualFile(node.name)
-                                        if (f != null && f.exists()) f.deleteRecursively()
+                                        val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
+                                        if (f != null && f.exists()) {
+                                            FileUtils.deleteOrTrashFile(f)
+                                        }
                                     } catch (_: Exception) {}
                                 }
                             }
                             if (packagesToUninstall.isNotEmpty()) {
                                 FileUtils.uninstallApps(context, packagesToUninstall)
                             }
-                            selectedNodes = emptySet()
+                            selectedEntries = emptySet()
                         }
                     ) {
                         Text(
-                            text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else "Delete",
+                            text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else if (allAlreadyTrashed) "Delete" else "Move to Bin",
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold
                         )

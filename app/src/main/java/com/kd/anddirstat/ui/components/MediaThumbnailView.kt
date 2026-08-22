@@ -55,22 +55,38 @@ object MediaThumbnailCache {
         if (!actual.exists() || !actual.canRead()) return@withContext null
 
         try {
-            val bmp = if (isVideo) {
+            var bmp: Bitmap? = null
+            if (isVideo) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ThumbnailUtils.createVideoThumbnail(actual, Size(320, 320), null)
-                } else {
-                    @Suppress("DEPRECATION")
-                    ThumbnailUtils.createVideoThumbnail(actual.absolutePath, MediaStore.Video.Thumbnails.MINI_KIND)
+                    try {
+                        bmp = ThumbnailUtils.createVideoThumbnail(actual, Size(320, 320), null)
+                    } catch (_: Exception) {}
+                }
+                if (bmp == null) {
+                    try {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        retriever.setDataSource(actual.absolutePath)
+                        bmp = retriever.getFrameAtTime(1000000) ?: retriever.frameAtTime
+                        retriever.release()
+                    } catch (_: Exception) {}
                 }
             } else {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ThumbnailUtils.createImageThumbnail(actual, Size(320, 320), null)
-                } else {
-                    val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(actual.absolutePath, boundsOptions)
-                    val sampleSize = maxOf(1, maxOf(boundsOptions.outWidth / 320, boundsOptions.outHeight / 320))
-                    val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-                    BitmapFactory.decodeFile(actual.absolutePath, decodeOptions)
+                    try {
+                        bmp = ThumbnailUtils.createImageThumbnail(actual, Size(320, 320), null)
+                    } catch (_: Exception) {}
+                }
+                if (bmp == null) {
+                    try {
+                        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(actual.absolutePath, boundsOptions)
+                        val sampleSize = maxOf(1, maxOf(boundsOptions.outWidth / 320, boundsOptions.outHeight / 320))
+                        val decodeOptions = BitmapFactory.Options().apply {
+                            inSampleSize = sampleSize
+                            inPreferredConfig = Bitmap.Config.RGB_565
+                        }
+                        bmp = BitmapFactory.decodeFile(actual.absolutePath, decodeOptions)
+                    } catch (_: Exception) {}
                 }
             }
             if (bmp != null) {

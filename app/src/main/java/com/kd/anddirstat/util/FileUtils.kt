@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.Process
 import android.os.StatFs
 import android.os.storage.StorageManager
+import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
@@ -47,11 +48,11 @@ data class StorageVolumeInfo(
 
 object FileUtils {
 
-    fun getAvailableStorageVolumes(context: Context): List<StorageVolumeInfo> {
+    fun getAvailableStorageVolumes(context: Context? = null): List<StorageVolumeInfo> {
         val list = mutableListOf<StorageVolumeInfo>()
-        val sm = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+        val sm = context?.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && sm != null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && sm != null && context != null) {
             val volumes = sm.storageVolumes
             for (vol in volumes) {
                 val state = vol.state
@@ -148,54 +149,163 @@ object FileUtils {
         }
         val f = File(externalRoot, relative)
         if (f.exists()) return f
+
+        for (vol in getAvailableStorageVolumes(null)) {
+            val volFile = File(vol.path, relative)
+            if (volFile.exists()) return volFile
+
+            if (path.startsWith("${vol.name}/")) {
+                val sub = path.removePrefix("${vol.name}/")
+                val f2 = File(vol.path, sub)
+                if (f2.exists()) return f2
+            }
+        }
         return null
     }
 
-    fun extractPackageName(node: CompactNode): String? {
+    fun deleteOrTrashFile(file: File): Boolean {
+        if (!file.exists()) return false
+        val parent = file.parentFile ?: return file.deleteRecursively()
+        val name = file.name
+
+        // If already in Recycle Bin or starts with .trashed, permanently delete
+        if (name.startsWith(".trashed") || parent.name.startsWith(".trashed") || parent.name.equals("[Recycle Bin]", ignoreCase = true)) {
+            return file.deleteRecursively()
+        }
+
+        // Rename to .trashed-<original_name>
+        val target = File(parent, ".trashed-${file.name}")
+        if (file.renameTo(target)) return true
+
+        // Fallback with timestamp if file with same name exists
+        val timestampTarget = File(parent, ".trashed-${System.currentTimeMillis()}-${file.name}")
+        if (file.renameTo(timestampTarget)) return true
+
+        return file.deleteRecursively()
+    }
+
+    object AppPackageRegistry {
+        private val labelToPkg = java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val pkgToLabel = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+        fun register(label: String, pkg: String) {
+            val cleanLabel = label.removeSuffix(" (System)").trim()
+            labelToPkg[cleanLabel.lowercase()] = pkg
+            labelToPkg[label.lowercase()] = pkg
+            pkgToLabel[pkg] = cleanLabel
+        }
+
+        fun getPackageName(label: String?): String? {
+            if (label.isNullOrBlank()) return null
+            val clean = label.removeSuffix(" (System)").trim().lowercase()
+            return labelToPkg[clean] ?: labelToPkg[label.trim().lowercase()]
+        }
+    }
+
+    fun extractPackageName(node: CompactNode, path: String? = null, context: Context? = null): String? {
         val name = node.name
-        if (name.startsWith("App Code (") && name.endsWith(")")) {
-            return name.substringAfter("App Code (").substringBefore(".apk)").removeSuffix(")")
+
+        // 1. Direct App Code child name or node name
+        if (name.startsWith("App Code (")) {
+            val pkg = name.substringAfter("App Code (").substringBefore(".apk").trim()
+            if (pkg.isNotEmpty() && pkg.contains(".")) return pkg
         }
-        if (name.startsWith("APK (") && name.endsWith(")")) {
-            return name.substringAfter("APK (").substringBefore(".apk)").removeSuffix(")")
+
+        // 2. If node has an "App Code (*.apk)" child, extract package from it
+        val codeChild = node.children?.firstOrNull { it.name.startsWith("App Code (") }
+        if (codeChild != null) {
+            val pkg = codeChild.name.substringAfter("App Code (").substringBefore(".apk").trim()
+            if (pkg.isNotEmpty() && pkg.contains(".")) return pkg
         }
-        val appCodeChild = node.children?.firstOrNull { it.name.startsWith("App Code (") || it.name.startsWith("APK (") }
-        if (appCodeChild != null) {
-            val childName = appCodeChild.name
-            return if (childName.startsWith("App Code (")) {
-                childName.substringAfter("App Code (").substringBefore(".apk)").removeSuffix(")")
-            } else {
-                childName.substringAfter("APK (").substringBefore(".apk)").removeSuffix(")")
-            }
+
+        // 3. If path or parent is specifically inside "Apps & System Packages"
+        val isAppTree = path != null && (path.contains("Apps & System Packages") || path.startsWith("Apps/"))
+        if (isAppTree) {
+            AppPackageRegistry.getPackageName(name)?.let { return it }
+            val cleanName = name.removeSuffix(" (System)").trim()
+            AppPackageRegistry.getPackageName(cleanName)?.let { return it }
         }
+
         return null
     }
 
     fun uninstallApp(context: Context, packageName: String) {
-        val uri = Uri.parse("package:$packageName")
-        val intent = Intent(Intent.ACTION_DELETE, uri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
+        val cleanPkg = packageName.trim()
+        if (cleanPkg.isEmpty()) return
+
+        var launched = false
+        // 1. Try standard ACTION_DELETE uninstaller intent
         try {
+            val intent = Intent(Intent.ACTION_DELETE).apply {
+                data = Uri.parse("package:$cleanPkg")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             context.startActivity(intent)
-        } catch (_: Exception) {
+            launched = true
+        } catch (_: Exception) {}
+
+        // 2. Try ACTION_UNINSTALL_PACKAGE uninstaller intent
+        if (!launched) {
             try {
                 @Suppress("DEPRECATION")
-                val fallback = Intent(Intent.ACTION_UNINSTALL_PACKAGE, uri).apply {
+                val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
+                    data = Uri.parse("package:$cleanPkg")
                     putExtra(Intent.EXTRA_RETURN_RESULT, true)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(fallback)
+                context.startActivity(intent)
+                launched = true
+            } catch (_: Exception) {}
+        }
+
+        // 3. Fallback to application details settings where user can press Uninstall/Force Stop
+        if (!launched) {
+            try {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$cleanPkg")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                launched = true
             } catch (_: Exception) {
-                Toast.makeText(context, "Cannot launch uninstaller for $packageName", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Cannot launch uninstaller for $cleanPkg", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    fun uninstallApps(context: Context, packageNames: List<String>) {
-        packageNames.distinct().forEach { pkg ->
-            uninstallApp(context, pkg)
+    object AppUninstallerQueue {
+        private val queue = mutableListOf<String>()
+        private var isProcessing = false
+
+        fun start(context: Context, packageNames: List<String>) {
+            queue.clear()
+            queue.addAll(packageNames.distinct())
+            isProcessing = true
+            popNext(context)
         }
+
+        fun onResume(context: Context) {
+            if (isProcessing && queue.isNotEmpty()) {
+                popNext(context)
+            } else {
+                isProcessing = false
+            }
+        }
+
+        private fun popNext(context: Context) {
+            if (queue.isEmpty()) {
+                isProcessing = false
+                return
+            }
+            val nextPkg = queue.removeAt(0)
+            uninstallApp(context, nextPkg)
+        }
+    }
+
+    fun uninstallApps(context: Context, packageNames: List<String>) {
+        val distinctPkgs = packageNames.distinct()
+        if (distinctPkgs.isEmpty()) return
+        AppUninstallerQueue.start(context, distinctPkgs)
     }
 
     fun openFile(context: Context, file: File) {
@@ -273,8 +383,8 @@ object FileUtils {
         val name = node.name
         if (name == "[Free Space]") return if (isDark) Color(0xFF60A5FA) else Color(0xFF1D4ED8)
         if (name == "[System & OS]") return if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
-        if (name == "[Recycle Bin]" || name == "Recycle Bin") return if (isDark) Color(0xFFFF2A6D) else Color(0xFFE11D48)
-        if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFFF9800) else Color(0xFFE65100)
+        if (name == "[Recycle Bin]" || name == "Recycle Bin") return if (isDark) Color(0xFFFF3366) else Color(0xFFE11D48)
+        if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFFB923C) else Color(0xFFEA580C)
         if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
         if (node.isDirectory) return if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
 
@@ -291,30 +401,30 @@ object FileUtils {
         val ext = extension.lowercase().removePrefix(".")
         return when (ext) {
             "trashed", "recycle bin", "[recycle bin]" ->
-                if (isDark) Color(0xFFFF2A6D) else Color(0xFFE11D48)
+                if (isDark) Color(0xFFFF3366) else Color(0xFFE11D48)
             "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" ->
-                if (isDark) Color(0xFF3B82F6) else Color(0xFF1D4ED8)
+                if (isDark) Color(0xFF60A5FA) else Color(0xFF1D4ED8)
             "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" ->
-                if (isDark) Color(0xFFC084FC) else Color(0xFF9333EA)
-            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" ->
-                if (isDark) Color(0xFFFB923C) else Color(0xFFEA580C)
-            "apk", "apks", "xapk", "apkm", "obb", "aab" ->
+                if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
+            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico", "dng" ->
                 if (isDark) Color(0xFF34D399) else Color(0xFF059669)
+            "apk", "apks", "xapk", "apkm", "obb", "aab" ->
+                if (isDark) Color(0xFF4ADE80) else Color(0xFF16A34A)
             "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" ->
-                if (isDark) Color(0xFF2DD4BF) else Color(0xFF0D9488)
-            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" ->
-                if (isDark) Color(0xFF22D3EE) else Color(0xFF0891B2)
-            "so", "bin", "dex", "jar", "class", "exe", "dll" ->
+                if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "bin", "dmg", "tgz" ->
+                if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706)
+            "so", "dex", "jar", "class", "exe", "dll" ->
                 if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
-            "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py" ->
-                if (isDark) Color(0xFFFACC15) else Color(0xFFCA8A04)
+            "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py", "sh" ->
+                if (isDark) Color(0xFFFCD34D) else Color(0xFFB45309)
             else -> {
                 if (ext.isEmpty()) {
-                    if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                    if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
                 } else {
                     val hash = Math.abs(ext.hashCode())
                     val hue = (hash * 137.507764f) % 360f
-                    Color.hsl(hue = hue, saturation = 0.85f, lightness = if (isDark) 0.65f else 0.40f)
+                    Color.hsl(hue = hue, saturation = 0.90f, lightness = if (isDark) 0.70f else 0.42f)
                 }
             }
         }

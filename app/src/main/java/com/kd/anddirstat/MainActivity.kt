@@ -250,6 +250,19 @@ fun MainApp() {
             }
         }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                FileUtils.AppUninstallerQueue.onResume(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     fun navigateTo(dest: String) {
         if (currentRoute == dest) return
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -419,12 +432,114 @@ fun MainApp() {
                             }
                         },
                         actions = {
-                            AppTooltip(text = "Display options") {
-                                IconButton(
-                                    onClick = { showFilterMenu = true },
-                                    enabled = !isLoading && hasStoragePermission && rawScannedNode != null
+                            Box {
+                                AppTooltip(text = "Display options") {
+                                    IconButton(
+                                        onClick = { showFilterMenu = true },
+                                        enabled = !isLoading && hasStoragePermission && rawScannedNode != null
+                                    ) {
+                                        MaterialSymbol("filter_list", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = showFilterMenu,
+                                    onDismissRequest = { showFilterMenu = false },
+                                    modifier = Modifier.width(280.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                    tonalElevation = 3.dp,
+                                    shadowElevation = 3.dp
                                 ) {
-                                    MaterialSymbol("filter_list", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Show system applications",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            MaterialSymbol(
+                                                name = "android",
+                                                active = showSystemApps,
+                                                size = 24.dp,
+                                                tint = if (showSystemApps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Checkbox(
+                                                checked = showSystemApps,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showSystemApps
+                                            showSystemApps = newVal
+                                            prefs.edit().putBoolean("show_system_apps", newVal).apply()
+                                            applyFilter(showFreeSpace, newVal, showHiddenFiles)
+                                        }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Show free storage",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            MaterialSymbol(
+                                                name = "storage",
+                                                active = showFreeSpace,
+                                                size = 24.dp,
+                                                tint = if (showFreeSpace) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Checkbox(
+                                                checked = showFreeSpace,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showFreeSpace
+                                            showFreeSpace = newVal
+                                            prefs.edit().putBoolean("show_free_space", newVal).apply()
+                                            applyFilter(newVal, showSystemApps, showHiddenFiles)
+                                        }
+                                    )
+
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Show hidden files",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            MaterialSymbol(
+                                                name = "visibility",
+                                                active = showHiddenFiles,
+                                                size = 24.dp,
+                                                tint = if (showHiddenFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Checkbox(
+                                                checked = showHiddenFiles,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            val newVal = !showHiddenFiles
+                                            showHiddenFiles = newVal
+                                            prefs.edit().putBoolean("show_hidden_files", newVal).apply()
+                                            applyFilter(showFreeSpace, showSystemApps, newVal)
+                                        }
+                                    )
                                 }
                             }
                             AppTooltip(text = "Rescan storage") {
@@ -432,21 +547,21 @@ fun MainApp() {
                                     onClick = { triggerScan() },
                                     enabled = !isLoading && hasStoragePermission
                                 ) {
-                                    MaterialSymbol("refresh", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    MaterialSymbol("refresh", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                             AppTooltip(text = "Settings") {
                                 IconButton(
                                     onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) }
                                 ) {
-                                    MaterialSymbol("settings", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    MaterialSymbol("settings", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -815,192 +930,6 @@ fun MainApp() {
                         )
                     }
 
-                    if (showFilterMenu) {
-                        ModalBottomSheet(
-                            onDismissRequest = { showFilterMenu = false },
-                            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 8.dp)
-                                    .padding(bottom = 36.dp)
-                            ) {
-                                Text(
-                                    text = "Display options",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Surface(
-                                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val newVal = !showSystemApps
-                                            showSystemApps = newVal
-                                            prefs.edit().putBoolean("show_system_apps", newVal).apply()
-                                            applyFilter(showFreeSpace, newVal, showHiddenFiles)
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = if (showSystemApps) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                modifier = Modifier.size(40.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    MaterialSymbol(
-                                                        name = "android",
-                                                        active = true,
-                                                        size = 22.dp,
-                                                        tint = if (showSystemApps) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(14.dp))
-                                            Text(
-                                                text = "Show system applications",
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Switch(
-                                            checked = showSystemApps,
-                                            onCheckedChange = { newVal ->
-                                                showSystemApps = newVal
-                                                prefs.edit().putBoolean("show_system_apps", newVal).apply()
-                                                applyFilter(showFreeSpace, newVal, showHiddenFiles)
-                                            }
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(2.dp))
-
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val newVal = !showFreeSpace
-                                            showFreeSpace = newVal
-                                            prefs.edit().putBoolean("show_free_space", newVal).apply()
-                                            applyFilter(newVal, showSystemApps, showHiddenFiles)
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = if (showFreeSpace) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                modifier = Modifier.size(40.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    MaterialSymbol(
-                                                        name = "storage",
-                                                        active = true,
-                                                        size = 22.dp,
-                                                        tint = if (showFreeSpace) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(14.dp))
-                                            Text(
-                                                text = "Show free storage",
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Switch(
-                                            checked = showFreeSpace,
-                                            onCheckedChange = { newVal ->
-                                                showFreeSpace = newVal
-                                                prefs.edit().putBoolean("show_free_space", newVal).apply()
-                                                applyFilter(newVal, showSystemApps, showHiddenFiles)
-                                            }
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(2.dp))
-
-                                Surface(
-                                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val newVal = !showHiddenFiles
-                                            showHiddenFiles = newVal
-                                            prefs.edit().putBoolean("show_hidden_files", newVal).apply()
-                                            applyFilter(showFreeSpace, showSystemApps, newVal)
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = if (showHiddenFiles) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                modifier = Modifier.size(40.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    MaterialSymbol(
-                                                        name = "visibility",
-                                                        active = true,
-                                                        size = 22.dp,
-                                                        tint = if (showHiddenFiles) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(14.dp))
-                                            Text(
-                                                text = "Show hidden files",
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                        Switch(
-                                            checked = showHiddenFiles,
-                                            onCheckedChange = { newVal ->
-                                                showHiddenFiles = newVal
-                                                prefs.edit().putBoolean("show_hidden_files", newVal).apply()
-                                                applyFilter(showFreeSpace, showSystemApps, newVal)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                     if (showVolumeSelectionDialog && detectedVolumes.isNotEmpty()) {
                         AlertDialog(
