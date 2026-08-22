@@ -22,6 +22,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -122,6 +123,13 @@ fun MainApp() {
     }
 
     AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, accentColor = accentColor) {
+        val systemDark = isSystemInDarkTheme()
+        val isDark = when (currentTheme) {
+            AppTheme.SYSTEM -> systemDark
+            AppTheme.LIGHT -> false
+            AppTheme.DARK -> true
+        }
+
         var hasStoragePermission by remember { mutableStateOf(FileUtils.checkStoragePermission(context)) }
         var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
         var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
@@ -561,6 +569,8 @@ fun MainApp() {
                             rootPath = rootNode!!.name,
                             selectedNode = selectedNode,
                             resetKey = resetZoomKey,
+                            isDark = isDark,
+                            pureBlack = pureBlack,
                             onScaleChanged = { currentScale = it },
                             onNodeSelected = { node, path ->
                                 selectedNode = node

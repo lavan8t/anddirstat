@@ -56,7 +56,8 @@ fun computeTreemapTiles(
     rootNode: CompactNode,
     rootPath: String,
     width: Float,
-    height: Float
+    height: Float,
+    isDark: Boolean = true
 ): List<TreemapTile> {
     if (width <= 0f || height <= 0f || rootNode.size <= 0L) return emptyList()
 
@@ -70,7 +71,7 @@ fun computeTreemapTiles(
         val isApp = inApps && children?.any { it.name.startsWith("App Code") } == true
 
         if (children == null || children.isEmpty() || isApp) {
-            val baseColor = getNodeColor(node)
+            val baseColor = getNodeColor(node, isDark)
             val highlight = Color(
                 red = (baseColor.red * 1.35f + 0.15f).coerceIn(0f, 1f),
                 green = (baseColor.green * 1.35f + 0.15f).coerceIn(0f, 1f),
@@ -120,6 +121,8 @@ fun TreemapCanvas(
     rootPath: String,
     selectedNode: CompactNode?,
     resetKey: Int = 0,
+    isDark: Boolean = true,
+    pureBlack: Boolean = false,
     onScaleChanged: ((Float) -> Unit)? = null,
     onNodeSelected: (CompactNode, String) -> Unit,
     modifier: Modifier = Modifier
@@ -133,9 +136,9 @@ fun TreemapCanvas(
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
-    val precalculatedTiles = remember(rootNode, rootPath, canvasSize.width, canvasSize.height) {
+    val precalculatedTiles = remember(rootNode, rootPath, canvasSize.width, canvasSize.height, isDark) {
         if (canvasSize.width > 0 && canvasSize.height > 0) {
-            computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+            computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), canvasSize.height.toFloat(), isDark)
         } else {
             emptyList()
         }
@@ -154,10 +157,12 @@ fun TreemapCanvas(
         else precalculatedTiles.firstOrNull { it.node === selectedNode }
     }
 
+    val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .background(CanvasBgColor)
+            .background(canvasBg)
             .onSizeChanged { newSize ->
                 canvasSize = newSize
             }
@@ -211,6 +216,7 @@ fun TreemapCanvas(
         val viewH = size.height
         val currentScale = scale
         val currentOffset = offset
+        val isAmoled = pureBlack && isDark
 
         val numTiles = precalculatedTiles.size
         for (i in 0 until numTiles) {
@@ -231,35 +237,56 @@ fun TreemapCanvas(
                 continue
             }
 
-            // Fast path: draw solid color for small tiles (<16px) — 50x faster GPU throughput
-            if (sW < 16f || sH < 16f) {
-                drawRect(
-                    color = tile.baseColor,
-                    topLeft = Offset(sLeft, sTop),
-                    size = Size(sW, sH)
-                )
+            val isSelected = selectedNode != null && tile.node === selectedNode
+
+            if (isAmoled) {
+                // AMOLED: outline borders only when unselected, solid color fill when selected
+                if (isSelected) {
+                    drawRect(
+                        color = tile.baseColor,
+                        topLeft = Offset(sLeft, sTop),
+                        size = Size(sW, sH)
+                    )
+                } else {
+                    drawRect(
+                        color = tile.baseColor,
+                        topLeft = Offset(sLeft, sTop),
+                        size = Size(sW, sH),
+                        style = Stroke(width = if (currentScale > 2f) 1.5f else 1.0f)
+                    )
+                }
             } else {
-                val cX = sLeft + sW * 0.35f
-                val cY = sTop + sH * 0.35f
-                val radius = maxOf(sW, sH) * 0.85f
+                // Fast path: draw solid color for small tiles (<16px) — 50x faster GPU throughput
+                if (sW < 16f || sH < 16f) {
+                    drawRect(
+                        color = tile.baseColor,
+                        topLeft = Offset(sLeft, sTop),
+                        size = Size(sW, sH)
+                    )
+                } else {
+                    val cX = sLeft + sW * 0.35f
+                    val cY = sTop + sH * 0.35f
+                    val radius = maxOf(sW, sH) * 0.85f
 
-                val brush = Brush.radialGradient(
-                    colors = tile.gradientColors,
-                    center = Offset(cX, cY),
-                    radius = radius
-                )
+                    val brush = Brush.radialGradient(
+                        colors = tile.gradientColors,
+                        center = Offset(cX, cY),
+                        radius = radius
+                    )
 
-                drawRect(
-                    brush = brush,
-                    topLeft = Offset(sLeft, sTop),
-                    size = Size(sW, sH)
-                )
+                    drawRect(
+                        brush = brush,
+                        topLeft = Offset(sLeft, sTop),
+                        size = Size(sW, sH)
+                    )
+                }
             }
 
             if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
                 val bmp = AppIconCache.get(context, tile.pkgName)
                 if (bmp != null) {
-                    val iconSize = minOf(48f, minOf(sW, sH) * 0.50f).coerceAtLeast(16f)
+                    // Larger app icon (up to 80px), strictly square 1:1 aspect ratio
+                    val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
                     val iconX = sLeft + (sW - iconSize) / 2f
                     val iconY = sTop + (sH - iconSize) / 2f
                     drawImage(
@@ -398,20 +425,21 @@ private fun worstAspectRatio(maxBytes: Long, minBytes: Long, rowBytes: Long, sid
     return maxOf(r1, r2)
 }
 
-private val ExtensionColorCache = LruCache<String, Color>(128)
+private val ExtensionColorCacheDark = LruCache<String, Color>(128)
+private val ExtensionColorCacheLight = LruCache<String, Color>(128)
 
-fun getNodeColor(node: CompactNode): Color {
+fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
     val name = node.name
-    if (name == "[Free Space]") return Color(0xFF475569)
-    if (name == "[System & OS]") return Color(0xFF334155)
-    if (name == "Cache" || name == "App Cache") return Color(0xFFF59E0B)
-    if (name == "Data" || name == "App Data") return Color(0xFF64748B)
+    if (name == "[Free Space]") return if (isDark) Color(0xFF1E293B) else Color(0xFF64748B)
+    if (name == "[System & OS]") return if (isDark) Color(0xFF0F172A) else Color(0xFF475569)
+    if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFB45309) else Color(0xFFF59E0B)
+    if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF334155) else Color(0xFF64748B)
 
     val children = node.children
     if (children != null && children.any { it.name.startsWith("App Code") }) {
-        return Color(0xFF0077CC)
+        return if (isDark) Color(0xFF0D47A1) else Color(0xFF1976D2)
     }
-    if (node.isDirectory) return Color(0xFF1E222B)
+    if (node.isDirectory) return if (isDark) Color(0xFF141720) else Color(0xFF2C3240)
 
     val ext = if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true)) {
         "apk"
@@ -421,27 +449,36 @@ fun getNodeColor(node: CompactNode): Color {
     }
 
     if (ext.isEmpty() || ext == name.lowercase()) {
-        return Color(0xFF78909C)
+        return if (isDark) Color(0xFF455A64) else Color(0xFF78909C)
     }
 
-    val cached = ExtensionColorCache.get(ext)
+    val cache = if (isDark) ExtensionColorCacheDark else ExtensionColorCacheLight
+    val cached = cache.get(ext)
     if (cached != null) return cached
 
     val computed = when (ext) {
-        "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> Color(0xFF0055FF)
-        "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> Color(0xFFAA00FF)
-        "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" -> Color(0xFFFF8800)
-        "apk", "apks", "xapk", "apkm", "obb", "aab" -> Color(0xFFFF0055)
-        "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" -> Color(0xFF00CC44)
-        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" -> Color(0xFF00CCCC)
-        "so", "bin", "dex", "jar", "class", "exe", "dll" -> Color(0xFFCC0000)
-        "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py" -> Color(0xFFFFCC00)
+        "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" ->
+            if (isDark) Color(0xFF0F4C81) else Color(0xFF0055FF)
+        "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" ->
+            if (isDark) Color(0xFF6B2D8B) else Color(0xFFAA00FF)
+        "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" ->
+            if (isDark) Color(0xFFBF4F00) else Color(0xFFFF8800)
+        "apk", "apks", "xapk", "apkm", "obb", "aab" ->
+            if (isDark) Color(0xFFB71C1C) else Color(0xFFFF0055)
+        "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" ->
+            if (isDark) Color(0xFF1B5E20) else Color(0xFF00CC44)
+        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" ->
+            if (isDark) Color(0xFF006978) else Color(0xFF00CCCC)
+        "so", "bin", "dex", "jar", "class", "exe", "dll" ->
+            if (isDark) Color(0xFF7F0000) else Color(0xFFCC0000)
+        "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py" ->
+            if (isDark) Color(0xFFC47F00) else Color(0xFFFFCC00)
         else -> {
             val hash = Math.abs(ext.hashCode())
             val hue = (hash * 137.507764f) % 360f
-            Color.hsl(hue = hue, saturation = 0.75f, lightness = 0.50f)
+            Color.hsl(hue = hue, saturation = 0.65f, lightness = if (isDark) 0.32f else 0.50f)
         }
     }
-    ExtensionColorCache.put(ext, computed)
+    cache.put(ext, computed)
     return computed
 }
