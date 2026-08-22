@@ -89,7 +89,7 @@ fun ExpressiveNodeDetailsCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = null,
         modifier = modifier.fillMaxWidth()
     ) {

@@ -93,9 +93,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         setContent {
-            AndDirStatTheme {
-                MainApp()
-            }
+            MainApp()
         }
     }
 }
@@ -108,11 +106,17 @@ fun MainApp() {
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
 
-    var hasStoragePermission by remember { mutableStateOf(FileUtils.checkStoragePermission(context)) }
-    var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
-    var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
-    var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
-    var showFilterMenu by remember { mutableStateOf(false) }
+    val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
+    var currentTheme by remember {
+        mutableStateOf(AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM)
+    }
+
+    AndDirStatTheme(appTheme = currentTheme) {
+        var hasStoragePermission by remember { mutableStateOf(FileUtils.checkStoragePermission(context)) }
+        var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
+        var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
+        var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
+        var showFilterMenu by remember { mutableStateOf(false) }
 
     var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
     var deviceTotalBytes by remember { mutableLongStateOf(0L) }
@@ -600,48 +604,47 @@ fun MainApp() {
                             modifier = Modifier.fillMaxSize()
                         )
 
-                        // Scrim overlay when node details are open
-                        if (currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.40f))
-                                    .clickable {
-                                        selectedNode = null
-                                        selectedPath = null
-                                    }
-                            )
-                        }
-
-                        // Material 3 Expressive Transforming Detail Card
+                        // Material 3 Expressive Detail Overlay (Synchronized Scrim + Card)
                         AnimatedVisibility(
                             visible = currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null,
                             enter = fadeIn(tween(140)) + scaleIn(
-                                initialScale = 0.92f,
+                                initialScale = 0.94f,
                                 animationSpec = tween(140)
                             ),
                             exit = fadeOut(tween(100)) + scaleOut(
-                                targetScale = 0.92f,
+                                targetScale = 0.94f,
                                 animationSpec = tween(100)
                             ),
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(horizontal = 16.dp)
+                            modifier = Modifier.fillMaxSize()
                         ) {
-                            if (selectedNode != null && selectedPath != null) {
-                                ExpressiveNodeDetailsCard(
-                                    node = selectedNode!!,
-                                    path = selectedPath!!,
-                                    onDismiss = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.50f))
+                                    .clickable {
                                         selectedNode = null
                                         selectedPath = null
                                     },
-                                    onDeleted = {
-                                        selectedNode = null
-                                        selectedPath = null
-                                        triggerScan()
-                                    }
-                                )
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (selectedNode != null && selectedPath != null) {
+                                    ExpressiveNodeDetailsCard(
+                                        node = selectedNode!!,
+                                        path = selectedPath!!,
+                                        onDismiss = {
+                                            selectedNode = null
+                                            selectedPath = null
+                                        },
+                                        onDeleted = {
+                                            selectedNode = null
+                                            selectedPath = null
+                                            triggerScan()
+                                        },
+                                        modifier = Modifier
+                                            .padding(horizontal = 16.dp)
+                                            .clickable(enabled = false) { }
+                                    )
+                                }
                             }
                         }
                     }
@@ -691,17 +694,10 @@ fun MainApp() {
                         )
                     } else if (currentRoute == AppDestinations.SETTINGS) {
                         SettingsView(
-                            showFreeSpace = showFreeSpace,
-                            onToggleFreeSpace = { enabled ->
-                                showFreeSpace = enabled
-                                prefs.edit().putBoolean("show_free_space", enabled).apply()
-                                applyFilter(enabled, showSystemApps)
-                            },
-                            showSystemApps = showSystemApps,
-                            onToggleSystemApps = { enabled ->
-                                showSystemApps = enabled
-                                prefs.edit().putBoolean("show_system_apps", enabled).apply()
-                                applyFilter(showFreeSpace, enabled)
+                            currentTheme = currentTheme,
+                            onSelectTheme = { selectedTheme ->
+                                currentTheme = selectedTheme
+                                prefs.edit().putString("app_theme", selectedTheme.key).apply()
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -747,5 +743,6 @@ fun MainApp() {
                 }
             }
         }
+    }
     }
 }
