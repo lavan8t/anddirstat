@@ -620,25 +620,13 @@ fun MainApp() {
                         // Material 3 Expressive Transforming Detail Card
                         AnimatedVisibility(
                             visible = currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null,
-                            enter = fadeIn(tween(220)) + scaleIn(
-                                initialScale = 0.50f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMediumLow
-                                )
-                            ) + slideInVertically(
-                                initialOffsetY = { -it / 2 },
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMediumLow
-                                )
+                            enter = fadeIn(tween(140)) + scaleIn(
+                                initialScale = 0.92f,
+                                animationSpec = tween(140)
                             ),
-                            exit = fadeOut(tween(160)) + scaleOut(
-                                targetScale = 0.50f,
-                                animationSpec = tween(160)
-                            ) + slideOutVertically(
-                                targetOffsetY = { -it / 3 },
-                                animationSpec = tween(160)
+                            exit = fadeOut(tween(100)) + scaleOut(
+                                targetScale = 0.92f,
+                                animationSpec = tween(100)
                             ),
                             modifier = Modifier
                                 .align(Alignment.Center)

@@ -67,6 +67,7 @@ import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.scanner.StorageFilterHelper
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.MaterialSymbol
+import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -374,27 +375,16 @@ fun DiscoverView(
                             Column(modifier = Modifier.fillMaxSize()) {
                                 // Top 2/3: Media thumbnail / centered file type icon
                                 Surface(
-                                    color = iconColor.copy(alpha = 0.12f),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .weight(2f)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = iconColor.copy(alpha = 0.20f),
-                                            modifier = Modifier.size(56.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = FileUtils.getNodeIcon(entry.node, false),
-                                                    contentDescription = null,
-                                                    tint = iconColor,
-                                                    modifier = Modifier.size(28.dp)
-                                                )
-                                            }
-                                        }
-                                    }
+                                    MediaThumbnailView(
+                                        node = entry.node,
+                                        path = entry.path,
+                                        fallbackTint = iconColor,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
                                 }
 
                                 // Bottom 1/3: Filename & exact file size
