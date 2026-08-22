@@ -12,16 +12,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -33,21 +30,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
-import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ExpressiveNodeDetailsCard(
+fun ExpressiveNodeDetailsSheet(
     node: CompactNode,
     path: String,
     onDismiss: () -> Unit,
@@ -70,7 +66,6 @@ fun ExpressiveNodeDetailsCard(
         nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif")
     }
 
-    // Material 3 semantic color tokens for fallback icons
     val materialItemColor = when {
         isAppNode || nameLower.endsWith(".apk") -> MaterialTheme.colorScheme.error
         nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") -> MaterialTheme.colorScheme.primary
@@ -86,245 +81,242 @@ fun ExpressiveNodeDetailsCard(
     val cacheSize = appChildren?.firstOrNull { it.name == "Cache" }?.size ?: 0L
     val pkgName = remember(node) { FileUtils.extractPackageName(node) }
 
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = null,
-        modifier = modifier.fillMaxWidth()
+    val dateFormatted = remember(realFile) {
+        if (realFile != null && realFile.exists() && realFile.lastModified() > 0) {
+            val df = SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault())
+            df.format(Date(realFile.lastModified()))
+        } else null
+    }
+
+    val displayName = if (isAppNode) node.name else if (isRealFile) realFile!!.name else path.substringAfterLast('/')
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp)
+            .navigationBarsPadding()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
+        // Header Row: Icon/Thumbnail + Full Name + Path + Modified Date
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Header Row: Icon/Thumbnail + Title
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isAppNode && pkgName != null) {
-                    AppIconView(
-                        packageName = pkgName,
-                        contentDescription = node.name,
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(16.dp))
+            if (isAppNode && pkgName != null) {
+                AppIconView(
+                    packageName = pkgName,
+                    contentDescription = node.name,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
+            } else if (isMediaFile && isRealFile) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    MediaThumbnailView(
+                        node = node,
+                        path = path,
+                        fallbackTint = materialItemColor,
+                        modifier = Modifier.fillMaxSize()
                     )
-                } else if (isMediaFile && isRealFile) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.size(54.dp)
-                    ) {
-                        MediaThumbnailView(
-                            node = node,
-                            path = path,
-                            fallbackTint = materialItemColor,
-                            modifier = Modifier.fillMaxSize()
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = materialItemColor.copy(alpha = 0.18f),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = FileUtils.getNodeIcon(node, isAppNode),
+                            contentDescription = null,
+                            tint = materialItemColor,
+                            modifier = Modifier.size(28.dp)
                         )
                     }
-                } else {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = materialItemColor.copy(alpha = 0.18f),
-                        modifier = Modifier.size(54.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = FileUtils.getNodeIcon(node, isAppNode),
-                                contentDescription = null,
-                                tint = materialItemColor,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
                 }
+            }
 
-                Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isAppNode) node.name else if (isRealFile) realFile!!.name else path.substringAfterLast('/'),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = path,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (dateFormatted != null) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = path,
+                        text = "Modified: $dateFormatted",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-            // Size Container (Filled banner)
+        // Total Size Banner (No exact bytes, no pills)
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Total Size",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = FileUtils.formatFileSize(node.size),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        // App Size Breakdown (Vertical column: App Code -> Data -> Cache)
+        if (isAppNode) {
+            Spacer(modifier = Modifier.height(12.dp))
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = FileUtils.formatFileSize(node.size),
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "${NumberFormat.getNumberInstance(Locale.US).format(node.size)} Bytes",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Text(
-                            text = if (isAppNode) "Application" else if (node.isDirectory) "Directory" else "File",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    AppSizeRow(label = "App Code", size = codeSize)
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    AppSizeRow(label = "Data", size = dataSize)
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    AppSizeRow(label = "Cache", size = cacheSize)
                 }
             }
+        }
 
-            if (isAppNode) {
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("App Code", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(FileUtils.formatFileSize(codeSize), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("Data", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(FileUtils.formatFileSize(dataSize), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("Cache", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(FileUtils.formatFileSize(cacheSize), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-            }
+        Spacer(modifier = Modifier.height(20.dp))
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Action buttons — icon only, no text
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (isAppNode && pkgName != null) {
-                    IconButton(
-                        onClick = {
-                            try {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
-                                )
-                            } catch (_: Exception) {}
-                        },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        MaterialSymbol("info", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                }
-                if (isRealFile && !realFile!!.isDirectory) {
-                    IconButton(
-                        onClick = { FileUtils.openFile(context, realFile) },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        MaterialSymbol("open_in_new", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(
-                        onClick = {
-                            if (realFile.delete()) {
-                                Toast.makeText(context, "Deleted: ${realFile.name}", Toast.LENGTH_SHORT).show()
-                                onDeleted()
-                            } else {
-                                Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError
-                        ),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        MaterialSymbol("delete", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onError)
-                    }
-                }
-                Spacer(modifier = Modifier.weight(1f))
+        // Action Buttons — Icons only (no cancel, no cross/close button)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (isAppNode && pkgName != null) {
                 IconButton(
-                    onClick = onDismiss,
+                    onClick = {
+                        try {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
+                            )
+                        } catch (_: Exception) {}
+                    },
                     colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier.size(52.dp)
                 ) {
-                    MaterialSymbol("close", active = false, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
+                    MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
+            if (isRealFile && !realFile!!.isDirectory) {
+                IconButton(
+                    onClick = {
+                        FileUtils.openFile(context, realFile)
+                        onDismiss()
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                }
+                IconButton(
+                    onClick = {
+                        if (realFile.delete()) {
+                            Toast.makeText(context, "Deleted: ${realFile.name}", Toast.LENGTH_SHORT).show()
+                            onDeleted()
+                        } else {
+                            Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AppSizeRow(label: String, size: Long) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = FileUtils.formatFileSize(size),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Deprecated("Use ExpressiveNodeDetailsSheet instead")
+@Composable
+fun ExpressiveNodeDetailsCard(
+    node: CompactNode,
+    path: String,
+    onDismiss: () -> Unit,
+    onDeleted: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ExpressiveNodeDetailsSheet(
+        node = node,
+        path = path,
+        onDismiss = onDismiss,
+        onDeleted = onDeleted,
+        modifier = modifier
+    )
 }

@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,6 +42,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -49,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,8 +69,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import com.kd.anddirstat.model.AppDestinations
 import com.kd.anddirstat.model.CompactNode
@@ -81,7 +82,7 @@ import com.kd.anddirstat.ui.components.AppIconCache
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.screens.DiscoverView
 import com.kd.anddirstat.ui.screens.ExplorerView
-import com.kd.anddirstat.ui.screens.ExpressiveNodeDetailsCard
+import com.kd.anddirstat.ui.screens.ExpressiveNodeDetailsSheet
 import com.kd.anddirstat.ui.screens.FileTypesView
 import com.kd.anddirstat.ui.screens.LoadingScreen
 import com.kd.anddirstat.ui.screens.PermissionScreen
@@ -569,45 +570,33 @@ fun MainApp() {
 
                     }
 
-                    // Node details as a proper system Dialog window (covers TopBar + NavBar)
-                    if (currentRoute == AppDestinations.MAP && selectedNode != null && selectedPath != null) {
-                        Dialog(
+                    // Universal file/app details ModalBottomSheet
+                    if (selectedNode != null && selectedPath != null) {
+                        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                        ModalBottomSheet(
                             onDismissRequest = {
                                 selectedNode = null
                                 selectedPath = null
                             },
-                            properties = DialogProperties(
-                                usePlatformDefaultWidth = false,
-                                decorFitsSystemWindows = false
-                            )
+                            sheetState = sheetState,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 0.dp,
+                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                            dragHandle = { BottomSheetDefaults.DragHandle() }
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.55f))
-                                    .clickable {
-                                        selectedNode = null
-                                        selectedPath = null
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                ExpressiveNodeDetailsCard(
-                                    node = selectedNode!!,
-                                    path = selectedPath!!,
-                                    onDismiss = {
-                                        selectedNode = null
-                                        selectedPath = null
-                                    },
-                                    onDeleted = {
-                                        selectedNode = null
-                                        selectedPath = null
-                                        triggerScan()
-                                    },
-                                    modifier = Modifier
-                                        .padding(horizontal = 16.dp)
-                                        .clickable(enabled = false) { }
-                                )
-                            }
+                            ExpressiveNodeDetailsSheet(
+                                node = selectedNode!!,
+                                path = selectedPath!!,
+                                onDismiss = {
+                                    selectedNode = null
+                                    selectedPath = null
+                                },
+                                onDeleted = {
+                                    selectedNode = null
+                                    selectedPath = null
+                                    triggerScan()
+                                }
+                            )
                         }
                     }
 
