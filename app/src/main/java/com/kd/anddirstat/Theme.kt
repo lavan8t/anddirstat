@@ -226,11 +226,35 @@ val Material3Typography = Typography(
         fontSize = 57.sp,
         lineHeight = 64.sp
     ),
+    displayMedium = TextStyle(
+        fontFamily = GoogleSansFlexFontFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 45.sp,
+        lineHeight = 52.sp
+    ),
+    displaySmall = TextStyle(
+        fontFamily = GoogleSansFlexFontFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 36.sp,
+        lineHeight = 44.sp
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = GoogleSansFlexFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 32.sp,
+        lineHeight = 40.sp
+    ),
     headlineMedium = TextStyle(
         fontFamily = GoogleSansFlexFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp,
         lineHeight = 36.sp
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = GoogleSansFlexFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
+        lineHeight = 32.sp
     ),
     titleLarge = TextStyle(
         fontFamily = GoogleSansFlexFontFamily,

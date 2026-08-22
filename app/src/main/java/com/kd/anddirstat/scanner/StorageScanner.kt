@@ -18,29 +18,43 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+import com.kd.anddirstat.util.StorageVolumeInfo
+import com.kd.anddirstat.util.FileUtils
+
 class StorageScanner(private val context: Context) {
 
     // Strictly bounded to maximum 3 worker threads for minimal memory and CPU contention
     private val scanDispatcher = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
 
     suspend fun scanStorage(
+        selectedVolumes: List<StorageVolumeInfo> = emptyList(),
         includeFreeSpace: Boolean = true,
         useCacheIfValid: Boolean = false,
         onProgress: ((phase: String, detail: String) -> Unit)? = null
     ): CompactNode = withContext(scanDispatcher) {
-        if (useCacheIfValid) {
+        val volumesToScan = if (selectedVolumes.isNotEmpty()) selectedVolumes else FileUtils.getAvailableStorageVolumes(context)
+
+        if (useCacheIfValid && volumesToScan.size == 1 && volumesToScan.first().isPrimary) {
             val cached = TreeCacheManager.loadTree(context)
             if (cached != null) {
                 return@withContext cached
             }
         }
 
-        val dataDir = Environment.getDataDirectory()
-        val stat = StatFs(dataDir.path)
-        val deviceTotalBytes = stat.totalBytes
-        val freeBytes = stat.availableBytes
-        val targetUsedBytes = maxOf(1L, deviceTotalBytes - freeBytes)
+        val primaryVol = volumesToScan.firstOrNull { it.isPrimary }
+        val externalVols = volumesToScan.filter { !it.isPrimary }
 
+        var totalDeviceBytes = volumesToScan.sumOf { it.totalBytes }
+        var totalFreeBytes = volumesToScan.sumOf { it.freeBytes }
+
+        if (totalDeviceBytes == 0L) {
+            val dataDir = Environment.getDataDirectory()
+            val stat = StatFs(dataDir.path)
+            totalDeviceBytes = stat.totalBytes
+            totalFreeBytes = stat.availableBytes
+        }
+
+        val targetUsedBytes = maxOf(1L, totalDeviceBytes - totalFreeBytes)
         val startTimeMs = System.currentTimeMillis()
         val totalScannedBytes = AtomicLong(0L)
         val scannedFilesCount = AtomicInteger(0)
@@ -58,76 +72,104 @@ class StorageScanner(private val context: Context) {
             onProgress?.invoke("$phase$etaStr", detail)
         }
 
-        // Parallel scan: Run applications and storage directories across max 3 threads
-        val filesDeferred = async(scanDispatcher) {
-            updateProgress("Scanning Files", "Reading storage...")
-            val rootPath = Environment.getExternalStorageDirectory()
-            val mediaRootNode = CompactNode(name = "Files", isDirectory = true)
-            scanDir(rootPath, mediaRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
-                updateProgress(phase, detail)
-            }
-            mediaRootNode
-        }
-
-        val appsDeferred = async(scanDispatcher) {
-            updateProgress("Scanning Applications", "Enumerating packages...")
-            scanAllInstalledApplications(totalScannedBytes) { phase, detail ->
-                updateProgress(phase, detail)
-            }
-        }
-
-        val mediaRootNode = filesDeferred.await()
-        val (appsNode, totalAppsSize) = appsDeferred.await()
-
-        updateProgress("Finalizing", "Assembling storage layout...")
-        val accounted = mediaRootNode.size + totalAppsSize + freeBytes
-        val systemSize = if (deviceTotalBytes > accounted) (deviceTotalBytes - accounted) else 0L
-
         val rootChildren = mutableListOf<CompactNode>()
 
-        if (systemSize > 0L) {
-            rootChildren.add(
-                CompactNode(
-                    name = "[System & OS]",
-                    isDirectory = false,
-                    size = systemSize
+        // 1. Scan Primary Internal Storage if selected
+        if (primaryVol != null) {
+            val filesDeferred = async(scanDispatcher) {
+                updateProgress("Scanning Internal Storage", "Reading internal files...")
+                val rootPath = primaryVol.path
+                val mediaRootNode = CompactNode(name = "Files", isDirectory = true)
+                scanDir(rootPath, mediaRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
+                    updateProgress(phase, detail)
+                }
+                mediaRootNode
+            }
+
+            val appsDeferred = async(scanDispatcher) {
+                updateProgress("Scanning Applications", "Enumerating packages...")
+                scanAllInstalledApplications(totalScannedBytes) { phase, detail ->
+                    updateProgress(phase, detail)
+                }
+            }
+
+            val mediaRootNode = filesDeferred.await()
+            val (appsNode, totalAppsSize) = appsDeferred.await()
+
+            updateProgress("Finalizing", "Assembling internal storage layout...")
+            val accounted = mediaRootNode.size + totalAppsSize + primaryVol.freeBytes
+            val systemSize = if (primaryVol.totalBytes > accounted) (primaryVol.totalBytes - accounted) else 0L
+
+            if (systemSize > 0L) {
+                rootChildren.add(
+                    CompactNode(
+                        name = "[System & OS]",
+                        isDirectory = false,
+                        size = systemSize
+                    )
                 )
-            )
+            }
+
+            if (includeFreeSpace && totalFreeBytes > 0L && externalVols.isEmpty()) {
+                rootChildren.add(
+                    CompactNode(
+                        name = "[Free Space]",
+                        isDirectory = false,
+                        size = totalFreeBytes
+                    )
+                )
+            }
+
+            if (appsNode != null && appsNode.size > 0L) {
+                rootChildren.add(appsNode)
+            }
+
+            if (mediaRootNode.size > 0L) {
+                rootChildren.add(mediaRootNode)
+            }
         }
 
-        if (includeFreeSpace && freeBytes > 0L) {
+        // 2. Scan Removable SD Cards & USB Drives
+        for (extVol in externalVols) {
+            updateProgress("Scanning ${extVol.name}", "Reading external volume files...")
+            val volRootNode = CompactNode(name = extVol.name, isDirectory = true)
+            scanDir(extVol.path, volRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
+                updateProgress(phase, detail)
+            }
+            if (volRootNode.size > 0L) {
+                rootChildren.add(volRootNode)
+            }
+        }
+
+        if (includeFreeSpace && totalFreeBytes > 0L && externalVols.isNotEmpty()) {
             rootChildren.add(
                 CompactNode(
                     name = "[Free Space]",
                     isDirectory = false,
-                    size = freeBytes
+                    size = totalFreeBytes
                 )
             )
         }
 
-        if (appsNode != null && appsNode.size > 0L) {
-            rootChildren.add(appsNode)
-        }
-
-        if (mediaRootNode.size > 0L) {
-            rootChildren.add(mediaRootNode)
-        }
-
         val effectiveTotal = if (includeFreeSpace) {
-            deviceTotalBytes
+            totalDeviceBytes
         } else {
-            systemSize + totalAppsSize + mediaRootNode.size
+            rootChildren.sumOf { it.size }
         }
+
+        val rootName = if (volumesToScan.size == 1) volumesToScan.first().name else "Device Storage"
 
         val finalRoot = CompactNode(
-            name = "Device Storage",
+            name = rootName,
             isDirectory = true,
             size = effectiveTotal,
             children = rootChildren.toTypedArray()
         )
 
-        // Save tree to persistent cache for instant startup
-        TreeCacheManager.saveTree(context, finalRoot)
+        // Save tree to persistent cache for instant startup if primary
+        if (volumesToScan.size == 1 && volumesToScan.first().isPrimary) {
+            TreeCacheManager.saveTree(context, finalRoot)
+        }
 
         finalRoot
     }

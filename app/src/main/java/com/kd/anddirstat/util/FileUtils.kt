@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Process
+import android.os.StatFs
+import android.os.storage.StorageManager
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
@@ -32,7 +34,96 @@ import com.kd.anddirstat.model.CompactNode
 import java.io.File
 import java.util.Locale
 
+data class StorageVolumeInfo(
+    val id: String,
+    val name: String,
+    val path: File,
+    val isPrimary: Boolean,
+    val isRemovable: Boolean,
+    val isUsb: Boolean,
+    val totalBytes: Long,
+    val freeBytes: Long
+)
+
 object FileUtils {
+
+    fun getAvailableStorageVolumes(context: Context): List<StorageVolumeInfo> {
+        val list = mutableListOf<StorageVolumeInfo>()
+        val sm = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && sm != null) {
+            val volumes = sm.storageVolumes
+            for (vol in volumes) {
+                val state = vol.state
+                if (state == Environment.MEDIA_MOUNTED || state == Environment.MEDIA_MOUNTED_READ_ONLY) {
+                    val isPrimary = vol.isPrimary
+                    val isRemovable = vol.isRemovable
+                    val desc = vol.getDescription(context)
+                    val isUsb = desc.contains("USB", ignoreCase = true) || vol.mediaStoreVolumeName?.contains("usb", ignoreCase = true) == true
+
+                    val dir: File? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        vol.directory
+                    } else {
+                        try {
+                            val getPathMethod = vol.javaClass.getMethod("getPathFile")
+                            getPathMethod.invoke(vol) as? File
+                        } catch (_: Exception) {
+                            if (isPrimary) Environment.getExternalStorageDirectory() else null
+                        }
+                    }
+
+                    if (dir != null && dir.exists()) {
+                        var total = 0L
+                        var free = 0L
+                        try {
+                            val stat = StatFs(dir.absolutePath)
+                            total = stat.totalBytes
+                            free = stat.availableBytes
+                        } catch (_: Exception) {}
+
+                        list.add(
+                            StorageVolumeInfo(
+                                id = dir.absolutePath,
+                                name = if (isPrimary) "Internal Storage" else if (isUsb) "USB Drive ($desc)" else desc,
+                                path = dir,
+                                isPrimary = isPrimary,
+                                isRemovable = isRemovable,
+                                isUsb = isUsb,
+                                totalBytes = total,
+                                freeBytes = free
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        if (list.isEmpty()) {
+            val ext = Environment.getExternalStorageDirectory()
+            var total = 0L
+            var free = 0L
+            try {
+                val stat = StatFs(ext.absolutePath)
+                total = stat.totalBytes
+                free = stat.availableBytes
+            } catch (_: Exception) {}
+
+            list.add(
+                StorageVolumeInfo(
+                    id = ext.absolutePath,
+                    name = "Internal Storage",
+                    path = ext,
+                    isPrimary = true,
+                    isRemovable = false,
+                    isUsb = false,
+                    totalBytes = total,
+                    freeBytes = free
+                )
+            )
+        }
+
+        return list
+    }
 
     fun formatFileSize(bytes: Long): String {
         if (bytes < 1024) return "$bytes B"

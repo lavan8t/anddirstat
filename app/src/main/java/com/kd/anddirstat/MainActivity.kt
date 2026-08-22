@@ -63,12 +63,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import android.content.SharedPreferences
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -103,6 +105,7 @@ import com.kd.anddirstat.scanner.StorageScanner
 import com.kd.anddirstat.scanner.TreeCacheManager
 import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.ui.components.AppIconCache
+import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.screens.DiscoverView
 import com.kd.anddirstat.ui.screens.ExplorerView
@@ -112,6 +115,7 @@ import com.kd.anddirstat.ui.screens.LoadingScreen
 import com.kd.anddirstat.ui.screens.PermissionScreen
 import com.kd.anddirstat.ui.screens.SettingsView
 import com.kd.anddirstat.util.FileUtils
+import com.kd.anddirstat.util.StorageVolumeInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -187,6 +191,9 @@ fun MainApp() {
         var discoverSearchQuery by remember { mutableStateOf("") }
         var selectedTreeNodes by remember { mutableStateOf(setOf<CompactNode>()) }
         var showTreeDeleteDialog by remember { mutableStateOf(false) }
+        var showVolumeSelectionDialog by remember { mutableStateOf(false) }
+        var detectedVolumes by remember { mutableStateOf(emptyList<StorageVolumeInfo>()) }
+        var selectedVolumeIds by remember { mutableStateOf(setOf<String>()) }
 
         fun applyFilter(freeSpace: Boolean, systemApps: Boolean, hiddenFiles: Boolean = showHiddenFiles) {
             val raw = rawScannedNode ?: return
@@ -250,8 +257,8 @@ fun MainApp() {
         currentRoute = dest
     }
 
-    fun triggerScan() {
-        if (!hasStoragePermission) return
+    fun performScan(volumesToScan: List<StorageVolumeInfo>) {
+        if (!hasStoragePermission || volumesToScan.isEmpty()) return
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         isLoading = true
         scanPhase = "Analyzing storage..."
@@ -264,7 +271,7 @@ fun MainApp() {
             showSystemApps = systemAppsPref
             showHiddenFiles = hiddenFilesPref
             val scanner = StorageScanner(context)
-            val scanned = scanner.scanStorage(includeFreeSpace = true) { phase, detail ->
+            val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true) { phase, detail ->
                 scanPhase = phase
                 scanDetail = detail
             }
@@ -298,11 +305,23 @@ fun MainApp() {
         }
     }
 
+    fun requestScan() {
+        if (!hasStoragePermission) return
+        val vols = FileUtils.getAvailableStorageVolumes(context)
+        detectedVolumes = vols
+        selectedVolumeIds = vols.map { it.id }.toSet()
+        showVolumeSelectionDialog = true
+    }
+
+    fun triggerScan() {
+        requestScan()
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasStoragePermission = granted
-        if (granted) triggerScan()
+        if (granted) requestScan()
     }
 
     val manageStorageLauncher = rememberLauncherForActivityResult(
@@ -310,7 +329,7 @@ fun MainApp() {
     ) {
         hasStoragePermission = FileUtils.checkStoragePermission(context)
         hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
-        if (hasStoragePermission) triggerScan()
+        if (hasStoragePermission) requestScan()
     }
 
     LaunchedEffect(hasStoragePermission) {
@@ -337,7 +356,7 @@ fun MainApp() {
                 topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
                 isLoading = false
             } else {
-                triggerScan()
+                requestScan()
             }
         }
     }
@@ -400,93 +419,28 @@ fun MainApp() {
                             }
                         },
                         actions = {
-                            Box {
+                            AppTooltip(text = "Display options") {
                                 IconButton(
                                     onClick = { showFilterMenu = true },
                                     enabled = !isLoading && hasStoragePermission && rawScannedNode != null
                                 ) {
                                     MaterialSymbol("filter_list", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                DropdownMenu(
-                                    expanded = showFilterMenu,
-                                    onDismissRequest = { showFilterMenu = false },
-                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            }
+                            AppTooltip(text = "Rescan storage") {
+                                IconButton(
+                                    onClick = { triggerScan() },
+                                    enabled = !isLoading && hasStoragePermission
                                 ) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = "Show System Apps",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        },
-                                        leadingIcon = {
-                                            Checkbox(
-                                                checked = showSystemApps,
-                                                onCheckedChange = null
-                                            )
-                                        },
-                                        onClick = {
-                                            val newVal = !showSystemApps
-                                            showSystemApps = newVal
-                                            prefs.edit().putBoolean("show_system_apps", newVal).apply()
-                                            applyFilter(showFreeSpace, newVal, showHiddenFiles)
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = "Show Free Space",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        },
-                                        leadingIcon = {
-                                            Checkbox(
-                                                checked = showFreeSpace,
-                                                onCheckedChange = null
-                                            )
-                                        },
-                                        onClick = {
-                                            val newVal = !showFreeSpace
-                                            showFreeSpace = newVal
-                                            prefs.edit().putBoolean("show_free_space", newVal).apply()
-                                            applyFilter(newVal, showSystemApps, showHiddenFiles)
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = "Show Hidden Files",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        },
-                                        leadingIcon = {
-                                            Checkbox(
-                                                checked = showHiddenFiles,
-                                                onCheckedChange = null
-                                            )
-                                        },
-                                        onClick = {
-                                            val newVal = !showHiddenFiles
-                                            showHiddenFiles = newVal
-                                            prefs.edit().putBoolean("show_hidden_files", newVal).apply()
-                                            applyFilter(showFreeSpace, showSystemApps, newVal)
-                                        }
-                                    )
+                                    MaterialSymbol("refresh", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            IconButton(
-                                onClick = { triggerScan() },
-                                enabled = !isLoading && hasStoragePermission
-                            ) {
-                                MaterialSymbol("refresh", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            IconButton(
-                                onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) }
-                            ) {
-                                MaterialSymbol("settings", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            AppTooltip(text = "Settings") {
+                                IconButton(
+                                    onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) }
+                                ) {
+                                    MaterialSymbol("settings", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -532,7 +486,8 @@ fun MainApp() {
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(44.dp)
+                                    .height(48.dp)
+                                    .padding(end = 4.dp)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -543,15 +498,15 @@ fun MainApp() {
                                     MaterialSymbol(
                                         name = "search",
                                         active = true,
-                                        size = 22.dp,
+                                        size = 24.dp,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(12.dp))
                                     BasicTextField(
                                         value = discoverSearchQuery,
                                         onValueChange = { discoverSearchQuery = it },
                                         singleLine = true,
-                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
                                             color = MaterialTheme.colorScheme.onSurface
                                         ),
                                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -559,7 +514,7 @@ fun MainApp() {
                                             if (discoverSearchQuery.isEmpty()) {
                                                 Text(
                                                     text = "Search files...",
-                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    style = MaterialTheme.typography.bodyLarge,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                                 )
                                             }
@@ -568,16 +523,18 @@ fun MainApp() {
                                         modifier = Modifier.weight(1f)
                                     )
                                     if (discoverSearchQuery.isNotEmpty()) {
-                                        IconButton(
-                                            onClick = { discoverSearchQuery = "" },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            MaterialSymbol(
-                                                name = "close",
-                                                active = true,
-                                                size = 20.dp,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                        AppTooltip(text = "Clear search") {
+                                            IconButton(
+                                                onClick = { discoverSearchQuery = "" },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = "close",
+                                                    active = true,
+                                                    size = 20.dp,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -815,7 +772,7 @@ fun MainApp() {
                             },
                             text = {
                                 Text(
-                                    text = "This action is permanent and cannot be undone.\n\nTotal space to free: ${FileUtils.formatFileSize(totalBytes)}",
+                                    text = "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -852,6 +809,295 @@ fun MainApp() {
                             },
                             dismissButton = {
                                 TextButton(onClick = { showTreeDeleteDialog = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
+
+                    if (showFilterMenu) {
+                        ModalBottomSheet(
+                            onDismissRequest = { showFilterMenu = false },
+                            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                                    .padding(bottom = 36.dp)
+                            ) {
+                                Text(
+                                    text = "Display options",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val newVal = !showSystemApps
+                                            showSystemApps = newVal
+                                            prefs.edit().putBoolean("show_system_apps", newVal).apply()
+                                            applyFilter(showFreeSpace, newVal, showHiddenFiles)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (showSystemApps) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    MaterialSymbol(
+                                                        name = "android",
+                                                        active = true,
+                                                        size = 22.dp,
+                                                        tint = if (showSystemApps) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(14.dp))
+                                            Text(
+                                                text = "Show system applications",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Switch(
+                                            checked = showSystemApps,
+                                            onCheckedChange = { newVal ->
+                                                showSystemApps = newVal
+                                                prefs.edit().putBoolean("show_system_apps", newVal).apply()
+                                                applyFilter(showFreeSpace, newVal, showHiddenFiles)
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val newVal = !showFreeSpace
+                                            showFreeSpace = newVal
+                                            prefs.edit().putBoolean("show_free_space", newVal).apply()
+                                            applyFilter(newVal, showSystemApps, showHiddenFiles)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (showFreeSpace) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    MaterialSymbol(
+                                                        name = "storage",
+                                                        active = true,
+                                                        size = 22.dp,
+                                                        tint = if (showFreeSpace) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(14.dp))
+                                            Text(
+                                                text = "Show free storage",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Switch(
+                                            checked = showFreeSpace,
+                                            onCheckedChange = { newVal ->
+                                                showFreeSpace = newVal
+                                                prefs.edit().putBoolean("show_free_space", newVal).apply()
+                                                applyFilter(newVal, showSystemApps, showHiddenFiles)
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val newVal = !showHiddenFiles
+                                            showHiddenFiles = newVal
+                                            prefs.edit().putBoolean("show_hidden_files", newVal).apply()
+                                            applyFilter(showFreeSpace, showSystemApps, newVal)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (showHiddenFiles) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    MaterialSymbol(
+                                                        name = "visibility",
+                                                        active = true,
+                                                        size = 22.dp,
+                                                        tint = if (showHiddenFiles) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(14.dp))
+                                            Text(
+                                                text = "Show hidden files",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Switch(
+                                            checked = showHiddenFiles,
+                                            onCheckedChange = { newVal ->
+                                                showHiddenFiles = newVal
+                                                prefs.edit().putBoolean("show_hidden_files", newVal).apply()
+                                                applyFilter(showFreeSpace, showSystemApps, newVal)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showVolumeSelectionDialog && detectedVolumes.isNotEmpty()) {
+                        AlertDialog(
+                            onDismissRequest = { showVolumeSelectionDialog = false },
+                            title = {
+                                Text(
+                                    text = "Select storage to scan",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            text = {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Select storage drives to index",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+
+                                    detectedVolumes.forEach { vol ->
+                                        val isSelected = selectedVolumeIds.contains(vol.id)
+                                        val iconName = when {
+                                            vol.isUsb -> "usb"
+                                            vol.isRemovable -> "sd_card"
+                                            else -> "smartphone"
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedVolumeIds = if (isSelected) {
+                                                        if (selectedVolumeIds.size > 1) selectedVolumeIds - vol.id else selectedVolumeIds
+                                                    } else {
+                                                        selectedVolumeIds + vol.id
+                                                    }
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(
+                                                    shape = CircleShape,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                    modifier = Modifier.size(44.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        MaterialSymbol(
+                                                            name = iconName,
+                                                            active = true,
+                                                            size = 24.dp,
+                                                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.width(14.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = vol.name,
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = "${FileUtils.formatFileSize(vol.freeBytes)} free of ${FileUtils.formatFileSize(vol.totalBytes)}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                FilledTonalButton(
+                                    onClick = {
+                                        showVolumeSelectionDialog = false
+                                        val toScan = detectedVolumes.filter { selectedVolumeIds.contains(it.id) }
+                                        performScan(toScan)
+                                    },
+                                    enabled = selectedVolumeIds.isNotEmpty()
+                                ) {
+                                    Text("Scan (${selectedVolumeIds.size})", fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showVolumeSelectionDialog = false }) {
                                     Text("Cancel")
                                 }
                             }

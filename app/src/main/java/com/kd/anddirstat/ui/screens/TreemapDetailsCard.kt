@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.AppIconView
+import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
@@ -175,21 +176,23 @@ fun ExpressiveNodeDetailsSheet(
             if (!isSpecialNode) {
                 Spacer(modifier = Modifier.width(8.dp))
 
-                Surface(
-                    shape = CircleShape,
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    IconButton(
-                        onClick = onToggleSelect,
-                        modifier = Modifier.fillMaxSize()
+                AppTooltip(text = if (isSelected) "Deselect item" else "Select item") {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        MaterialSymbol(
-                            name = if (isSelected) "check_circle" else "check_circle_outline",
-                            active = isSelected,
-                            size = 24.dp,
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        IconButton(
+                            onClick = onToggleSelect,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            MaterialSymbol(
+                                name = if (isSelected) "check_circle" else "check_circle_outline",
+                                active = isSelected,
+                                size = 24.dp,
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -259,12 +262,69 @@ fun ExpressiveNodeDetailsSheet(
             if (isAppNode && pkgName != null) {
                 val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
                 if (launchIntent != null) {
+                    AppTooltip(text = "Open application") {
+                        IconButton(
+                            onClick = {
+                                try {
+                                    context.startActivity(launchIntent)
+                                    onDismiss()
+                                } catch (_: Exception) {}
+                            },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                    }
+                }
+
+                AppTooltip(text = "Application details") {
                     IconButton(
                         onClick = {
                             try {
-                                context.startActivity(launchIntent)
-                                onDismiss()
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
+                                )
                             } catch (_: Exception) {}
+                        },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+
+                AppTooltip(text = "Uninstall application") {
+                    IconButton(
+                        onClick = {
+                            if (pkgName != null) {
+                                FileUtils.uninstallApp(context, pkgName)
+                            }
+                            onDismiss()
+                        },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                    }
+                }
+            }
+
+            if (isRealFile && !realFile!!.isDirectory) {
+                AppTooltip(text = "Open file") {
+                    IconButton(
+                        onClick = {
+                            FileUtils.openFile(context, realFile)
+                            onDismiss()
                         },
                         colors = IconButtonDefaults.iconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -275,64 +335,17 @@ fun ExpressiveNodeDetailsSheet(
                         MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
-
-                IconButton(
-                    onClick = {
-                        try {
-                            context.startActivity(
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName"))
-                            )
-                        } catch (_: Exception) {}
-                    },
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    ),
-                    modifier = Modifier.size(52.dp)
-                ) {
-                    MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-
-                IconButton(
-                    onClick = {
-                        if (pkgName != null) {
-                            FileUtils.uninstallApp(context, pkgName)
-                        }
-                        onDismiss()
-                    },
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    modifier = Modifier.size(52.dp)
-                ) {
-                    MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
-                }
-            }
-
-            if (isRealFile && !realFile!!.isDirectory) {
-                IconButton(
-                    onClick = {
-                        FileUtils.openFile(context, realFile)
-                        onDismiss()
-                    },
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    modifier = Modifier.size(52.dp)
-                ) {
-                    MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
-                }
-                IconButton(
-                    onClick = { showDeleteConfirmation = true },
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    modifier = Modifier.size(52.dp)
-                ) {
-                    MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                AppTooltip(text = "Delete file") {
+                    IconButton(
+                        onClick = { showDeleteConfirmation = true },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                    }
                 }
             }
         }
@@ -366,7 +379,7 @@ fun ExpressiveNodeDetailsSheet(
                         onClick = {
                             showDeleteConfirmation = false
                             if (realFile.delete()) {
-                                Toast.makeText(context, "Deleted: ${realFile.name}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Deleted ${realFile.name}", Toast.LENGTH_SHORT).show()
                                 onDeleted()
                             } else {
                                 Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()

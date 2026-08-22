@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.AppIconView
+import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FileUtils
 import java.util.Locale
@@ -117,13 +118,14 @@ fun ExplorerView(
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
-            contentPadding = PaddingValues(top = 8.dp, bottom = if (selectedNodes.isNotEmpty()) 80.dp else 8.dp),
+            contentPadding = PaddingValues(bottom = 110.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
             items(
-                items = visibleRows
+                items = visibleRows,
+                key = { "${it.path}_${it.node.name}_${it.depth}" }
             ) { row ->
                 val child = row.node
                 val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
@@ -131,7 +133,13 @@ fun ExplorerView(
                 val isApp = child.children?.any { it.name.startsWith("App Code") } == true
                 val appPkg = if (isApp) FileUtils.extractPackageName(child) else null
                 val icon = FileUtils.getNodeIcon(child, isApp)
-                val isSelected = selectedNodes.contains(child)
+                val isSelectable = remember(child) {
+                    val n = child.name.trim().lowercase()
+                    n != "[system & os]" && n != "system & os" &&
+                    n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
+                    n != "[free space]" && n != "free space"
+                }
+                val isSelected = isSelectable && selectedNodes.contains(child)
 
                 ListItem(
                     leadingContent = {
@@ -146,7 +154,7 @@ fun ExplorerView(
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(28.dp)
+                                        .size(40.dp)
                                         .clip(CircleShape)
                                         .clickable {
                                             expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
@@ -155,36 +163,40 @@ fun ExplorerView(
                                     MaterialSymbol(
                                         name = if (row.isExpanded) "expand_more" else "chevron_right",
                                         active = true,
-                                        size = 20.dp,
+                                        size = 22.dp,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
                             }
 
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(44.dp)
                                     .clip(CircleShape)
-                                    .clickable {
-                                        selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
-                                    }
+                                    .then(
+                                        if (isSelectable) {
+                                            Modifier.clickable {
+                                                selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
+                                            }
+                                        } else Modifier
+                                    )
                             ) {
                                 if (appPkg != null) {
                                     AppIconView(
                                         packageName = appPkg,
                                         contentDescription = child.name,
                                         modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(RoundedCornerShape(6.dp))
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
                                     )
                                 } else {
                                     Icon(
                                         imageVector = icon,
                                         contentDescription = null,
                                         tint = childColor,
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 }
                             }
@@ -234,7 +246,7 @@ fun ExplorerView(
                     ),
                     modifier = Modifier.combinedClickable(
                         onClick = {
-                            if (selectedNodes.isNotEmpty()) {
+                            if (selectedNodes.isNotEmpty() && isSelectable) {
                                 selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
                             } else {
                                 if (row.hasChildren) {
@@ -247,7 +259,7 @@ fun ExplorerView(
                         onLongClick = {
                             if (row.hasChildren) {
                                 onNodeClick(child, row.path)
-                            } else {
+                            } else if (isSelectable) {
                                 selectedNodes = if (isSelected) selectedNodes - child else selectedNodes + child
                             }
                         }
@@ -280,16 +292,18 @@ fun ExplorerView(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { selectedNodes = emptySet() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            MaterialSymbol(
-                                name = "close",
-                                active = true,
-                                size = 20.dp,
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
+                        AppTooltip(text = "Clear selection") {
+                            IconButton(
+                                onClick = { selectedNodes = emptySet() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                MaterialSymbol(
+                                    name = "close",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
@@ -306,21 +320,23 @@ fun ExplorerView(
                             )
                         }
                     }
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        IconButton(
-                            onClick = { showDeleteDialog = true },
-                            modifier = Modifier.fillMaxSize()
+                    AppTooltip(text = "Delete selected") {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            modifier = Modifier.size(38.dp)
                         ) {
-                            MaterialSymbol(
-                                name = "delete",
-                                active = true,
-                                size = 20.dp,
-                                tint = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                            IconButton(
+                                onClick = { showDeleteDialog = true },
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                MaterialSymbol(
+                                    name = "delete",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
                         }
                     }
                 }
@@ -357,7 +373,7 @@ fun ExplorerView(
                 },
                 text = {
                     Text(
-                        text = "This action is permanent and cannot be undone.\n\nTotal space to free: ${FileUtils.formatFileSize(totalBytes)}",
+                        text = "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

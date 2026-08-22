@@ -70,7 +70,7 @@ fun SettingsView(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp)
     ) {
         // Appearance section header
         item {
