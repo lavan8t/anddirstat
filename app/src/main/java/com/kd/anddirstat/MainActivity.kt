@@ -291,14 +291,6 @@ fun MainApp() {
                                     onDismissRequest = { showFilterMenu = false },
                                     modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                 ) {
-                                    Text(
-                                        text = "Treemap Filters",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                    )
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                     DropdownMenuItem(
                                         text = {
                                             Text(

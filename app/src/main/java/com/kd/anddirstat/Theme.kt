@@ -2,8 +2,13 @@ package com.kd.anddirstat
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -38,18 +43,16 @@ enum class AppTheme(val key: String, val title: String) {
 enum class AccentColor(
     val key: String,
     val label: String,
-    val seed: Color,
-    val neon: Boolean = false
+    val seed: Color
 ) {
     GREEN("green", "Android", Color(0xFF1DB954)),
     BLUE("blue", "Blue", Color(0xFF2196F3)),
-    PURPLE("purple", "Purple", Color(0xFF9C27B0)),
+    RED("red", "Red", Color(0xFFE53935)),
     ORANGE("orange", "Orange", Color(0xFFFF6D00)),
     TEAL("teal", "Teal", Color(0xFF009688)),
-    NEON_GREEN("neon_green", "Neon ⚡", Color(0xFF39FF14), true),
-    NEON_PINK("neon_pink", "Neon 🌸", Color(0xFFFF10F0), true),
-    NEON_CYAN("neon_cyan", "Neon 💎", Color(0xFF00FFFF), true),
-    NEON_YELLOW("neon_yellow", "Neon ☀", Color(0xFFFFFF00), true)
+    NEON_GREEN("neon_green", "Neon Green", Color(0xFF39FF14)),
+    NEON_PINK("neon_pink", "Neon Pink", Color(0xFFFF10F0)),
+    NEON_YELLOW("neon_yellow", "Neon Yellow", Color(0xFFFFFF00))
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -370,13 +373,15 @@ fun AndDirStatTheme(
         )
     } else base
 
+    val animatedColorScheme = colorScheme.animated()
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window
             if (window != null) {
-                window.statusBarColor = colorScheme.background.toArgb()
-                window.navigationBarColor = colorScheme.surfaceContainer.toArgb()
+                window.statusBarColor = animatedColorScheme.background.toArgb()
+                window.navigationBarColor = animatedColorScheme.surfaceContainer.toArgb()
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.isAppearanceLightStatusBars = !isDark
                 controller.isAppearanceLightNavigationBars = !isDark
@@ -385,9 +390,41 @@ fun AndDirStatTheme(
     }
 
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = animatedColorScheme,
         shapes = Material3Shapes,
         typography = Material3Typography,
         content = content
+    )
+}
+
+@Composable
+fun ColorScheme.animated(
+    animationSpec: AnimationSpec<Color> = tween(durationMillis = 250, easing = FastOutSlowInEasing)
+): ColorScheme {
+    return copy(
+        primary = animateColorAsState(primary, animationSpec, label = "p").value,
+        onPrimary = animateColorAsState(onPrimary, animationSpec, label = "op").value,
+        primaryContainer = animateColorAsState(primaryContainer, animationSpec, label = "pc").value,
+        onPrimaryContainer = animateColorAsState(onPrimaryContainer, animationSpec, label = "opc").value,
+        secondary = animateColorAsState(secondary, animationSpec, label = "s").value,
+        onSecondary = animateColorAsState(onSecondary, animationSpec, label = "os").value,
+        secondaryContainer = animateColorAsState(secondaryContainer, animationSpec, label = "sc").value,
+        onSecondaryContainer = animateColorAsState(onSecondaryContainer, animationSpec, label = "osc").value,
+        tertiary = animateColorAsState(tertiary, animationSpec, label = "t").value,
+        onTertiary = animateColorAsState(onTertiary, animationSpec, label = "ot").value,
+        tertiaryContainer = animateColorAsState(tertiaryContainer, animationSpec, label = "tc").value,
+        onTertiaryContainer = animateColorAsState(onTertiaryContainer, animationSpec, label = "otc").value,
+        background = animateColorAsState(background, animationSpec, label = "bg").value,
+        onBackground = animateColorAsState(onBackground, animationSpec, label = "obg").value,
+        surface = animateColorAsState(surface, animationSpec, label = "sf").value,
+        onSurface = animateColorAsState(onSurface, animationSpec, label = "osf").value,
+        surfaceVariant = animateColorAsState(surfaceVariant, animationSpec, label = "sfv").value,
+        onSurfaceVariant = animateColorAsState(onSurfaceVariant, animationSpec, label = "osfv").value,
+        surfaceContainer = animateColorAsState(surfaceContainer, animationSpec, label = "sfc").value,
+        surfaceContainerLow = animateColorAsState(surfaceContainerLow, animationSpec, label = "sfcl").value,
+        surfaceContainerHigh = animateColorAsState(surfaceContainerHigh, animationSpec, label = "sfch").value,
+        surfaceContainerHighest = animateColorAsState(surfaceContainerHighest, animationSpec, label = "sfchx").value,
+        outline = animateColorAsState(outline, animationSpec, label = "ol").value,
+        outlineVariant = animateColorAsState(outlineVariant, animationSpec, label = "olv").value
     )
 }

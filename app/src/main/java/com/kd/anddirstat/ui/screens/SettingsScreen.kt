@@ -1,6 +1,8 @@
 package com.kd.anddirstat.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,7 +71,7 @@ fun SettingsView(
             )
         }
 
-        // Theme 3-card row — only selected has surfaceContainerHigh bg, others transparent
+        // Theme 3-card row — 32dp icons with smooth animated container bg
         item {
             Row(
                 modifier = Modifier
@@ -78,21 +81,29 @@ fun SettingsView(
             ) {
                 AppTheme.entries.forEach { theme ->
                     val isSelected = currentTheme == theme
+                    val cardBg by animateColorAsState(
+                        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "cardBg"
+                    )
+                    val cardFg by animateColorAsState(
+                        targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "cardFg"
+                    )
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                else Color.Transparent
-                            )
+                            .background(cardBg)
                             .clickable { onSelectTheme(theme) }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             MaterialSymbol(
                                 name = when (theme) {
@@ -101,16 +112,14 @@ fun SettingsView(
                                     AppTheme.DARK   -> "dark_mode"
                                 },
                                 active = isSelected,
-                                size = 24.dp,
-                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                                size = 32.dp,
+                                tint = cardFg
                             )
                             Text(
                                 text = theme.title,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = cardFg
                             )
                         }
                     }
