@@ -4,16 +4,14 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
@@ -26,7 +24,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
-import androidx.core.view.WindowCompat
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.screens.SettingsView
 
@@ -35,7 +32,7 @@ class SettingsActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        enableEdgeToEdge()
         setContent {
             val prefs = remember { getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
             val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
@@ -53,7 +50,12 @@ class SettingsActivity : ComponentActivity() {
 
             val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
-            AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, dynamicTheme = dynamicTheme, accentColor = accentColor) {
+            AndDirStatTheme(
+                appTheme = currentTheme,
+                pureBlack = pureBlack,
+                dynamicTheme = dynamicTheme,
+                accentColor = accentColor
+            ) {
                 Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
@@ -68,24 +70,13 @@ class SettingsActivity : ComponentActivity() {
                                 )
                             },
                             navigationIcon = {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier
-                                        .padding(start = 12.dp, end = 4.dp)
-                                        .size(38.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = { finish() },
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "arrow_back",
-                                            active = true,
-                                            size = 20.dp,
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
+                                IconButton(onClick = { finish() }) {
+                                    MaterialSymbol(
+                                        name = "arrow_back",
+                                        active = true,
+                                        size = 24.dp,
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
                             },
                             colors = TopAppBarDefaults.largeTopAppBarColors(

@@ -30,6 +30,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +42,15 @@ import com.kd.anddirstat.util.FileUtils
 
 private val CanvasBgColor = Color(0xFF08090E)
 private val SelectionBorderColor = Color.White
+
+object TreemapTileMemoryCache {
+    private val cache = LruCache<String, Pair<List<TreemapTile>, SpatialTileGrid>>(16)
+
+    fun get(key: String) = cache.get(key)
+    fun put(key: String, value: Pair<List<TreemapTile>, SpatialTileGrid>) {
+        cache.put(key, value)
+    }
+}
 
 class TreemapTile(
     val node: CompactNode,
@@ -217,18 +227,20 @@ fun TreemapCanvas(
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
-    val precalculatedTiles = remember(rootNode, rootPath, canvasSize.width, canvasSize.height, isDark) {
-        if (canvasSize.width > 0 && canvasSize.height > 0) {
-            computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), canvasSize.height.toFloat(), isDark)
+    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_$isDark"
+    val (precalculatedTiles, spatialGrid) = remember(cacheKey) {
+        val cached = TreemapTileMemoryCache.get(cacheKey)
+        if (cached != null) {
+            cached
+        } else if (canvasSize.width > 0 && canvasSize.height > 0) {
+            val tiles = computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), canvasSize.height.toFloat(), isDark)
+            val grid = SpatialTileGrid(tiles, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+            val pair = Pair(tiles, grid)
+            TreemapTileMemoryCache.put(cacheKey, pair)
+            pair
         } else {
-            emptyList()
+            Pair(emptyList(), null)
         }
-    }
-
-    val spatialGrid = remember(precalculatedTiles, canvasSize.width, canvasSize.height) {
-        if (canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.isNotEmpty()) {
-            SpatialTileGrid(precalculatedTiles, canvasSize.width.toFloat(), canvasSize.height.toFloat())
-        } else null
     }
 
     LaunchedEffect(resetKey) {
@@ -249,9 +261,12 @@ fun TreemapCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            .graphicsLayer { clip = true }
             .background(canvasBg)
             .onSizeChanged { newSize ->
-                canvasSize = newSize
+                if (newSize.width > 0 && newSize.height > 0 && (newSize.width != canvasSize.width || newSize.height != canvasSize.height)) {
+                    canvasSize = newSize
+                }
             }
             .pointerInput(Unit) {
                 detectTransformGestures(panZoomLock = false) { centroid, pan, zoom, _ ->

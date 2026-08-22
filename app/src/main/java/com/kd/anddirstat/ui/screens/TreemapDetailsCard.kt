@@ -64,7 +64,9 @@ fun ExpressiveNodeDetailsSheet(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showDeleteConfirmation by remember { mutableStateOf(false) }
-    val realFile = remember(path, node.name) { FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name) }
+    val realFile = remember(path, node.name) {
+        FileUtils.resolveActualFile(path, context) ?: FileUtils.resolveActualFile(node.name, context)
+    }
     val isRealFile = realFile != null && realFile.exists()
     val appChildren = node.children
     val pkgName = remember(node, path) { FileUtils.extractPackageName(node, path, context) }

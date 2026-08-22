@@ -2,6 +2,7 @@ package com.kd.anddirstat.util
 
 import android.Manifest
 import android.app.AppOpsManager
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -134,50 +135,86 @@ object FileUtils {
         return String.format(Locale.US, "%.2f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
     }
 
-    fun resolveActualFile(path: String): File? {
+    fun resolveActualFile(path: String, context: Context? = null): File? {
+        if (path.isBlank()) return null
         val direct = File(path)
         if (direct.exists()) return direct
 
         val externalRoot = Environment.getExternalStorageDirectory().absolutePath
-        val relative = when {
-            path.startsWith("[Recycle Bin]/") -> path.removePrefix("[Recycle Bin]/")
-            path.startsWith("Device Storage/Files/") -> path.removePrefix("Device Storage/Files/")
-            path.startsWith("Device Storage/") -> path.removePrefix("Device Storage/")
-            path.startsWith("Files/") -> path.removePrefix("Files/")
-            path == "Files" || path == "Device Storage" || path == "[Recycle Bin]" -> ""
-            path.startsWith("/storage/emulated/0/") -> path.removePrefix("/storage/emulated/0/")
-            path.startsWith(externalRoot) -> path.removePrefix(externalRoot).removePrefix("/")
-            else -> path
+        val prefixesToStrip = listOf(
+            "[Recycle Bin]/", "Recycle Bin/",
+            "Device Storage/Files/", "Device Storage/",
+            "Internal Storage/Files/", "Internal Storage/",
+            "Files/",
+            "/storage/emulated/0/",
+            externalRoot
+        )
+
+        var relative = path
+        for (p in prefixesToStrip) {
+            if (relative.startsWith(p, ignoreCase = true)) {
+                relative = relative.substring(p.length).removePrefix("/")
+            }
         }
+
         val f = File(externalRoot, relative)
         if (f.exists()) return f
 
-        if (relative.startsWith(".trashed")) {
-            val candidateDirs = listOf(
-                Environment.getExternalStorageDirectory(),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-            )
-            for (dir in candidateDirs) {
-                val candidate = File(dir, relative)
-                if (candidate.exists()) return candidate
-            }
+        val standardDirs = listOf(
+            Environment.getExternalStorageDirectory(),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots"),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots"),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        )
+
+        for (dir in standardDirs) {
+            val candidate = File(dir, relative)
+            if (candidate.exists()) return candidate
+            val candidateByName = File(dir, File(path).name)
+            if (candidateByName.exists()) return candidateByName
         }
 
-        for (vol in getAvailableStorageVolumes(null)) {
+        val volumes = getAvailableStorageVolumes(context)
+        for (vol in volumes) {
             val volFile = File(vol.path, relative)
             if (volFile.exists()) return volFile
 
-            if (path.startsWith("${vol.name}/")) {
-                val sub = path.removePrefix("${vol.name}/")
+            val cleanVolName = vol.name.trim()
+            if (path.startsWith(cleanVolName, ignoreCase = true)) {
+                val sub = path.substring(cleanVolName.length).removePrefix("/")
                 val f2 = File(vol.path, sub)
                 if (f2.exists()) return f2
             }
+            val volCandidateByName = File(vol.path, File(path).name)
+            if (volCandidateByName.exists()) return volCandidateByName
         }
+
+        if (context != null) {
+            try {
+                val fileName = File(path).name
+                val proj = arrayOf(MediaStore.MediaColumns.DATA)
+                context.contentResolver.query(
+                    MediaStore.Files.getContentUri("external"),
+                    proj,
+                    "${MediaStore.MediaColumns.DISPLAY_NAME}=? OR ${MediaStore.MediaColumns.DATA} LIKE ?",
+                    arrayOf(fileName, "%$relative"),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val realPath = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA))
+                        val mf = File(realPath)
+                        if (mf.exists()) return mf
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         return null
     }
 
@@ -366,23 +403,102 @@ object FileUtils {
         AppUninstallerQueue.start(context, distinctPkgs)
     }
 
+    fun getMimeType(file: File): String {
+        val ext = file.extension.lowercase()
+        val fromMap = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+        if (!fromMap.isNullOrEmpty()) return fromMap
+
+        return when (ext) {
+            "jpg", "jpeg", "png", "webp", "heic", "heif", "gif", "bmp", "svg", "ico", "dng", "raw" -> "image/*"
+            "mp4", "mkv", "avi", "mov", "webm", "3gp", "ts", "wmv", "m4v", "flv", "vob", "ogv", "m2ts" -> "video/*"
+            "mp3", "flac", "wav", "m4a", "ogg", "opus", "aac", "wma", "mid", "midi", "amr" -> "audio/*"
+            "pdf" -> "application/pdf"
+            "apk", "apks", "xapk", "apkm" -> "application/vnd.android.package-archive"
+            "zip" -> "application/zip"
+            "rar" -> "application/x-rar-compressed"
+            "7z" -> "application/x-7z-compressed"
+            "tar" -> "application/x-tar"
+            "gz" -> "application/gzip"
+            "txt", "log", "conf", "ini", "rc" -> "text/plain"
+            "html", "htm" -> "text/html"
+            "json" -> "application/json"
+            "xml" -> "text/xml"
+            "doc", "docx" -> "application/msword"
+            "xls", "xlsx" -> "application/vnd.ms-excel"
+            "ppt", "pptx" -> "application/vnd.ms-powerpoint"
+            else -> "*/*"
+        }
+    }
+
     fun openFile(context: Context, file: File) {
+        val actual = if (file.exists()) file else resolveActualFile(file.path) ?: file
+        if (!actual.exists()) {
+            Toast.makeText(context, "File not found: ${actual.name}", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val mime = getMimeType(actual)
+        var uri: Uri? = null
+
+        // 1. Try FileProvider
         try {
-            val uri: Uri = FileProvider.getUriForFile(
+            uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
-                file
+                actual
             )
-            val ext = file.extension.lowercase()
-            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+        } catch (_: Exception) {}
+
+        // 2. Try MediaStore ContentResolver if FileProvider failed
+        if (uri == null && (mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/"))) {
+            try {
+                val baseUri = when {
+                    mime.startsWith("video/") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    mime.startsWith("audio/") -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                }
+                val proj = arrayOf(MediaStore.MediaColumns._ID)
+                context.contentResolver.query(
+                    baseUri,
+                    proj,
+                    "${MediaStore.MediaColumns.DATA}=?",
+                    arrayOf(actual.absolutePath),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                        uri = ContentUris.withAppendedId(baseUri, id)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (uri == null) {
+            uri = Uri.fromFile(actual)
+        }
+
+        try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, mime)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            val chooser = Intent.createChooser(intent, "Open with").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(chooser)
         } catch (_: Exception) {
-            Toast.makeText(context, "No application found to open this file", Toast.LENGTH_SHORT).show()
+            try {
+                val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mime)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+            } catch (_: Exception) {
+                Toast.makeText(context, "No application found to open ${actual.name}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
