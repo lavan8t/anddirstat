@@ -1,6 +1,7 @@
 package com.kd.anddirstat.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ fun FileTypesView(
     totalDeviceSize: Long,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isSystemInDarkTheme()
     val visibleStats = remember(stats) {
         stats.filter {
             val name = it.extension.lowercase().trim()
@@ -62,6 +64,7 @@ fun FileTypesView(
             val percent = if (totalDeviceSize > 0L) (stat.totalSize.toDouble() / totalDeviceSize.toDouble() * 100.0) else 0.0
             val fraction = (percent / 100.0).coerceIn(0.0, 1.0)
             val icon = remember(stat.extension) { FileUtils.getExtensionIcon(stat.extension) }
+            val iconColor = remember(stat.extension, isDark) { FileUtils.getFileTypeIconColor(stat.extension, isDark) }
 
             ListItem(
                 leadingContent = {
@@ -72,7 +75,7 @@ fun FileTypesView(
                         Icon(
                             imageVector = icon,
                             contentDescription = stat.extension,
-                            tint = stat.color,
+                            tint = iconColor,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -121,7 +124,7 @@ fun FileTypesView(
                                 .fillMaxWidth()
                                 .height(5.dp)
                                 .clip(CircleShape),
-                            color = stat.color,
+                            color = iconColor,
                             trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             strokeCap = StrokeCap.Round
                         )

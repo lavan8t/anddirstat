@@ -9,6 +9,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +53,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
-import com.kd.anddirstat.treemap.getNodeColor
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FileUtils
@@ -71,6 +71,7 @@ fun ExplorerView(
     val children = currentNode.children ?: emptyArray()
     val parentSize = currentNode.size.toDouble()
     var selectedNodes by remember(currentNode) { mutableStateOf(setOf<CompactNode>()) }
+    val isDark = isSystemInDarkTheme()
 
     BackHandler(enabled = selectedNodes.isNotEmpty()) {
         selectedNodes = emptySet()
@@ -124,7 +125,7 @@ fun ExplorerView(
                 key = { index, item -> "${item.name}_$index" }
             ) { _, child ->
                 val fraction = if (parentSize > 0.0) (child.size.toDouble() / parentSize).coerceIn(0.0, 1.0) else 0.0
-                val childColor = getNodeColor(child)
+                val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
                 val childPath = if (currentPath == "Device Storage") child.name else if (currentPath.endsWith("/")) "$currentPath${child.name}" else "$currentPath/${child.name}"
                 val isApp = child.children?.any { it.name.startsWith("App Code") } == true
                 val appPkg = if (isApp) FileUtils.extractPackageName(child) else null

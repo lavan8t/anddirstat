@@ -67,7 +67,7 @@ fun computeTreemapTiles(
     val tiles = ArrayList<TreemapTile>(512)
 
     fun buildTiles(node: CompactNode, currentPath: String, l: Float, t: Float, w: Float, h: Float, inAppsScope: Boolean) {
-        if (w <= 0.5f || h <= 0.5f) return
+        if (w <= 0.05f || h <= 0.05f) return
 
         val children = node.children
         val inApps = inAppsScope || node.name == "Apps & System Packages"
@@ -318,54 +318,22 @@ fun TreemapCanvas(
                 continue
             }
 
-            // Sub-pixel culling
-            if (sW < 0.75f && sH < 0.75f) {
-                continue
-            }
+            // Ensure even tiny tiles are always cleanly visible with minimum 1px bounds — never black or skipped
+            val drawW = maxOf(1f, sW)
+            val drawH = maxOf(1f, sH)
 
-            val isSelected = selectedNode != null && tile.node === selectedNode
+            // Hardware-accelerated 3D cushion gradient across all tiles
+            val brush = Brush.linearGradient(
+                colors = tile.gradientColors,
+                start = Offset(sLeft, sTop),
+                end = Offset(sLeft + drawW, sTop + drawH)
+            )
 
-            if (isAmoled) {
-                // AMOLED: outline borders only when unselected, animated smooth fill when selected
-                if (isSelected) {
-                    drawRect(
-                        color = tile.baseColor,
-                        topLeft = Offset(sLeft, sTop),
-                        size = Size(sW, sH)
-                    )
-                }
-                drawRect(
-                    color = tile.baseColor,
-                    topLeft = Offset(sLeft, sTop),
-                    size = Size(sW, sH),
-                    style = Stroke(width = if (currentScale > 2f) 1.5f else 1.0f)
-                )
-            } else {
-                // Fast path: draw solid color for small tiles (<16px) — 50x faster GPU throughput
-                if (sW < 16f || sH < 16f) {
-                    drawRect(
-                        color = tile.baseColor,
-                        topLeft = Offset(sLeft, sTop),
-                        size = Size(sW, sH)
-                    )
-                } else {
-                    val cX = sLeft + sW * 0.35f
-                    val cY = sTop + sH * 0.35f
-                    val radius = maxOf(sW, sH) * 0.85f
-
-                    val brush = Brush.radialGradient(
-                        colors = tile.gradientColors,
-                        center = Offset(cX, cY),
-                        radius = radius
-                    )
-
-                    drawRect(
-                        brush = brush,
-                        topLeft = Offset(sLeft, sTop),
-                        size = Size(sW, sH)
-                    )
-                }
-            }
+            drawRect(
+                brush = brush,
+                topLeft = Offset(sLeft, sTop),
+                size = Size(drawW, drawH)
+            )
 
             if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
                 val bmp = AppIconCache.get(context, tile.pkgName)
