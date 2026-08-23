@@ -146,7 +146,7 @@ fun MainApp() {
     }
     var pureBlack by remember { mutableStateOf(prefs.getBoolean("pure_black", false)) }
     var dynamicTheme by remember {
-        mutableStateOf(prefs.getBoolean("dynamic_theme", android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S))
+        mutableStateOf(prefs.getBoolean("dynamic_theme", false))
     }
     val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
     var accentColor by remember {

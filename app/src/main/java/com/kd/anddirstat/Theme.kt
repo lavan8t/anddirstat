@@ -248,7 +248,7 @@ fun AndDirStatAppTheme(
     val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
     val currentTheme = remember { AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM }
     val pureBlack = remember { prefs.getBoolean("pure_black", false) }
-    val dynamicTheme = remember { prefs.getBoolean("dynamic_theme", Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) }
+    val dynamicTheme = remember { prefs.getBoolean("dynamic_theme", false) }
     val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
     val accentColor = remember { AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN }
 
@@ -265,7 +265,7 @@ fun AndDirStatAppTheme(
 fun AndDirStatTheme(
     appTheme: AppTheme = AppTheme.SYSTEM,
     pureBlack: Boolean = false,
-    dynamicTheme: Boolean = true,
+    dynamicTheme: Boolean = false,
     accentColor: AccentColor = AccentColor.GREEN,
     content: @Composable () -> Unit
 ) {
