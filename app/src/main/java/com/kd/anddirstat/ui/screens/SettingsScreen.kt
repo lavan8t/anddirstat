@@ -325,8 +325,8 @@ fun SettingsView(
                     painter = painterResource(R.drawable.ic_appbar),
                     contentDescription = "AndDirStat",
                     modifier = Modifier
-                        .height(38.dp)
-                        .padding(bottom = 8.dp)
+                        .height(54.dp)
+                        .padding(bottom = 12.dp)
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

@@ -126,11 +126,19 @@ object FileUtils {
     fun middleEllipsis(text: String, maxLen: Int = 22): String {
         if (text.length <= maxLen) return text
         val extIdx = text.lastIndexOf('.')
-        val extLen = if (extIdx > 0 && text.length - extIdx <= 8) text.length - extIdx else 0
-        val suffixLen = maxOf(5, extLen + 3)
-        val prefixLen = maxOf(4, maxLen - suffixLen - 1)
-        if (prefixLen + suffixLen >= text.length) return text
-        return text.take(prefixLen) + "…" + text.takeLast(suffixLen)
+        val ext = if (extIdx > 0 && text.length - extIdx in 2..8) text.substring(extIdx) else ""
+        val baseName = if (ext.isNotEmpty()) text.substring(0, extIdx) else text
+        val targetLen = maxLen - ext.length - 1
+        if (targetLen <= 4) {
+            val prefix = text.take((maxLen / 2).coerceAtLeast(3))
+            val suffix = text.takeLast((maxLen - prefix.length - 1).coerceAtLeast(3))
+            return "$prefix…$suffix"
+        }
+        val prefixLen = (targetLen * 0.55).toInt().coerceAtLeast(3)
+        val suffixLen = (targetLen - prefixLen).coerceAtLeast(2)
+        val prefix = baseName.take(prefixLen)
+        val suffix = baseName.takeLast(suffixLen)
+        return "$prefix…$suffix$ext"
     }
 
     fun resolveActualFile(path: String, context: Context? = null): File? {

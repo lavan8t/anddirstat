@@ -284,7 +284,7 @@ fun DiscoverView(
                                                     name = "star",
                                                     active = true,
                                                     size = 18.dp,
-                                                    tint = Color(0xFFEAB308)
+                                                    tint = MaterialTheme.colorScheme.primary
                                                 )
                                             }
                                         }
@@ -737,16 +737,6 @@ fun DiscoverView(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (cacheSize > 0) {
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "${FileUtils.formatFileSize(cacheSize)} cache",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
                             }
 
                             Spacer(modifier = Modifier.width(12.dp))

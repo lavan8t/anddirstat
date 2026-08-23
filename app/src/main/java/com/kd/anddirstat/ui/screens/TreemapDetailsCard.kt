@@ -339,7 +339,7 @@ fun ExpressiveNodeDetailsSheet(
                                 },
                                 colors = IconButtonDefaults.iconButtonColors(
                                     containerColor = Color.Transparent,
-                                    contentColor = if (isStarred) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    contentColor = if (isStarred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
                                 modifier = Modifier.size(48.dp)
                             ) {
@@ -347,7 +347,7 @@ fun ExpressiveNodeDetailsSheet(
                                     name = if (isStarred) "star" else "star_outline",
                                     active = isStarred,
                                     size = 24.dp,
-                                    tint = if (isStarred) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (isStarred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }

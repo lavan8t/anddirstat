@@ -264,7 +264,7 @@ fun ExplorerView(
 
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFFFFB300).copy(alpha = 0.15f),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
                                 modifier = Modifier.size(44.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -272,7 +272,7 @@ fun ExplorerView(
                                         name = "star",
                                         active = true,
                                         size = 24.dp,
-                                        tint = Color(0xFFFFB300)
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
