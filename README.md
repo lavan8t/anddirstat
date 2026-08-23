@@ -1,52 +1,80 @@
 # AndDirStat
 
-A storage analyzer for Android. It scans your internal storage and draws an interactive treemap so you can see exactly where your space went, then gives you tools to clean it up.
+Android storage analyzer built with Material 3 Expressive. It scans your device, draws an interactive treemap of every file and folder sized to actual bytes, then gives you tools to clean up what you find.
+
+Most storage apps show you pie charts with vague categories. AndDirStat shows you the actual files taking up space, organized visually so large things are immediately obvious. Tap any block in the treemap to drill into that folder. Navigate from there to delete, star, or share directly.
+
+[![Download latest](https://img.shields.io/github/v/release/lavan8t/AndDirStat?label=Download&style=for-the-badge)](https://github.com/lavan8t/AndDirStat/releases/latest)
 
 Requires Android 10 (API 29) or higher.
 
-## What it does
+---
 
-**Treemap view.** Every file and folder gets a colored rectangle sized to its actual bytes. Tap any block to drill in. The whole tree redraws on selection so you always know where you are.
+## Features
 
-**Explorer.** A standard folder browser backed by the same scan, so navigating feels instant instead of waiting on the filesystem again.
+**Treemap.** Every file gets a rectangle sized to its bytes, colored by type. Large things are large on screen. Tap to drill in, tap again to go back up.
 
-**File types breakdown.** Shows total size per extension with bar charts. Useful for finding that you have 4 GB of `.mov` files you forgot about.
+**Explorer.** A full folder browser backed by the same scan. Navigation is instant because the tree is already in memory.
 
-**Discover.** Search your storage by name or size threshold (`> 500MB`, `< 1KB`). Presets for starred files, files over 1 GB, old downloads, and APKs. Large apps get their own section.
+**File types.** Total size per extension with bar charts. Find out you have 4 GB of forgotten `.mov` files.
+
+**Discover.** Search by name, extension, or size threshold (`> 500MB`, `< 100KB`). Presets for starred files, files over 1 GB, old downloads, and APKs. Large apps get their own list.
 
 **Cleaners.**
-- Recycle bin with restore support
-- Screenshot cleaner
+- Recycle bin with restore
+- Screenshot cleaner  
 - Duplicate file finder
 - Empty folder remover
-- Starred files manager
+- Starred files
 
-**External storage.** When you connect a USB drive or SD card, a centered chip appears below the app bar showing the device name. Tap it to list all connected volumes and map any one of them independently.
+**External storage.** Connect a USB drive or SD card and a chip appears below the app bar showing the device name. Tap it to list all connected volumes and map any of them independently.
+
+---
+
+## Download
+
+Always points to the latest release:
+
+[![Download](https://img.shields.io/github/v/release/lavan8t/AndDirStat?label=Latest%20Release&style=for-the-badge&logo=android)](https://github.com/lavan8t/AndDirStat/releases/latest)
+
+Four APK variants are attached to each release:
+
+| APK | Devices |
+|---|---|
+| `arm64-v8a` | Most phones made after 2016 |
+| `armeabi-v7a` | Older 32-bit ARM devices |
+| `x86_64` | Emulators |
+| `universal` | Works everywhere |
+
+If you are unsure, pick `universal`.
+
+---
 
 ## Building
 
 ```bash
+git clone https://github.com/lavan8t/AndDirStat.git
+cd AndDirStat
 ./gradlew assembleRelease
 ```
 
-Release APKs land in `app/build/outputs/apk/release/`. The build produces separate APKs for `arm64-v8a`, `armeabi-v7a`, `x86_64`, and a universal APK.
+APKs land in `app/build/outputs/apk/release/`.
 
-Signing reads from environment variables:
+---
 
-```
-KEYSTORE_PATH
-KEYSTORE_PASSWORD
-KEY_ALIAS
-KEY_PASSWORD
-```
+## Contributing
 
-Without them, the build falls back to the debug signing config.
+Pull requests are welcome. Open an issue first if you are planning something large so we can agree on direction before you write the code.
 
-## Releasing
+Things that would be useful:
+- Supporting more file types in the treemap color scheme
+- Better handling of Android/data paths on different OEM builds
+- Tablet layout improvements
+- Translations
 
-Push to `prod`. GitHub Actions builds all APKs, signs them, creates a beta release tagged `v{versionName}-beta`, attaches all four APKs, and deletes the `prod` branch when done. The release description pulls from the last commit message, so write your changelog there before pushing.
+Fork the repo, make your changes on a branch, and open a PR against `main`.
 
-Secrets are stored in GitHub Actions secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+---
 
 ## Permissions
 
@@ -56,11 +84,13 @@ Secrets are stored in GitHub Actions secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSW
 | `PACKAGE_USAGE_STATS` | App size breakdown |
 | `QUERY_ALL_PACKAGES` | App list in Discover |
 | `REQUEST_DELETE_PACKAGES` | APK uninstall |
-| `POST_NOTIFICATIONS` | Scan progress notification |
+| `POST_NOTIFICATIONS` | Scan progress |
+
+---
 
 ## Tech
 
-Kotlin, Jetpack Compose, Material 3. No third-party networking, analytics, or tracking. All scanning runs on-device.
+Kotlin, Jetpack Compose, Material 3 Expressive. No networking, analytics, or tracking. Everything runs on-device.
 
 ---
 
