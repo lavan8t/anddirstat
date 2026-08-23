@@ -102,7 +102,9 @@ object StorageFilterHelper {
         fun collect(node: CompactNode) {
             val name = node.name
             if (name == "[Free Space]" || name == "[System & OS]" ||
-                name == "Cache" || name == "App Cache" || name == "Data" || name == "App Data") {
+                name == "Cache" || name == "App Cache" || name == "Data" || name == "App Data" ||
+                name.startsWith("App Code") || name == "Apps & System Packages" ||
+                node.children?.any { it.name.startsWith("App Code") } == true) {
                 return
             }
             if (name == "[Recycle Bin]" || name.startsWith(".trashed")) {
@@ -111,7 +113,7 @@ object StorageFilterHelper {
                 return
             }
             if (!node.isDirectory) {
-                val ext = if (name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
+                val ext = if (name.endsWith(".apk", ignoreCase = true) || name.endsWith(".apks", ignoreCase = true) || name.endsWith(".xapk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
                     ".apk"
                 } else {
                     val e = name.substringAfterLast('.', "").lowercase()
