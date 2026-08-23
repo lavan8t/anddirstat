@@ -75,12 +75,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-data class EmptyFolderItem(
-    val file: File,
-    val name: String,
-    val path: String
-)
-
 class EmptyFoldersCleanerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,7 +109,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var isScanning by remember { mutableStateOf(true) }
-    var emptyFolders by remember { mutableStateOf<List<EmptyFolderItem>>(emptyList()) }
+    var emptyFolders by remember { mutableStateOf<List<File>>(emptyList()) }
     var selectedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     var isDeleting by remember { mutableStateOf(false) }
@@ -127,7 +121,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
         scope.launch {
             isScanning = true
             val results = withContext(Dispatchers.IO) {
-                val found = mutableListOf<EmptyFolderItem>()
+                val found = mutableListOf<File>()
 
                 fun isFolderEmpty(dir: File): Boolean {
                     if (!dir.exists() || !dir.isDirectory || !dir.canRead()) return false
@@ -135,7 +129,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                     if (name == "android" || name.startsWith(".trashed") || name == "system volume information") return false
                     val children = dir.listFiles() ?: return false
                     if (children.isEmpty()) {
-                        found.add(EmptyFolderItem(file = dir, name = dir.name, path = dir.absolutePath))
+                        found.add(dir)
                         return true
                     }
                     var allSubEmpty = true
@@ -148,7 +142,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                         }
                     }
                     if (allSubEmpty) {
-                        found.add(EmptyFolderItem(file = dir, name = dir.name, path = dir.absolutePath))
+                        found.add(dir)
                         return true
                     }
                     return false
@@ -166,11 +160,11 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                     }
                 }
 
-                found.distinctBy { it.path }.sortedBy { it.path }
+                found.distinctBy { it.absolutePath }.sortedBy { it.absolutePath }
             }
 
             emptyFolders = results
-            selectedFolders = results.map { it.path }.toSet()
+            selectedFolders = results.map { it.absolutePath }.toSet()
             isScanning = false
         }
     }
@@ -188,10 +182,10 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
     }
 
     fun handleDeleteSelected() {
-        val toDelete = emptyFolders.filter { selectedFolders.contains(it.path) }
+        val toDelete = emptyFolders.filter { selectedFolders.contains(it.absolutePath) }
         if (toDelete.isEmpty()) return
 
-        val (starred, unstarred) = toDelete.partition { FavoritesManager.isStarred(context, it.path) }
+        val (starred, unstarred) = toDelete.partition { FavoritesManager.isStarred(context, it.absolutePath) }
         if (unstarred.isEmpty()) {
             com.kd.anddirstat.util.AppNotifier.notify("Cannot delete starred folders. Unstar them first.")
             return
@@ -205,13 +199,13 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
 
             withContext(Dispatchers.IO) {
                 // Delete deepest folders first
-                val sortedToDelete = unstarred.sortedByDescending { it.path.length }
-                sortedToDelete.forEachIndexed { index, item ->
+                val sortedToDelete = unstarred.sortedByDescending { it.absolutePath.length }
+                sortedToDelete.forEachIndexed { index, file ->
                     deleteCurrentCount = index + 1
-                    deleteCurrentFileName = item.name
+                    deleteCurrentFileName = file.name
                     try {
-                        if (item.file.exists() && item.file.isDirectory) {
-                            if (item.file.delete()) {
+                        if (file.exists() && file.isDirectory) {
+                            if (file.delete()) {
                                 deletedCount++
                             }
                         }
@@ -351,17 +345,17 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(emptyFolders, key = { it.path }) { item ->
-                                val isSelected = selectedFolders.contains(item.path)
-                                val isStarred = FavoritesManager.isStarred(context, item.path)
+                            items(emptyFolders, key = { it.absolutePath }) { file ->
+                                val isSelected = selectedFolders.contains(file.absolutePath)
+                                val isStarred = FavoritesManager.isStarred(context, file.absolutePath)
 
                                 Card(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedFolders = if (isSelected) {
-                                            selectedFolders - item.path
+                                            selectedFolders - file.absolutePath
                                         } else {
-                                            selectedFolders + item.path
+                                            selectedFolders + file.absolutePath
                                         }
                                     },
                                     shape = RoundedCornerShape(16.dp),
@@ -384,9 +378,9 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                                             onCheckedChange = { checked ->
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 selectedFolders = if (checked) {
-                                                    selectedFolders + item.path
+                                                    selectedFolders + file.absolutePath
                                                 } else {
-                                                    selectedFolders - item.path
+                                                    selectedFolders - file.absolutePath
                                                 }
                                             },
                                             colors = CheckboxDefaults.colors(
@@ -411,7 +405,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
                                                 Text(
-                                                    text = item.name.ifEmpty { item.path.substringAfterLast('/') },
+                                                    text = file.name.ifEmpty { file.absolutePath.substringAfterLast('/') },
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.Bold,
                                                     color = MaterialTheme.colorScheme.onSurface,
@@ -424,7 +418,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                                             }
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = item.path,
+                                                text = file.absolutePath,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
