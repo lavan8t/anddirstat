@@ -133,8 +133,8 @@ class StorageScanner(private val context: Context) {
             }
 
             updateProgress("Finalizing", "Assembling internal storage layout...")
-            val accounted = mediaRootNode.size + totalAppsSize + primaryVol.freeBytes + tempSystemSize
-            val systemSize = if (primaryVol.totalBytes > accounted) (primaryVol.totalBytes - accounted) else 0L
+            val accounted = mediaRootNode.size + totalAppsSize + totalFreeBytes + tempSystemSize
+            val systemSize = if (totalDeviceBytes > accounted) (totalDeviceBytes - accounted) else 0L
 
             if (systemSize > 0L) {
                 rootChildren.add(

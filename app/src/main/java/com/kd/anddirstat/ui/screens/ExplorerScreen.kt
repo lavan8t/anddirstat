@@ -450,10 +450,7 @@ fun ExplorerView(
                     }
                 }
                 val isSelectable = remember(child) {
-                    val n = child.name.trim().lowercase()
-                    n != "[system & os]" && n != "system & os" &&
-                    n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
-                    n != "[free space]" && n != "free space"
+                    !child.isDirectory
                 }
                 val isSelected = isSelectable && selectedRows.containsKey(child)
 
@@ -531,8 +528,9 @@ fun ExplorerView(
                         }
                     },
                     headlineContent = {
+                        val cleanTitle = remember(child.name) { FileUtils.cleanDisplayName(child.name) }
                         Text(
-                            text = if (child.isDirectory) "${child.name}/" else child.name,
+                            text = cleanTitle,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = if (child.isDirectory) FontWeight.SemiBold else FontWeight.Normal,
                             maxLines = 1,

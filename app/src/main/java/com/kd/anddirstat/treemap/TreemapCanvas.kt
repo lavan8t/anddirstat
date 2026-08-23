@@ -815,7 +815,7 @@ fun TreemapCanvas(
 
                         // 2. File Name with Middle Ellipsis below preview
                         Text(
-                            text = FileUtils.middleEllipsis(tile.node.name, 22),
+                            text = FileUtils.middleEllipsis(FileUtils.cleanDisplayName(tile.node.name), 22),
                             style = MaterialTheme.typography.titleSmall.copy(shadow = textShadow),
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,

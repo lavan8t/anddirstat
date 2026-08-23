@@ -104,7 +104,9 @@ fun ExpressiveNodeDetailsSheet(
         } else null
     }
 
-    val displayName = if (isAppNode) node.name else if (isRealFile) realFile!!.name else path.substringAfterLast('/')
+    val rawName = if (isAppNode) node.name else if (isRealFile) realFile!!.name else (if (path.contains('/')) path.substringAfterLast('/') else node.name)
+    val displayName = FileUtils.cleanDisplayName(rawName)
+    val cleanPath = FileUtils.cleanDisplayName(path)
 
     Column(
         modifier = modifier
@@ -164,7 +166,7 @@ fun ExpressiveNodeDetailsSheet(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = path,
+                    text = cleanPath,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
