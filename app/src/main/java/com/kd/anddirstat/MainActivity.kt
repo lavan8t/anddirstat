@@ -79,6 +79,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -454,11 +455,13 @@ fun MainApp() {
 
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
     var isPredictiveBackActive by remember { mutableStateOf(false) }
+    var predictiveBackSwipeEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
 
     PredictiveBackHandler(enabled = selectedNode != null) { progress ->
         try {
             isPredictiveBackActive = true
             progress.collect { backEvent ->
+                predictiveBackSwipeEdge = backEvent.swipeEdge
                 predictiveBackProgress = backEvent.progress
             }
             selectedNode = null
@@ -474,6 +477,7 @@ fun MainApp() {
         try {
             isPredictiveBackActive = true
             progress.collect { backEvent ->
+                predictiveBackSwipeEdge = backEvent.swipeEdge
                 predictiveBackProgress = backEvent.progress
             }
             selectedTreeNodes = emptyMap()
@@ -881,15 +885,18 @@ fun MainApp() {
             )
         }
 
-        val backScale = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.08f) else 1f
-        val backAlpha = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.20f) else 1f
+        val backScale = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.06f) else 1f
+        val backAlpha = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.15f) else 1f
         val backCornerRadius = if (isPredictiveBackActive) (predictiveBackProgress * 24).dp else 0.dp
+        val slideDirection = if (predictiveBackSwipeEdge == androidx.activity.BackEventCompat.EDGE_RIGHT) -1f else 1f
+        val slideOffsetX = if (isPredictiveBackActive) (predictiveBackProgress * 72f * slideDirection) else 0f
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .graphicsLayer {
+                    translationX = with(density) { slideOffsetX.dp.toPx() }
                     scaleX = backScale
                     scaleY = backScale
                     alpha = backAlpha

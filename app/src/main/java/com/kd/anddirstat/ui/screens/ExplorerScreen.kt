@@ -2,7 +2,8 @@ package com.kd.anddirstat.ui.screens
 
 import android.content.Intent
 import android.os.Environment
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -51,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,8 +64,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -191,11 +195,38 @@ fun ExplorerView(
         list
     }
 
-    BackHandler(enabled = selectedRows.isNotEmpty()) {
-        selectedRows = emptyMap()
+    var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+    var isPredictiveBackActive by remember { mutableStateOf(false) }
+    var predictiveBackSwipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
+
+    PredictiveBackHandler(enabled = selectedRows.isNotEmpty()) { progress ->
+        try {
+            isPredictiveBackActive = true
+            progress.collect { backEvent ->
+                predictiveBackSwipeEdge = backEvent.swipeEdge
+                predictiveBackProgress = backEvent.progress
+            }
+            selectedRows = emptyMap()
+        } catch (_: kotlinx.coroutines.CancellationException) {
+        } finally {
+            isPredictiveBackActive = false
+            predictiveBackProgress = 0f
+        }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    val slideDirection = if (predictiveBackSwipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
+    val slideOffsetX = if (isPredictiveBackActive) (predictiveBackProgress * 72f * slideDirection) else 0f
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationX = with(density) { slideOffsetX.dp.toPx() }
+                scaleX = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.06f) else 1f
+                scaleY = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.06f) else 1f
+                alpha = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.15f) else 1f
+            }
+    ) {
         LazyColumn(
             contentPadding = PaddingValues(bottom = 110.dp),
             modifier = Modifier

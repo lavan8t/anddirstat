@@ -430,8 +430,8 @@ fun TreemapCanvas(
                         var hadMultiTouch = false
                         var hasMovedOutOfInitialTile = false
                         var bottomSheetOpened = false
-                        val longPressActivationTimeout = 180L
-                        val continuousHoldTimeout = 350L
+                        val longPressActivationTimeout = 220L
+                        val continuousHoldTimeout = 800L
 
                         while (true) {
                             val event = awaitPointerEvent()

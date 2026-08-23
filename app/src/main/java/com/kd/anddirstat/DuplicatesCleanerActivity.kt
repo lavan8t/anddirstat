@@ -146,6 +146,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
 
     var isScanning by remember { mutableStateOf(true) }
     var duplicateGroups by remember { mutableStateOf<List<DuplicateGroup>>(emptyList()) }
+    var expandedGroupKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
     var sortOrder by remember { mutableStateOf(DuplicateSort.LARGEST) }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -476,6 +477,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                             items = sortedGroups,
                             key = { group -> group.key }
                         ) { group ->
+                            val isExpanded = expandedGroupKeys.contains(group.key)
                             Card(
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(
@@ -490,21 +492,39 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = group.files.firstOrNull()?.node?.name ?: "Duplicates",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    expandedGroupKeys = if (isExpanded) expandedGroupKeys - group.key else expandedGroupKeys + group.key
+                                                },
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            MaterialSymbol(
+                                                name = if (isExpanded) "expand_more" else "chevron_right",
+                                                active = true,
+                                                size = 22.dp,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            Text(
-                                                text = "${group.files.size} copies  (${FileUtils.formatFileSize(group.fileSize * (group.files.size - 1))} wasted)",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Medium
-                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = group.files.firstOrNull()?.node?.name ?: "Duplicates",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${group.files.size} copies  (${FileUtils.formatFileSize(group.fileSize * (group.files.size - 1))} wasted)",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
                                         }
 
                                         // Quick group selector
@@ -544,12 +564,13 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    if (isExpanded) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                        Spacer(modifier = Modifier.height(4.dp))
 
-                                    // Group Items List using Compose ListItem
-                                    group.files.forEachIndexed { index, item ->
+                                        // Group Items List using Compose ListItem
+                                        group.files.forEachIndexed { index, item ->
                                         val isSelected = selectedPaths.contains(item.file.absolutePath)
                                         val isStarred = FavoritesManager.isStarred(context, item.path)
                                         val isMedia = remember(item.node.name) {
@@ -650,8 +671,9 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                     }
                 }
             }
+        }
 
-            // Floating Selection Bar
+        // Floating Selection Bar
             AnimatedVisibility(
                 visible = selectedPaths.isNotEmpty(),
                 enter = slideInVertically(
