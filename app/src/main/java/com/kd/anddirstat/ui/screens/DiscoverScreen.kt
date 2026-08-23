@@ -47,6 +47,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
@@ -603,6 +606,8 @@ fun DiscoverView(
                 val pkgName = remember(app) { FileUtils.extractPackageName(app, null, context) }
                 val appChildren = app.children
                 val cacheSize = appChildren?.firstOrNull { it.name == "Cache" }?.size ?: 0L
+                val appEntry = remember(app, pkgName) { TopFileEntry(app, "package:${pkgName ?: app.name}") }
+                val isSelected = selectedEntries.contains(appEntry)
 
                 val shape = when {
                     largeApps.size == 1 -> RoundedCornerShape(24.dp)
@@ -611,30 +616,115 @@ fun DiscoverView(
                     else -> RoundedCornerShape(4.dp)
                 }
 
-                Surface(
-                    shape = shape,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                val dismissState = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { value ->
+                        if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (pkgName != null) {
+                                FileUtils.uninstallApp(context, pkgName)
+                            }
+                            false
+                        } else {
+                            false
+                        }
+                    }
+                )
+
+                SwipeToDismissBox(
+                    state = dismissState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 16.dp),
+                    backgroundContent = {
+                        val isStartToEnd = dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+                        val alignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(shape)
+                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = alignment
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                MaterialSymbol(
+                                    name = "delete",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = "Uninstall",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
                 ) {
-                    Row(
+                    Surface(
+                        shape = shape,
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainer,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(shape)
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (selectedEntries.isNotEmpty()) {
+                                    selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
+                                } else if (pkgName != null) {
+                                    try {
+                                        context.startActivity(
+                                            Intent(
+                                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                "package:$pkgName".toUri()
+                                            )
+                                        )
+                                    } catch (_: Exception) {}
+                                }
+                            }
                     ) {
                         Row(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AppIconView(
-                                packageName = pkgName,
-                                contentDescription = app.name,
+                            Box(
                                 modifier = Modifier
                                     .size(44.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                            )
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AppIconView(
+                                    packageName = pkgName,
+                                    contentDescription = app.name,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                if (isSelected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "check",
+                                            active = true,
+                                            size = 24.dp,
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+                            }
 
                             Spacer(modifier = Modifier.width(12.dp))
 
@@ -647,108 +737,27 @@ fun DiscoverView(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
+                                if (cacheSize > 0) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${FileUtils.formatFileSize(cacheSize)} cache",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = "${FileUtils.formatFileSize(app.size)} • ${FileUtils.formatFileSize(cacheSize)} cache",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    text = FileUtils.formatFileSize(app.size, context),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (pkgName != null) {
-                                val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
-                                if (launchIntent != null) {
-                                    AppTooltip(text = "Open app") {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    try {
-                                                        context.startActivity(launchIntent)
-                                                    } catch (_: Exception) {}
-                                                }
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                MaterialSymbol(
-                                                    name = "open_in_new",
-                                                    active = true,
-                                                    size = 18.dp,
-                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            AppTooltip(text = "App details") {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            if (pkgName != null) {
-                                                try {
-                                                    context.startActivity(
-                                                        Intent(
-                                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                                            "package:$pkgName".toUri()
-                                                        )
-                                                    )
-                                                } catch (_: Exception) {}
-                                            }
-                                        }
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        MaterialSymbol(
-                                            name = "info",
-                                            active = true,
-                                            size = 18.dp,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-
-                            AppTooltip(text = "Uninstall") {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            if (pkgName != null) {
-                                                FileUtils.uninstallApp(context, pkgName)
-                                            }
-                                        }
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        MaterialSymbol(
-                                            name = "delete",
-                                            active = true,
-                                            size = 18.dp,
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
