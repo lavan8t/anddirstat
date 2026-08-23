@@ -578,6 +578,7 @@ object FileUtils {
         val ext = extension.lowercase().removePrefix(".")
         return when (ext) {
             "trashed", "recycle bin", "[recycle bin]" -> "delete"
+            "installed apps", "[installed apps]", "apps", "[apps]" -> "apps"
             "apk", "apks", "xapk", "apkm", "obb", "aab" -> "android"
             "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> "movie"
             "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> "music_note"

@@ -201,7 +201,22 @@ fun FileTypesView(
     val archiveExts = remember { setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz") }
     val binExts = remember { setOf("[trashed]", "trashed") }
 
-    val categoryGroups = remember(visibleStats) {
+    val appsNode = remember(rootNode) {
+        val stack = ArrayDeque<CompactNode>()
+        stack.add(rootNode)
+        var found: CompactNode? = null
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            if (n.name == "Apps & System Packages") {
+                found = n
+                break
+            }
+            n.children?.forEach { stack.add(it) }
+        }
+        found
+    }
+
+    val categoryGroups = remember(visibleStats, appsNode) {
         val assignedStats = mutableSetOf<ExtensionStat>()
 
         fun getStatsForSet(extSet: Set<String>): List<ExtensionStat> {
@@ -218,7 +233,23 @@ fun FileTypesView(
         val images = getStatsForSet(imageExts)
         val audio = getStatsForSet(audioExts)
         val docs = getStatsForSet(docExts)
-        val apps = getStatsForSet(appExts)
+
+        val fileAppStats = getStatsForSet(appExts)
+        val combinedAppsStats = mutableListOf<ExtensionStat>()
+        if (appsNode != null && appsNode.size > 0L) {
+            combinedAppsStats.add(
+                ExtensionStat(
+                    extension = "Installed Apps",
+                    totalSize = appsNode.size,
+                    count = appsNode.children?.size ?: 0,
+                    color = Color(0xFF3B82F6),
+                    category = "App Package"
+                )
+            )
+        }
+        combinedAppsStats.addAll(fileAppStats)
+        val apps = combinedAppsStats.sortedByDescending { it.totalSize }
+
         val archives = getStatsForSet(archiveExts)
         val others = visibleStats.filter { it !in assignedStats }.sortedByDescending { it.totalSize }
 
@@ -244,6 +275,15 @@ fun FileTypesView(
     ) {
         val cleanTarget = targetExt.lowercase().removePrefix(".")
         val isTargetBin = cleanTarget == "[trashed]" || cleanTarget == "trashed"
+        val isAppsTarget = cleanTarget == "installed apps" || cleanTarget == "[installed apps]" || cleanTarget == "apps"
+
+        if (isAppsTarget) {
+            appsNode?.children?.sortedByDescending { it.size }?.forEach { appChild ->
+                outList.add(appChild to "Apps & System Packages/${appChild.name}")
+            }
+            return
+        }
+
         val stack = ArrayDeque<Pair<CompactNode, String>>()
         stack.add(root to rootPath)
 
