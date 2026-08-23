@@ -113,8 +113,27 @@ class StorageScanner(private val context: Context) {
             val mediaRootNode = filesDeferred.await()
             val (appsNode, totalAppsSize) = if (appsDeferred != null) appsDeferred.await() else (null to 0L)
 
+            var tempSystemSize = 0L
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val ssm = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
+                    if (ssm != null) {
+                        val userStats = ssm.queryStatsForUser(StorageManager.UUID_DEFAULT, android.os.Process.myUserHandle())
+                        tempSystemSize = userStats.cacheBytes
+                    }
+                } catch (_: Exception) {}
+            }
+            if (tempSystemSize == 0L) {
+                try {
+                    val cacheDir = Environment.getDownloadCacheDirectory()
+                    if (cacheDir != null && cacheDir.exists()) {
+                        tempSystemSize = getDirSize(cacheDir)
+                    }
+                } catch (_: Exception) {}
+            }
+
             updateProgress("Finalizing", "Assembling internal storage layout...")
-            val accounted = mediaRootNode.size + totalAppsSize + primaryVol.freeBytes
+            val accounted = mediaRootNode.size + totalAppsSize + primaryVol.freeBytes + tempSystemSize
             val systemSize = if (primaryVol.totalBytes > accounted) (primaryVol.totalBytes - accounted) else 0L
 
             if (systemSize > 0L) {
@@ -123,6 +142,16 @@ class StorageScanner(private val context: Context) {
                         name = "[System & OS]",
                         isDirectory = false,
                         size = systemSize
+                    )
+                )
+            }
+
+            if (tempSystemSize > 0L) {
+                rootChildren.add(
+                    CompactNode(
+                        name = "[Temporary System Files]",
+                        isDirectory = false,
+                        size = tempSystemSize
                     )
                 )
             }

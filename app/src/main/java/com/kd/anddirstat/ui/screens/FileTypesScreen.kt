@@ -74,6 +74,7 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
     var docBytes = 0L
     var binBytes = 0L
     var systemOsBytes = 0L
+    var tempSystemBytes = 0L
     var otherBytes = 0L
     var freeSpaceBytes = 0L
 
@@ -95,6 +96,10 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
         }
         if (name == "[System & OS]") {
             systemOsBytes += node.size
+            continue
+        }
+        if (name == "[Temporary System Files]" || name == "Temporary System Files") {
+            tempSystemBytes += node.size
             continue
         }
         if (name == "[Recycle Bin]" || name == "Recycle Bin" || name.startsWith(".trashed")) {
@@ -141,6 +146,7 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
     val categories = listOf(
         StorageCategorySummary("Apps", appsBytes, Color(0xFF3B82F6), "apps"),
         StorageCategorySummary("System", systemOsBytes, Color(0xFF94A3B8), "android"),
+        StorageCategorySummary("System Temp Files", tempSystemBytes, Color(0xFFF59E0B), "cached"),
         StorageCategorySummary("Videos", videoBytes, Color(0xFFFB923C), "movie"),
         StorageCategorySummary("Images", imageBytes, Color(0xFF34D399), "image"),
         StorageCategorySummary("Audio", audioBytes, Color(0xFFC084FC), "music_note"),
@@ -216,7 +222,37 @@ fun FileTypesView(
         found
     }
 
-    val categoryGroups = remember(visibleStats, appsNode) {
+    val systemNode = remember(rootNode) {
+        val stack = ArrayDeque<CompactNode>()
+        stack.add(rootNode)
+        var found: CompactNode? = null
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            if (n.name == "[System & OS]" || n.name == "System & OS") {
+                found = n
+                break
+            }
+            n.children?.forEach { stack.add(it) }
+        }
+        found
+    }
+
+    val tempSystemNode = remember(rootNode) {
+        val stack = ArrayDeque<CompactNode>()
+        stack.add(rootNode)
+        var found: CompactNode? = null
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            if (n.name == "[Temporary System Files]" || n.name == "Temporary System Files") {
+                found = n
+                break
+            }
+            n.children?.forEach { stack.add(it) }
+        }
+        found
+    }
+
+    val categoryGroups = remember(visibleStats, appsNode, systemNode, tempSystemNode) {
         val assignedStats = mutableSetOf<ExtensionStat>()
 
         fun getStatsForSet(extSet: Set<String>): List<ExtensionStat> {
@@ -250,16 +286,41 @@ fun FileTypesView(
         combinedAppsStats.addAll(fileAppStats)
         val apps = combinedAppsStats.sortedByDescending { it.totalSize }
 
+        val systemStats = mutableListOf<ExtensionStat>()
+        if (systemNode != null && systemNode.size > 0L) {
+            systemStats.add(
+                ExtensionStat(
+                    extension = "System & OS",
+                    totalSize = systemNode.size,
+                    count = 1,
+                    color = Color(0xFF94A3B8),
+                    category = "System & OS"
+                )
+            )
+        }
+        if (tempSystemNode != null && tempSystemNode.size > 0L) {
+            systemStats.add(
+                ExtensionStat(
+                    extension = "Temporary System Files",
+                    totalSize = tempSystemNode.size,
+                    count = 1,
+                    color = Color(0xFFF59E0B),
+                    category = "System & OS"
+                )
+            )
+        }
+
         val archives = getStatsForSet(archiveExts)
         val others = visibleStats.filter { it !in assignedStats }.sortedByDescending { it.totalSize }
 
         listOf(
+            FileCategoryGroup("system", "System & OS", "android", Color(0xFF94A3B8), emptySet(), systemStats, systemStats.sumOf { it.totalSize }, systemStats.sumOf { it.count }),
+            FileCategoryGroup("apps", "Apps & Packages", "apps", Color(0xFF3B82F6), appExts, apps, apps.sumOf { it.totalSize }, apps.sumOf { it.count }),
             FileCategoryGroup("bin", "Recycle Bin", "delete", Color(0xFFF43F5E), binExts, bin, bin.sumOf { it.totalSize }, bin.sumOf { it.count }),
             FileCategoryGroup("videos", "Videos", "movie", Color(0xFFFB923C), videoExts, videos, videos.sumOf { it.totalSize }, videos.sumOf { it.count }),
             FileCategoryGroup("images", "Images", "image", Color(0xFF34D399), imageExts, images, images.sumOf { it.totalSize }, images.sumOf { it.count }),
             FileCategoryGroup("audio", "Audio", "music_note", Color(0xFFC084FC), audioExts, audio, audio.sumOf { it.totalSize }, audio.sumOf { it.count }),
             FileCategoryGroup("docs", "Documents", "description", Color(0xFF38BDF8), docExts, docs, docs.sumOf { it.totalSize }, docs.sumOf { it.count }),
-            FileCategoryGroup("apps", "Apps & Packages", "apps", Color(0xFF3B82F6), appExts, apps, apps.sumOf { it.totalSize }, apps.sumOf { it.count }),
             FileCategoryGroup("archives", "Archives & Disk Images", "archive", Color(0xFFF59E0B), archiveExts, archives, archives.sumOf { it.totalSize }, archives.sumOf { it.count }),
             FileCategoryGroup("others", "Other Files", "folder", Color(0xFF94A3B8), emptySet(), others, others.sumOf { it.totalSize }, others.sumOf { it.count })
         ).filter { it.totalSize > 0L || it.fileCount > 0 }
@@ -273,9 +334,23 @@ fun FileTypesView(
         outList: ArrayList<Pair<CompactNode, String>>,
         maxLimit: Int = 1000
     ) {
-        val cleanTarget = targetExt.lowercase().removePrefix(".")
-        val isTargetBin = cleanTarget == "[trashed]" || cleanTarget == "trashed"
-        val isAppsTarget = cleanTarget == "installed apps" || cleanTarget == "[installed apps]" || cleanTarget == "apps"
+        val cleanTarget = targetExt.lowercase().removePrefix(".").removePrefix("[").removeSuffix("]").trim()
+        val isTargetBin = cleanTarget == "trashed" || cleanTarget == "recycle bin"
+        val isAppsTarget = cleanTarget == "installed apps" || cleanTarget == "apps"
+
+        if (cleanTarget == "system & os" || cleanTarget == "system") {
+            if (systemNode != null) {
+                outList.add(systemNode to "System & OS")
+            }
+            return
+        }
+
+        if (cleanTarget == "temporary system files" || cleanTarget == "system temp files" || cleanTarget == "temp files") {
+            if (tempSystemNode != null) {
+                outList.add(tempSystemNode to "Temporary System Files")
+            }
+            return
+        }
 
         if (isAppsTarget) {
             appsNode?.children?.sortedByDescending { it.size }?.forEach { appChild ->
@@ -606,8 +681,20 @@ fun FileTypesView(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val displayName = remember(stat.extension) {
+                                        val clean = stat.extension.removePrefix("[").removeSuffix("]").trim()
+                                        when {
+                                            clean.equals("trashed", ignoreCase = true) -> "Trashed Files"
+                                            clean.equals("system & os", ignoreCase = true) -> "System & OS"
+                                            clean.equals("temporary system files", ignoreCase = true) -> "Temporary System Files"
+                                            clean.equals("no ext", ignoreCase = true) -> "No Extension"
+                                            clean.equals("installed apps", ignoreCase = true) -> "Installed Apps"
+                                            clean.startsWith(".") -> clean
+                                            else -> clean
+                                        }
+                                    }
                                     Text(
-                                        text = stat.extension,
+                                        text = displayName,
                                         fontFamily = GoogleSansFlexFontFamily,
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.SemiBold
