@@ -159,13 +159,11 @@ object FileUtils {
         if (f.exists()) return f
 
         val standardDirs = listOf(
-            Environment.getExternalStorageDirectory(),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera"),
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots"),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots"),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
@@ -174,8 +172,6 @@ object FileUtils {
         for (dir in standardDirs) {
             val candidate = File(dir, relative)
             if (candidate.exists()) return candidate
-            val candidateByName = File(dir, File(path).name)
-            if (candidateByName.exists()) return candidateByName
         }
 
         val volumes = getAvailableStorageVolumes(context)
@@ -189,31 +185,9 @@ object FileUtils {
                 val f2 = File(vol.path, sub)
                 if (f2.exists()) return f2
             }
-            val volCandidateByName = File(vol.path, File(path).name)
-            if (volCandidateByName.exists()) return volCandidateByName
         }
 
-        if (context != null) {
-            try {
-                val fileName = File(path).name
-                val proj = arrayOf(MediaStore.MediaColumns.DATA)
-                context.contentResolver.query(
-                    MediaStore.Files.getContentUri("external"),
-                    proj,
-                    "${MediaStore.MediaColumns.DISPLAY_NAME}=? OR ${MediaStore.MediaColumns.DATA} LIKE ?",
-                    arrayOf(fileName, "%$relative"),
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val realPath = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA))
-                        val mf = File(realPath)
-                        if (mf.exists()) return mf
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        return null
+        return f
     }
 
     fun deleteOrTrashFile(file: File, context: Context? = null): Boolean {
@@ -560,6 +534,7 @@ object FileUtils {
         return when {
             name == "[free space]" -> "storage"
             name == "[system & os]" -> "settings"
+            name == "[temporary system files]" || name == "temporary system files" -> "cached"
             name == "[recycle bin]" || name == "recycle bin" -> "delete"
             name == "apps & system packages" || isAppNode -> "apps"
             node.isDirectory -> if (node.children?.isNotEmpty() == true) "folder_open" else "folder"
@@ -579,6 +554,7 @@ object FileUtils {
         return when (ext) {
             "trashed", "recycle bin", "[recycle bin]" -> "delete"
             "installed apps", "[installed apps]", "apps", "[apps]" -> "apps"
+            "temporary system files", "[temporary system files]", "temp files" -> "cached"
             "apk", "apks", "xapk", "apkm", "obb", "aab" -> "android"
             "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> "movie"
             "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> "music_note"
@@ -594,6 +570,7 @@ object FileUtils {
         val name = node.name
         if (name == "[Free Space]") return if (isDark) Color(0xFF60A5FA) else Color(0xFF1D4ED8)
         if (name == "[System & OS]") return if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+        if (name == "[Temporary System Files]" || name == "Temporary System Files") return if (isDark) Color(0xFFFB923C) else Color(0xFFEA580C)
         if (name == "[Recycle Bin]" || name == "Recycle Bin") return if (isDark) Color(0xFFFF3366) else Color(0xFFE11D48)
         if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFFFB923C) else Color(0xFFEA580C)
         if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)

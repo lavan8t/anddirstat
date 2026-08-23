@@ -430,8 +430,8 @@ fun TreemapCanvas(
                         var hadMultiTouch = false
                         var hasMovedOutOfInitialTile = false
                         var bottomSheetOpened = false
-                        val longPressActivationTimeout = 500L
-                        val continuousHoldTimeout = 1500L
+                        val longPressActivationTimeout = 180L
+                        val continuousHoldTimeout = 350L
 
                         while (true) {
                             val event = awaitPointerEvent()
@@ -979,6 +979,7 @@ fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
     val name = node.name
     if (name == "[Free Space]") return if (isDark) Color(0xFF1E293B) else Color(0xFF64748B)
     if (name == "[System & OS]") return if (isDark) Color(0xFF141923) else Color(0xFF475569)
+    if (name == "[Temporary System Files]" || name == "Temporary System Files") return if (isDark) Color(0xFF5A3000) else Color(0xFFF59E0B)
     if (name == "[Recycle Bin]" || name.startsWith(".trashed")) return if (isDark) Color(0xFF701830) else Color(0xFFE11D48)
     if (name == "Cache" || name == "App Cache") return if (isDark) Color(0xFF8A3E00) else Color(0xFFF59E0B)
     if (name == "Data" || name == "App Data") return if (isDark) Color(0xFF2E3F59) else Color(0xFF64748B)

@@ -52,7 +52,8 @@ object StorageFilterHelper {
                         newChildren.add(child)
                     }
                 }
-                child.name == "[System & OS]" || child.name == "System & OS" -> {
+                child.name == "[System & OS]" || child.name == "System & OS" ||
+                child.name == "[Temporary System Files]" || child.name == "Temporary System Files" -> {
                     if (showSystemOS) {
                         newChildren.add(child)
                     }
@@ -102,6 +103,7 @@ object StorageFilterHelper {
         fun collect(node: CompactNode) {
             val name = node.name
             if (name == "[Free Space]" || name == "[System & OS]" ||
+                name == "[Temporary System Files]" || name == "Temporary System Files" ||
                 name == "Cache" || name == "App Cache" || name == "Data" || name == "App Data" ||
                 name.startsWith("App Code") || name == "Apps & System Packages" ||
                 node.children?.any { it.name.startsWith("App Code") } == true) {
@@ -132,9 +134,9 @@ object StorageFilterHelper {
             val dummyNode = CompactNode(name = if (ext.startsWith(".")) "file$ext" else ext, isDirectory = false, size = pair.first)
             val color = if (ext == "[trashed]") androidx.compose.ui.graphics.Color(0xFFF43F5E) else getNodeColor(dummyNode)
             val category = when {
-                ext == "[Free Space]" -> "Free Storage"
-                ext == "[System & OS]" -> "System / Reserved"
-                ext == "[trashed]" || ext == "[Recycle Bin]" || ext == ".trashed" -> "Recycle Bin"
+                ext == "[Free Space]" || ext == "Free Space" -> "Free Space"
+                ext == "[System & OS]" || ext == "System & OS" || ext == "[Temporary System Files]" || ext == "Temporary System Files" -> "System & OS"
+                ext == "[trashed]" || ext == "[Recycle Bin]" || ext == ".trashed" || ext == "Recycle Bin" -> "Recycle Bin"
                 ext == "Cache" -> "App Cache"
                 ext == "Data" -> "App Data"
                 ext in listOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".ts", ".wmv", ".m4v") -> "Video"
