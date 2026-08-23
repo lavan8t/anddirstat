@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class TitleLeadState { ICON, AND, ANDROID }
+enum class TitleLeadState { ICON, AND }
 
 @OptIn(ExperimentalTextApi::class)
 @Composable
@@ -166,11 +166,16 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
     var leadState by remember { mutableStateOf(TitleLeadState.ICON) }
     var isDirStatVisible by remember { mutableStateOf(false) }
     val fontWidth = remember { Animatable(100f) }
+    val dirStatFontWidth = remember { Animatable(100f) }
     val iconScale = remember { Animatable(1f) }
 
     LaunchedEffect(Unit) {
         delay(60)
         isDirStatVisible = true
+        dirStatFontWidth.snapTo(55f)
+        launch {
+            dirStatFontWidth.animateTo(100f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow))
+        }
         delay(260)
         leadState = TitleLeadState.AND
         fontWidth.snapTo(145f)
@@ -192,6 +197,20 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
         )
     }
 
+    val currentDirStatWidth = dirStatFontWidth.value
+    val dynamicDirStatFamily = remember(currentDirStatWidth) {
+        FontFamily(
+            Font(
+                resId = R.font.google_sans_flex,
+                weight = FontWeight.Light,
+                variationSettings = FontVariation.Settings(
+                    FontVariation.weight(300),
+                    FontVariation.Setting("wdth", currentDirStatWidth)
+                )
+            )
+        )
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
@@ -204,15 +223,17 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
                 scope.launch {
                     leadState = TitleLeadState.ICON
                     iconScale.snapTo(0.7f)
-                    iconScale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium))
-                    delay(240)
-                    leadState = TitleLeadState.ANDROID
-                    fontWidth.snapTo(145f)
-                    fontWidth.animateTo(100f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow))
-                    delay(1400)
+                    launch {
+                        iconScale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium))
+                    }
+                    launch {
+                        dirStatFontWidth.snapTo(60f)
+                        dirStatFontWidth.animateTo(100f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow))
+                    }
+                    delay(320)
                     leadState = TitleLeadState.AND
-                    fontWidth.snapTo(130f)
-                    fontWidth.animateTo(100f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium))
+                    fontWidth.snapTo(140f)
+                    fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))
                 }
             }
     ) {
@@ -247,15 +268,6 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                TitleLeadState.ANDROID -> {
-                    Text(
-                        text = "Android",
-                        fontFamily = dynamicAndFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
             }
         }
 
@@ -268,7 +280,7 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
         ) {
             Text(
                 text = "DirStat",
-                fontFamily = GoogleSansFlexTitleDirStatFamily,
+                fontFamily = dynamicDirStatFamily,
                 fontWeight = FontWeight.Light,
                 fontSize = 22.sp,
                 color = MaterialTheme.colorScheme.onSurface
