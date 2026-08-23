@@ -322,11 +322,11 @@ fun SettingsView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Image(
-                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    painter = painterResource(R.drawable.ic_appbar),
                     contentDescription = "AndDirStat",
                     modifier = Modifier
-                        .size(56.dp)
-                        .padding(bottom = 4.dp)
+                        .height(38.dp)
+                        .padding(bottom = 8.dp)
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -336,24 +336,24 @@ fun SettingsView(
                         text = "And",
                         fontFamily = GoogleSansFlexTitleAndFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = "DirStat",
                         fontFamily = GoogleSansFlexTitleDirStatFamily,
                         fontWeight = FontWeight.Light,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = "v1.0.0 • Open Source Disk Analyzer",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -367,26 +367,26 @@ fun SettingsView(
                         }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(horizontal = 26.dp, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         MaterialSymbol(
                             name = "github",
                             active = true,
-                            size = 20.dp,
+                            size = 22.dp,
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = "lavan8t/AndDirStat",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         MaterialSymbol(
                             name = "open_in_new",
                             active = true,
-                            size = 16.dp,
+                            size = 18.dp,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
