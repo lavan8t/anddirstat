@@ -560,7 +560,7 @@ fun MainApp() {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = "Show System & OS",
+                                        text = "Show OS space",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -591,7 +591,7 @@ fun MainApp() {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = "Show system applications",
+                                        text = "Show system apps",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -622,7 +622,7 @@ fun MainApp() {
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = "Show free storage",
+                                        text = "Show free space",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )

@@ -120,7 +120,8 @@ val GoogleSansFlexTitleAndFamily = FontFamily(
         resId = R.font.google_sans_flex,
         weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(700)
+            FontVariation.weight(700),
+            FontVariation.Setting("ROND", 0f)
         )
     )
 )
