@@ -436,8 +436,8 @@ fun ExplorerView(
                 val child = row.node
                 val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
                 val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
-                val isApp = child.children?.any { it.name.startsWith("App Code") } == true
-                val appPkg = if (isApp) FileUtils.extractPackageName(child, row.path, context) else null
+                val isApp = remember(child) { child.children?.any { it.name.startsWith("App Code") } == true }
+                val appPkg = remember(child, isApp, row.path) { if (isApp) FileUtils.extractPackageName(child, row.path, context) else null }
                 val isMedia = remember(child.name, child.isDirectory) {
                     if (child.isDirectory) false
                     else {
