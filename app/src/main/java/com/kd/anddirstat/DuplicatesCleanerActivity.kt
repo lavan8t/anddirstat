@@ -675,7 +675,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                     )
                                                     if (isStarred) {
                                                         Spacer(modifier = Modifier.width(6.dp))
-                                                        MaterialSymbol("star", active = true, size = 16.dp, tint = Color(0xFFFFB300))
+                                                        MaterialSymbol("star", active = true, size = 16.dp, tint = MaterialTheme.colorScheme.primary)
                                                     }
                                                 }
                                             },

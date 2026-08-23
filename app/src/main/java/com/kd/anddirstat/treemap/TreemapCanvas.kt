@@ -781,59 +781,50 @@ fun TreemapCanvas(
                     )
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (pureBlack && isDark) Color(0xEE000000) else Color(0xEE1E222D),
-                    border = BorderStroke(1.dp, Color(0x33FFFFFF)),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.widthIn(min = 140.dp, max = 200.dp)
+                Column(
+                    modifier = Modifier.widthIn(min = 120.dp, max = 220.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    // 1. Bigger Preview on Top (no background fill)
+                    Box(
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        // 1. Bigger Preview on Top
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0x22FFFFFF)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (tile.isApp && tile.pkgName != null) {
-                                AppIconView(packageName = tile.pkgName, contentDescription = null, modifier = Modifier.size(52.dp))
-                            } else if (isMedia) {
-                                MediaThumbnailView(node = tile.node, path = tile.path, modifier = Modifier.fillMaxSize())
-                            } else {
-                                val iconName = if (tile.node.isDirectory) "folder" else "description"
-                                MaterialSymbol(iconName, active = true, size = 36.dp, tint = tile.baseColor)
-                            }
+                        if (tile.isApp && tile.pkgName != null) {
+                            AppIconView(packageName = tile.pkgName, contentDescription = null, modifier = Modifier.size(60.dp))
+                        } else if (isMedia) {
+                            MediaThumbnailView(node = tile.node, path = tile.path, modifier = Modifier.fillMaxSize())
+                        } else {
+                            val iconName = if (tile.node.isDirectory) "folder" else "description"
+                            MaterialSymbol(iconName, active = true, size = 48.dp, tint = tile.baseColor)
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 2. File Name with Middle Ellipsis below preview
-                        Text(
-                            text = FileUtils.middleEllipsis(FileUtils.cleanDisplayName(tile.node.name), 22),
-                            style = MaterialTheme.typography.titleSmall.copy(shadow = textShadow),
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center,
-                            color = Color.White
-                        )
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        // 3. File Size below Name
-                        Text(
-                            text = FileUtils.formatFileSize(tile.node.size, context),
-                            style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow),
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.primary
-                        )
                     }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 2. File Name with Middle Ellipsis below preview
+                    Text(
+                        text = FileUtils.middleEllipsis(FileUtils.cleanDisplayName(tile.node.name), 22),
+                        style = MaterialTheme.typography.titleSmall.copy(shadow = textShadow),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        color = Color.White
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // 3. File Size below Name
+                    Text(
+                        text = FileUtils.formatFileSize(tile.node.size, context),
+                        style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow),
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }

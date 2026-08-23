@@ -214,7 +214,6 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
