@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +67,7 @@ fun SettingsView(
 ) {
     val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
     val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val showAccentItem = !dynamicTheme || !isDynamicSupported
 
     var showThemeBottomSheet by remember { mutableStateOf(false) }
     var showAccentBottomSheet by remember { mutableStateOf(false) }
@@ -73,12 +75,18 @@ fun SettingsView(
     val themeSheetState = rememberModalBottomSheetState()
     val accentSheetState = rememberModalBottomSheetState()
 
+    // Shapes: Terminal (start/end) rounded more (24dp), intermediate rounded less (4dp)
+    val topShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+    val middleShape = RoundedCornerShape(4.dp)
+    val bottomShape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+    val singleShape = RoundedCornerShape(24.dp)
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
         contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         // Appearance Header
         item {
@@ -91,8 +99,11 @@ fun SettingsView(
             )
         }
 
-        // 1. Theme Option (Opens Bottom Sheet)
+        // 1. Theme Item (Top terminal rounded, no right arrow)
         item {
+            val hasFollowingItems = isDynamicSupported || showAccentItem
+            val shape = if (hasFollowingItems) topShape else singleShape
+
             ListItem(
                 headlineContent = {
                     Text(
@@ -102,8 +113,9 @@ fun SettingsView(
                     )
                 },
                 supportingContent = {
+                    val supportingText = if (isDarkActive && pureBlack) "${currentTheme.title} (Pure Black)" else currentTheme.title
                     Text(
-                        text = currentTheme.title,
+                        text = supportingText,
                         style = MaterialTheme.typography.bodySmall
                     )
                 },
@@ -119,28 +131,22 @@ fun SettingsView(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                trailingContent = {
-                    MaterialSymbol(
-                        name = "chevron_right",
-                        active = true,
-                        size = 20.dp,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
                 colors = ListItemDefaults.colors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(shape)
                     .clickable { showThemeBottomSheet = true }
             )
         }
 
-        // 2. Dynamic Color Toggle (Only shown when supported!)
+        // 2. Dynamic Color Toggle (Middle if accent shown, bottom if last)
         if (isDynamicSupported) {
             item {
+                val shape = if (showAccentItem) middleShape else bottomShape
+
                 ListItem(
                     headlineContent = {
                         Text(
@@ -176,58 +182,14 @@ fun SettingsView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(shape)
                         .clickable { onToggleDynamicTheme(!dynamicTheme) }
                 )
             }
         }
 
-        // 3. Pure Black Toggle (Only shown if dark active)
-        if (isDarkActive) {
-            item {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = "Pure black",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = "Pitch black background for AMOLED screens",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    },
-                    leadingContent = {
-                        MaterialSymbol(
-                            name = "dark_mode",
-                            active = pureBlack,
-                            size = 24.dp,
-                            tint = if (pureBlack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = pureBlack,
-                            onCheckedChange = onTogglePureBlack,
-                            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
-                        )
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { onTogglePureBlack(!pureBlack) }
-                )
-            }
-        }
-
-        // 4. Accent Color (Opens Bottom Sheet)
-        if (!dynamicTheme || !isDynamicSupported) {
+        // 3. Accent Color (Bottom terminal rounded)
+        if (showAccentItem) {
             item {
                 ListItem(
                     headlineContent = {
@@ -265,7 +227,7 @@ fun SettingsView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(bottomShape)
                         .clickable { showAccentBottomSheet = true }
                 )
             }
@@ -308,7 +270,7 @@ fun SettingsView(
         }
     }
 
-    // Theme Bottom Sheet
+    // Theme Bottom Sheet (Contains Theme Choices + Pure Black Toggle)
     if (showThemeBottomSheet) {
         ModalBottomSheet(
             onDismissRequest = { showThemeBottomSheet = false },
@@ -336,11 +298,10 @@ fun SettingsView(
                         color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
+                            .padding(vertical = 3.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
                                 onSelectTheme(theme)
-                                showThemeBottomSheet = false
                             }
                     ) {
                         Row(
@@ -373,11 +334,65 @@ fun SettingsView(
                                 selected = isSelected,
                                 onClick = {
                                     onSelectTheme(theme)
-                                    showThemeBottomSheet = false
                                 },
                                 colors = RadioButtonDefaults.colors(
                                     selectedColor = MaterialTheme.colorScheme.primary
                                 )
+                            )
+                        }
+                    }
+                }
+
+                // Pure Black toggle moved inside Theme BottomSheet
+                if (isDarkActive) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onTogglePureBlack(!pureBlack) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                MaterialSymbol(
+                                    name = "dark_mode",
+                                    active = pureBlack,
+                                    size = 24.dp,
+                                    tint = if (pureBlack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.size(16.dp))
+                                Column {
+                                    Text(
+                                        text = "Pure black",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "AMOLED pitch black background",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = pureBlack,
+                                onCheckedChange = onTogglePureBlack,
+                                colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
                             )
                         }
                     }
