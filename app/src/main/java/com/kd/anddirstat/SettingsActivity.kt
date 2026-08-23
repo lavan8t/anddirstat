@@ -33,6 +33,18 @@ class SettingsActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(
+                OVERRIDE_TRANSITION_OPEN,
+                R.anim.slide_in_right,
+                R.anim.slide_out_left
+            )
+            overrideActivityTransition(
+                OVERRIDE_TRANSITION_CLOSE,
+                R.anim.slide_in_left,
+                R.anim.slide_out_right
+            )
+        }
         enableEdgeToEdge()
         setContent {
             val prefs = remember { getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
