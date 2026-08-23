@@ -101,8 +101,13 @@ object StorageFilterHelper {
 
         fun collect(node: CompactNode) {
             val name = node.name
-            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+            if (name == "[Free Space]" || name == "[System & OS]" ||
                 name == "Cache" || name == "App Cache" || name == "Data" || name == "App Data") {
+                return
+            }
+            if (name == "[Recycle Bin]" || name.startsWith(".trashed")) {
+                val cur = statsMap["[trashed]"] ?: Pair(0L, 0)
+                statsMap["[trashed]"] = Pair(cur.first + node.size, cur.second + (node.children?.size ?: 1))
                 return
             }
             if (!node.isDirectory) {
@@ -123,11 +128,11 @@ object StorageFilterHelper {
 
         return statsMap.map { (ext, pair) ->
             val dummyNode = CompactNode(name = if (ext.startsWith(".")) "file$ext" else ext, isDirectory = false, size = pair.first)
-            val color = getNodeColor(dummyNode)
+            val color = if (ext == "[trashed]") androidx.compose.ui.graphics.Color(0xFFF43F5E) else getNodeColor(dummyNode)
             val category = when {
                 ext == "[Free Space]" -> "Free Storage"
                 ext == "[System & OS]" -> "System / Reserved"
-                ext == "[Recycle Bin]" || ext == ".trashed" -> "Recycle Bin"
+                ext == "[trashed]" || ext == "[Recycle Bin]" || ext == ".trashed" -> "Recycle Bin"
                 ext == "Cache" -> "App Cache"
                 ext == "Data" -> "App Data"
                 ext in listOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".ts", ".wmv", ".m4v") -> "Video"

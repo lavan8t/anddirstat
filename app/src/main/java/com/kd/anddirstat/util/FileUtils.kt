@@ -123,6 +123,16 @@ object FileUtils {
         return if (unitIdx == 0) "$bytes B" else String.format(Locale.US, if (size >= 100.0) "%.1f %s" else "%.2f %s", size, units[unitIdx])
     }
 
+    fun middleEllipsis(text: String, maxLen: Int = 22): String {
+        if (text.length <= maxLen) return text
+        val extIdx = text.lastIndexOf('.')
+        val extLen = if (extIdx > 0 && text.length - extIdx <= 8) text.length - extIdx else 0
+        val suffixLen = maxOf(5, extLen + 3)
+        val prefixLen = maxOf(4, maxLen - suffixLen - 1)
+        if (prefixLen + suffixLen >= text.length) return text
+        return text.take(prefixLen) + "…" + text.takeLast(suffixLen)
+    }
+
     fun resolveActualFile(path: String, context: Context? = null): File? {
         if (path.isBlank()) return null
         val direct = File(path)

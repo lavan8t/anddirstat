@@ -28,11 +28,53 @@ import java.util.Collections
 object AppIconCache {
     private const val CACHE_SIZE = 300
     private val memoryCache = LruCache<String, ImageBitmap>(CACHE_SIZE)
+    private val colorCache = LruCache<String, Color>(CACHE_SIZE)
     private val failedPackages = Collections.synchronizedSet(HashSet<String>())
 
     fun peek(packageName: String?): ImageBitmap? {
         if (packageName == null) return null
         return memoryCache.get(packageName)
+    }
+
+    fun getDominantColor(packageName: String?): Color? {
+        if (packageName == null) return null
+        return colorCache.get(packageName)
+    }
+
+    private fun extractDominantColor(bmp: Bitmap): Color {
+        var rSum = 0L
+        var gSum = 0L
+        var bSum = 0L
+        var count = 0L
+        val w = bmp.width
+        val h = bmp.height
+        val pixels = IntArray(w * h)
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+        for (i in 0 until pixels.size step 2) {
+            val p = pixels[i]
+            val a = (p ushr 24) and 0xFF
+            if (a > 100) {
+                val r = (p ushr 16) and 0xFF
+                val g = (p ushr 8) and 0xFF
+                val b = p and 0xFF
+                val maxC = maxOf(r, maxOf(g, b))
+                val minC = minOf(r, minOf(g, b))
+                val satWeight = if (maxC > 20 && maxC - minC > 15) 3 else 1
+                rSum += r * satWeight
+                gSum += g * satWeight
+                bSum += b * satWeight
+                count += satWeight
+            }
+        }
+        return if (count > 0) {
+            Color(
+                red = (rSum / count).toInt(),
+                green = (gSum / count).toInt(),
+                blue = (bSum / count).toInt()
+            )
+        } else {
+            Color(0xFF3B82F6)
+        }
     }
 
     suspend fun load(context: Context, packageName: String?): ImageBitmap? {
@@ -49,6 +91,8 @@ object AppIconCache {
                 val canvas = Canvas(bmp)
                 drawable.setBounds(0, 0, 48, 48)
                 drawable.draw(canvas)
+                val dominantColor = extractDominantColor(bmp)
+                colorCache.put(packageName, dominantColor)
                 val imageBitmap = bmp.asImageBitmap()
                 memoryCache.put(packageName, imageBitmap)
                 imageBitmap
@@ -72,6 +116,8 @@ object AppIconCache {
             val canvas = Canvas(bmp)
             drawable.setBounds(0, 0, 48, 48)
             drawable.draw(canvas)
+            val dominantColor = extractDominantColor(bmp)
+            colorCache.put(packageName, dominantColor)
             val imageBitmap = bmp.asImageBitmap()
             memoryCache.put(packageName, imageBitmap)
             imageBitmap

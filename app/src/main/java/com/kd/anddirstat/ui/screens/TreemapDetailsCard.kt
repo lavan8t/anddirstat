@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -373,24 +375,18 @@ fun ExpressiveNodeDetailsSheet(
 
                 if (!isSpecialNode) {
                     AppTooltip(text = if (isSelected) "Deselect item" else "Select item") {
-                        IconButton(
-                            onClick = {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onToggleSelect()
                             },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = Color.Transparent,
-                                contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            MaterialSymbol(
-                                name = if (isSelected) "check_circle" else "check_circle_outline",
-                                active = isSelected,
-                                size = 26.dp,
-                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
                     }
                 }
             }

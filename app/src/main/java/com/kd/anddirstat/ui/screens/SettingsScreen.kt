@@ -1,9 +1,12 @@
 package com.kd.anddirstat.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,25 +18,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +43,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +55,13 @@ import com.kd.anddirstat.AppTheme
 import com.kd.anddirstat.GoogleSansFlexTitleAndFamily
 import com.kd.anddirstat.GoogleSansFlexTitleDirStatFamily
 import com.kd.anddirstat.ui.components.MaterialSymbol
+import com.kd.anddirstat.util.AppNotifier
+
+data class SelectionOption(
+    val label: String,
+    val icon: String,
+    val displayLabel: String = label
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,17 +76,16 @@ fun SettingsView(
     onSelectAccent: (AccentColor) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
     val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val showAccentItem = !dynamicTheme || !isDynamicSupported
 
-    var showThemeBottomSheet by remember { mutableStateOf(false) }
-    var showAccentBottomSheet by remember { mutableStateOf(false) }
+    var showThemeSheet by remember { mutableStateOf(false) }
+    var showAccentSheet by remember { mutableStateOf(false) }
 
-    val themeSheetState = rememberModalBottomSheetState()
-    val accentSheetState = rememberModalBottomSheetState()
-
-    // Shapes: Terminal (start/end) rounded more (24dp), intermediate rounded less (4dp)
+    // Shapes: Terminal (start/end) rounded 24dp, intermediate rounded 4dp
     val topShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
     val middleShape = RoundedCornerShape(4.dp)
     val bottomShape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
@@ -138,7 +148,10 @@ fun SettingsView(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .clip(shape)
-                    .clickable { showThemeBottomSheet = true }
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showThemeSheet = true
+                    }
             )
         }
 
@@ -172,7 +185,10 @@ fun SettingsView(
                     trailingContent = {
                         Switch(
                             checked = dynamicTheme,
-                            onCheckedChange = onToggleDynamicTheme,
+                            onCheckedChange = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onToggleDynamicTheme(it)
+                            },
                             colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
                         )
                     },
@@ -183,7 +199,10 @@ fun SettingsView(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .clip(shape)
-                        .clickable { onToggleDynamicTheme(!dynamicTheme) }
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onToggleDynamicTheme(!dynamicTheme)
+                        }
                 )
             }
         }
@@ -228,14 +247,129 @@ fun SettingsView(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .clip(bottomShape)
-                        .clickable { showAccentBottomSheet = true }
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showAccentSheet = true
+                        }
                 )
             }
         }
 
+        // Cache & Diagnostics Section Header
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Cache & Data",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+            )
+        }
+
+        // Clear App Icon & Scan Cache
+        item {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = "Clear cache & re-index",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Flush cached icon bitmaps and saved scan trees",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    MaterialSymbol(
+                        name = "cached",
+                        active = true,
+                        size = 24.dp,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(singleShape)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        com.kd.anddirstat.scanner.TreeCacheManager.clearCache(context)
+                        AppNotifier.notify("Cache cleared successfully")
+                    }
+            )
+        }
+
+        // About & Source Code Section Header
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "About",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+            )
+        }
+
+        // Source Code Link
+        item {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = "Source code",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "GitHub repository & open-source releases",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    MaterialSymbol(
+                        name = "code",
+                        active = true,
+                        size = 24.dp,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailingContent = {
+                    MaterialSymbol(
+                        name = "open_in_new",
+                        active = true,
+                        size = 20.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(singleShape)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lavan8t/AndDirStat"))
+                            context.startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+            )
+        }
+
         // App name & version footer
         item {
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(32.dp))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -262,7 +396,7 @@ fun SettingsView(
                     )
                 }
                 Text(
-                    text = "v1.0.0",
+                    text = "v1.0.0 • Open Source Disk Analyzer",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
@@ -270,196 +404,191 @@ fun SettingsView(
         }
     }
 
-    // Theme Bottom Sheet (Contains Theme Choices + Pure Black Toggle)
-    if (showThemeBottomSheet) {
+    // Exact Latch Settings Selection Bottom Sheet for Theme
+    if (showThemeSheet) {
+        val themeOptions = listOf(
+            SelectionOption("System Default", "brightness_medium"),
+            SelectionOption("Light", "light_mode"),
+            SelectionOption("Dark", "dark_mode")
+        )
+        val selectedLabel = when (currentTheme) {
+            AppTheme.SYSTEM -> "System Default"
+            AppTheme.LIGHT  -> "Light"
+            AppTheme.DARK   -> "Dark"
+        }
+
+        SettingsSelectionBottomSheet(
+            title = "Theme",
+            description = "Control the look of the app",
+            options = themeOptions,
+            selected = selectedLabel,
+            onSelect = {
+                val selectedTheme = when (it.label) {
+                    "Light" -> AppTheme.LIGHT
+                    "Dark"  -> AppTheme.DARK
+                    else    -> AppTheme.SYSTEM
+                }
+                onSelectTheme(selectedTheme)
+                showThemeSheet = false
+            },
+            onDismiss = { showThemeSheet = false },
+            bottomContent = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                        .graphicsLayer { alpha = if (isDarkActive) 1f else 0.5f },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Use pure black",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Switch(
+                        checked = pureBlack && isDarkActive,
+                        enabled = isDarkActive,
+                        onCheckedChange = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onTogglePureBlack(it)
+                        }
+                    )
+                }
+            }
+        )
+    }
+
+    // Exact Latch Accent Color Bottom Sheet
+    if (showAccentSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { showThemeBottomSheet = false },
-            sheetState = themeSheetState,
-            dragHandle = { BottomSheetDefaults.DragHandle() },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            onDismissRequest = { showAccentSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 36.dp)
+                modifier = Modifier.padding(bottom = 32.dp, top = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Choose theme",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    text = "Accent Color",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
-
-                AppTheme.entries.forEach { theme ->
-                    val isSelected = currentTheme == theme
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable {
-                                onSelectTheme(theme)
-                            }
-                    ) {
-                        Row(
+                Text(
+                    text = "Choose a custom color",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                Spacer(Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    AccentColor.entries.forEach { ac ->
+                        val isSelected = ac == accentColor
+                        val color = ac.getActualColor(isDarkActive)
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                MaterialSymbol(
-                                    name = when (theme) {
-                                        AppTheme.SYSTEM -> "brightness_medium"
-                                        AppTheme.LIGHT  -> "light_mode"
-                                        AppTheme.DARK   -> "dark_mode"
-                                    },
-                                    active = isSelected,
-                                    size = 24.dp,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.size(16.dp))
-                                Text(
-                                    text = theme.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            RadioButton(
-                                selected = isSelected,
-                                onClick = {
-                                    onSelectTheme(theme)
-                                },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Pure Black toggle moved inside Theme BottomSheet
-                if (isDarkActive) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { onTogglePureBlack(!pureBlack) }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                MaterialSymbol(
-                                    name = "dark_mode",
-                                    active = pureBlack,
-                                    size = 24.dp,
-                                    tint = if (pureBlack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.size(16.dp))
-                                Column {
-                                    Text(
-                                        text = "Pure black",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "AMOLED pitch black background",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSelectAccent(ac)
+                                    showAccentSheet = false
                                 }
-                            }
-                            Switch(
-                                checked = pureBlack,
-                                onCheckedChange = onTogglePureBlack,
-                                colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
-                            )
-                        }
+                                .then(
+                                    if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    else Modifier
+                                )
+                                .padding(if (isSelected) 6.dp else 0.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                        )
                     }
                 }
             }
         }
     }
+}
 
-    // Accent Color Bottom Sheet
-    if (showAccentBottomSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showAccentBottomSheet = false },
-            sheetState = accentSheetState,
-            dragHandle = { BottomSheetDefaults.DragHandle() },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsSelectionBottomSheet(
+    title: String,
+    description: String,
+    options: List<SelectionOption>,
+    selected: String,
+    onSelect: (SelectionOption) -> Unit,
+    onDismiss: () -> Unit,
+    bottomContent: (@Composable () -> Unit)? = null
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptic = LocalHapticFeedback.current
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 36.dp)
-            ) {
-                Text(
-                    text = "Choose accent color",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                LazyRow(
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(AccentColor.entries) { ac ->
-                        val isSelected = accentColor == ac
-                        val actualColor = ac.getActualColor(isDarkActive)
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(CircleShape)
-                                .then(
-                                    if (isSelected) Modifier.border(
-                                        3.dp, MaterialTheme.colorScheme.primary, CircleShape
-                                    ) else Modifier
-                                )
-                                .padding(if (isSelected) 4.dp else 0.dp)
-                                .clip(CircleShape)
-                                .background(actualColor)
-                                .clickable {
-                                    onSelectAccent(ac)
-                                    showAccentBottomSheet = false
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                MaterialSymbol(
-                                    name = "check",
-                                    active = true,
-                                    size = 22.dp,
-                                    tint = if (isDarkActive) Color.Black else Color.White
-                                )
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            options.forEach { option ->
+                val isSelected = option.label == selected
+                val contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(),
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSelect(option)
                             }
-                        }
-                    }
+                        )
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MaterialSymbol(
+                        name = option.icon,
+                        active = isSelected,
+                        size = 24.dp,
+                        tint = contentColor,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp)
+                    )
+                    Text(
+                        text = option.displayLabel,
+                        color = contentColor,
+                        fontWeight = FontWeight.W500,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
                 }
+            }
+            if (bottomContent != null) {
+                Spacer(Modifier.height(8.dp))
+                bottomContent()
             }
         }
     }

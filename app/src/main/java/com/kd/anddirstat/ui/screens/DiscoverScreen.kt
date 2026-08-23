@@ -510,12 +510,11 @@ fun DiscoverView(
 
                                         Column(modifier = Modifier.fillMaxWidth()) {
                                             Text(
-                                                text = entry.node.name,
+                                                text = FileUtils.middleEllipsis(entry.node.name, 22),
                                                 style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
+                                                maxLines = 1
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
@@ -558,12 +557,11 @@ fun DiscoverView(
                                             .padding(horizontal = 14.dp, vertical = 12.dp)
                                     ) {
                                         Text(
-                                            text = entry.node.name,
+                                            text = FileUtils.middleEllipsis(entry.node.name, 22),
                                             style = MaterialTheme.typography.titleSmall.copy(shadow = textDropShadow),
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            maxLines = 1
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
