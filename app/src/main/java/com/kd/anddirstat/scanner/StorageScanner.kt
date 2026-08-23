@@ -47,6 +47,20 @@ class StorageScanner(private val context: Context) {
         var totalDeviceBytes = volumesToScan.sumOf { it.totalBytes }
         var totalFreeBytes = volumesToScan.sumOf { it.freeBytes }
 
+        if (primaryVol != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val ssm = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
+                if (ssm != null) {
+                    val sTotal = ssm.getTotalBytes(StorageManager.UUID_DEFAULT)
+                    val sFree = ssm.getFreeBytes(StorageManager.UUID_DEFAULT)
+                    if (sTotal > 0L) {
+                        totalDeviceBytes = sTotal + externalVols.sumOf { it.totalBytes }
+                        totalFreeBytes = sFree + externalVols.sumOf { it.freeBytes }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         if (totalDeviceBytes == 0L) {
             val dataDir = Environment.getDataDirectory()
             val stat = StatFs(dataDir.path)
