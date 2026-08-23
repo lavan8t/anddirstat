@@ -1,9 +1,6 @@
 package com.kd.anddirstat.ui.screens
 
 import android.os.Build
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,19 +20,28 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +51,7 @@ import com.kd.anddirstat.GoogleSansFlexTitleAndFamily
 import com.kd.anddirstat.GoogleSansFlexTitleDirStatFamily
 import com.kd.anddirstat.ui.components.MaterialSymbol
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsView(
     currentTheme: AppTheme,
@@ -55,11 +62,24 @@ fun SettingsView(
     onToggleDynamicTheme: (Boolean) -> Unit,
     accentColor: AccentColor,
     onSelectAccent: (AccentColor) -> Unit,
+    showFreeSpace: Boolean = true,
+    onToggleShowFreeSpace: (Boolean) -> Unit = {},
+    showSystemApps: Boolean = true,
+    onToggleShowSystemApps: (Boolean) -> Unit = {},
+    showHiddenFiles: Boolean = false,
+    onToggleShowHiddenFiles: (Boolean) -> Unit = {},
+    showSystemOS: Boolean = false,
+    onToggleShowSystemOS: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
     val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val isCustomActive = !dynamicTheme || !isDynamicSupported
+
+    var showThemeBottomSheet by remember { mutableStateOf(false) }
+    var showAccentBottomSheet by remember { mutableStateOf(false) }
+
+    val themeSheetState = rememberModalBottomSheetState()
+    val accentSheetState = rememberModalBottomSheetState()
 
     LazyColumn(
         modifier = modifier
@@ -68,82 +88,123 @@ fun SettingsView(
         contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Section Header
+        // Appearance Header
         item {
             Text(
                 text = "Appearance",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
             )
         }
 
-        // 1. Theme Selector Card
+        // 1. Theme Option (Opens Bottom Sheet)
         item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = "Theme",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = currentTheme.title,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    MaterialSymbol(
+                        name = when (currentTheme) {
+                            AppTheme.SYSTEM -> "brightness_medium"
+                            AppTheme.LIGHT  -> "light_mode"
+                            AppTheme.DARK   -> "dark_mode"
+                        },
+                        active = true,
+                        size = 24.dp,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailingContent = {
+                    MaterialSymbol(
+                        name = "chevron_right",
+                        active = true,
+                        size = 20.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-            ) {
-                Row(
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { showThemeBottomSheet = true }
+            )
+        }
+
+        // 2. Dynamic Color Toggle (Only shown when supported!)
+        if (isDynamicSupported) {
+            item {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = "Dynamic color",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Material You wallpaper palette",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = {
+                        MaterialSymbol(
+                            name = "palette",
+                            active = dynamicTheme,
+                            size = 24.dp,
+                            tint = if (dynamicTheme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = dynamicTheme,
+                            onCheckedChange = onToggleDynamicTheme,
+                            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AppTheme.entries.forEach { theme ->
-                        val isSelected = currentTheme == theme
-                        val cardBg = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-                        val cardFg = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(cardBg)
-                                .clickable { onSelectTheme(theme) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                MaterialSymbol(
-                                    name = when (theme) {
-                                        AppTheme.SYSTEM -> "brightness_medium"
-                                        AppTheme.LIGHT  -> "light_mode"
-                                        AppTheme.DARK   -> "dark_mode"
-                                    },
-                                    active = isSelected,
-                                    size = 24.dp,
-                                    tint = cardFg
-                                )
-                                Text(
-                                    text = theme.title,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = cardFg
-                                )
-                            }
-                        }
-                    }
-                }
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { onToggleDynamicTheme(!dynamicTheme) }
+                )
             }
         }
 
-        // 2. Pure Black Toggle
+        // 3. Pure Black Toggle (Only shown if dark active)
         if (isDarkActive) {
             item {
                 ListItem(
                     headlineContent = {
                         Text(
-                            text = "Use pure black",
+                            text = "Pure black",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Pitch black background for AMOLED screens",
+                            style = MaterialTheme.typography.bodySmall
                         )
                     },
                     leadingContent = {
@@ -156,7 +217,7 @@ fun SettingsView(
                     },
                     trailingContent = {
                         Switch(
-                            checked = pureBlack && isDarkActive,
+                            checked = pureBlack,
                             onCheckedChange = onTogglePureBlack,
                             colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
                         )
@@ -173,35 +234,91 @@ fun SettingsView(
             }
         }
 
-        // 3. Dynamic Color Toggle
+        // 4. Accent Color (Opens Bottom Sheet)
+        if (!dynamicTheme || !isDynamicSupported) {
+            item {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = "Accent color",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = accentColor.label,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(accentColor.getActualColor(isDarkActive))
+                        )
+                    },
+                    trailingContent = {
+                        MaterialSymbol(
+                            name = "chevron_right",
+                            active = true,
+                            size = 20.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { showAccentBottomSheet = true }
+                )
+            }
+        }
+
+        // Storage & Scanning Section Header
+        item {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Storage & Scanner",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+            )
+        }
+
+        // 5. Free Space Toggle
         item {
             ListItem(
                 headlineContent = {
                     Text(
-                        text = "Dynamic color",
+                        text = "Include free space",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
                 },
                 supportingContent = {
                     Text(
-                        text = if (isDynamicSupported) "Material You wallpaper palette" else "Requires Android 12+",
+                        text = "Represent available storage in tree & treemap",
                         style = MaterialTheme.typography.bodySmall
                     )
                 },
                 leadingContent = {
                     MaterialSymbol(
-                        name = "palette",
-                        active = dynamicTheme && isDynamicSupported,
+                        name = "storage",
+                        active = showFreeSpace,
                         size = 24.dp,
-                        tint = if (dynamicTheme && isDynamicSupported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (showFreeSpace) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 trailingContent = {
                     Switch(
-                        checked = dynamicTheme && isDynamicSupported,
-                        onCheckedChange = onToggleDynamicTheme,
-                        enabled = isDynamicSupported,
+                        checked = showFreeSpace,
+                        onCheckedChange = onToggleShowFreeSpace,
                         colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
                     )
                 },
@@ -212,73 +329,134 @@ fun SettingsView(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .clickable(enabled = isDynamicSupported) { onToggleDynamicTheme(!dynamicTheme) }
+                    .clickable { onToggleShowFreeSpace(!showFreeSpace) }
             )
         }
 
-        // 4. Accent Color Swatches
+        // 6. System Apps Toggle
         item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = "Show system apps",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Include pre-installed and system packages",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    MaterialSymbol(
+                        name = "android",
+                        active = showSystemApps,
+                        size = 24.dp,
+                        tint = if (showSystemApps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = showSystemApps,
+                        onCheckedChange = onToggleShowSystemApps,
+                        colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp)
-                ) {
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onToggleShowSystemApps(!showSystemApps) }
+            )
+        }
+
+        // 7. Hidden Files Toggle
+        item {
+            ListItem(
+                headlineContent = {
                     Text(
-                        text = "Custom accent",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        text = "Show hidden files",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                alpha = if (isCustomActive) 1.0f else 0.38f
-                            }
-                    ) {
-                        items(AccentColor.entries) { ac ->
-                            val isSelected = isCustomActive && accentColor == ac
-                            val actualColor = ac.getActualColor(isDarkActive)
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .then(
-                                        if (isSelected) Modifier.border(
-                                            2.5.dp, MaterialTheme.colorScheme.primary, CircleShape
-                                        ) else Modifier
-                                    )
-                                    .padding(if (isSelected) 3.5.dp else 0.dp)
-                                    .clip(CircleShape)
-                                    .background(actualColor)
-                                    .clickable(enabled = isCustomActive) { onSelectAccent(ac) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isSelected) {
-                                    MaterialSymbol(
-                                        name = "check",
-                                        active = true,
-                                        size = 18.dp,
-                                        tint = if (isDarkActive) Color.Black else Color.White
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+                },
+                supportingContent = {
+                    Text(
+                        text = "Display files and folders starting with a dot",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    MaterialSymbol(
+                        name = "visibility",
+                        active = showHiddenFiles,
+                        size = 24.dp,
+                        tint = if (showHiddenFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = showHiddenFiles,
+                        onCheckedChange = onToggleShowHiddenFiles,
+                        colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onToggleShowHiddenFiles(!showHiddenFiles) }
+            )
+        }
+
+        // 8. System OS Files Toggle
+        item {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = "Show system OS partition",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = "Display Android system OS files in treemap",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    MaterialSymbol(
+                        name = "smartphone",
+                        active = showSystemOS,
+                        size = 24.dp,
+                        tint = if (showSystemOS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = showSystemOS,
+                        onCheckedChange = onToggleShowSystemOS,
+                        colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onToggleShowSystemOS(!showSystemOS) }
+            )
         }
 
         // App name & version footer
@@ -314,6 +492,147 @@ fun SettingsView(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
+            }
+        }
+    }
+
+    // Theme Bottom Sheet
+    if (showThemeBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showThemeBottomSheet = false },
+            sheetState = themeSheetState,
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 36.dp)
+            ) {
+                Text(
+                    text = "Choose theme",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                AppTheme.entries.forEach { theme ->
+                    val isSelected = currentTheme == theme
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                onSelectTheme(theme)
+                                showThemeBottomSheet = false
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                MaterialSymbol(
+                                    name = when (theme) {
+                                        AppTheme.SYSTEM -> "brightness_medium"
+                                        AppTheme.LIGHT  -> "light_mode"
+                                        AppTheme.DARK   -> "dark_mode"
+                                    },
+                                    active = isSelected,
+                                    size = 24.dp,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = theme.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    onSelectTheme(theme)
+                                    showThemeBottomSheet = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Accent Color Bottom Sheet
+    if (showAccentBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAccentBottomSheet = false },
+            sheetState = accentSheetState,
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 36.dp)
+            ) {
+                Text(
+                    text = "Choose accent color",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                LazyRow(
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(AccentColor.entries) { ac ->
+                        val isSelected = accentColor == ac
+                        val actualColor = ac.getActualColor(isDarkActive)
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (isSelected) Modifier.border(
+                                        3.dp, MaterialTheme.colorScheme.primary, CircleShape
+                                    ) else Modifier
+                                )
+                                .padding(if (isSelected) 4.dp else 0.dp)
+                                .clip(CircleShape)
+                                .background(actualColor)
+                                .clickable {
+                                    onSelectAccent(ac)
+                                    showAccentBottomSheet = false
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                MaterialSymbol(
+                                    name = "check",
+                                    active = true,
+                                    size = 22.dp,
+                                    tint = if (isDarkActive) Color.Black else Color.White
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
