@@ -345,10 +345,10 @@ fun SettingsView(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(CircleShape)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             try {
@@ -357,14 +357,14 @@ fun SettingsView(
                         }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         MaterialSymbol(
-                            name = "code",
+                            name = "github",
                             active = true,
-                            size = 18.dp,
+                            size = 20.dp,
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
@@ -374,7 +374,7 @@ fun SettingsView(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         MaterialSymbol(
-                            name = "north_east",
+                            name = "open_in_new",
                             active = true,
                             size = 16.dp,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
