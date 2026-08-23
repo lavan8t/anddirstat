@@ -248,3 +248,20 @@ fun MediaThumbnailView(
         }
     }
 }
+
+@Composable
+fun MediaThumbnailView(
+    path: String,
+    modifier: Modifier = Modifier,
+    fallbackTint: Color = MaterialTheme.colorScheme.primary
+) {
+    val node = remember(path) {
+        val f = File(path)
+        CompactNode(
+            name = f.name.ifEmpty { path },
+            size = if (f.exists()) f.length() else 0L,
+            isDirectory = f.isDirectory
+        )
+    }
+    MediaThumbnailView(node = node, path = path, modifier = modifier, fallbackTint = fallbackTint)
+}

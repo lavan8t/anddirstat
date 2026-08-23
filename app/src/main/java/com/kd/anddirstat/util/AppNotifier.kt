@@ -1,11 +1,13 @@
 package com.kd.anddirstat.util
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.annotation.RequiresPermission
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -17,6 +19,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +30,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
@@ -92,6 +98,7 @@ object AppNotifier {
         }
     }
 
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     fun updateProgress(
         context: Context,
         title: String,
@@ -125,7 +132,7 @@ object AppNotifier {
 
             val shortText = if (type == "scan") "Scan" else "Delete"
             val builder = NotificationCompat.Builder(context, CHANNEL_PROGRESS_ID)
-                .setSmallIcon(R.mipmap.ic_launcher_round)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
                 .setContentTitle(title)
                 .setContentText(detail)
                 .setSubText(if (type == "scan") "Analyzing Storage" else "Deleting Files")
@@ -171,7 +178,7 @@ object AppNotifier {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
                 val doneNotification = NotificationCompat.Builder(context, CHANNEL_PROGRESS_ID)
-                    .setSmallIcon(R.mipmap.ic_launcher_round)
+                    .setSmallIcon(R.drawable.ic_launcher_monochrome)
                     .setContentTitle("Done")
                     .setContentText(finalMessage)
                     .setContentIntent(pi)
@@ -206,9 +213,13 @@ fun LiveActivityPill(modifier: Modifier = Modifier) {
         exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = tween(200)) + fadeOut(),
         modifier = modifier
     ) {
+        val pct = if (!state.isIndeterminate && state.max > 0) {
+            ((state.progress.toFloat() / state.max.toFloat()) * 100f).toInt().coerceIn(0, 100)
+        } else null
+
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shadowElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
@@ -230,26 +241,24 @@ fun LiveActivityPill(modifier: Modifier = Modifier) {
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier.size(30.dp)
                         ) {
-                            val iconName = if (state.type == "scan") "sync" else "delete_sweep"
-                            MaterialSymbol(
-                                name = iconName,
-                                active = true,
-                                size = 16.dp,
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                            Image(
+                                painter = painterResource(R.drawable.ic_appbar),
+                                contentDescription = null,
+                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
                                 modifier = Modifier
                                     .padding(6.dp)
                                     .then(if (state.type == "scan") Modifier.rotate(rotation) else Modifier)
                             )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = state.title,
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -257,16 +266,25 @@ fun LiveActivityPill(modifier: Modifier = Modifier) {
                                 Text(
                                     text = state.detail,
                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                     }
+
+                    if (pct != null) {
+                        Text(
+                            text = "$pct%",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 if (state.isIndeterminate || state.max <= 0) {
                     LinearProgressIndicator(
@@ -274,7 +292,7 @@ fun LiveActivityPill(modifier: Modifier = Modifier) {
                             .fillMaxWidth()
                             .height(4.dp),
                         color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     )
                 } else {
                     val progressFraction = (state.progress.toFloat() / state.max.toFloat()).coerceIn(0f, 1f)
@@ -284,7 +302,7 @@ fun LiveActivityPill(modifier: Modifier = Modifier) {
                             .fillMaxWidth()
                             .height(4.dp),
                         color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     )
                 }
             }

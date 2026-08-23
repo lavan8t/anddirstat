@@ -51,12 +51,12 @@ enum class AccentColor(
 ) {
     RED("red", "Red", Color(0xFFE53935)),
     ORANGE("orange", "Orange", Color(0xFFFF6D00)),
-    NEON_YELLOW("neon_yellow", "Neon Yellow", Color(0xFFFFFF00)),
-    NEON_GREEN("neon_green", "Neon Green", Color(0xFF39FF14)),
+    NEON_YELLOW("neon_yellow", "Yellow", Color(0xFFFACC15)),
+    NEON_GREEN("neon_green", "Emerald", Color(0xFF22C55E)),
     GREEN("green", "Android", Color(0xFF1DB954)),
     TEAL("teal", "Teal", Color(0xFF009688)),
     BLUE("blue", "Blue", Color(0xFF2196F3)),
-    NEON_PINK("neon_pink", "Neon Pink", Color(0xFFFF10F0));
+    NEON_PINK("neon_pink", "Pink", Color(0xFFEC4899));
 
     fun getActualColor(isDark: Boolean): Color {
         val hct = Hct.fromInt(seed.toArgb())
@@ -361,13 +361,7 @@ fun AndDirStatTheme(
     val colorScheme = if (isDark && pureBlack) {
         base.copy(
             background = Color.Black,
-            surface = Color.Black,
-            surfaceContainer = Color(0xFF0A0B0E),
-            surfaceContainerLow = Color(0xFF050507),
-            surfaceContainerHigh = Color(0xFF121418),
-            surfaceContainerHighest = Color(0xFF1A1C22),
-            surfaceVariant = Color(0xFF1C1D22),
-            outlineVariant = Color(0xFF2C2D35)
+            surface = Color.Black
         )
     } else base
 

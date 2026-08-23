@@ -86,6 +86,13 @@
             android:theme="@style/Theme.AndDirStat"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".StarredFilesActivity"
+            android:exported="false"
+            android:label="Starred Files"
+            android:theme="@style/Theme.AndDirStat"
+            android:windowSoftInputMode="adjustResize" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

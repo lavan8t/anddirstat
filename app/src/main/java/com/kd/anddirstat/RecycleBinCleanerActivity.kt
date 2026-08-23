@@ -7,6 +7,11 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,19 +20,27 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -133,6 +146,7 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
     val snackbarHostState = remember { SnackbarHostState() }
 
     var isLoading by remember { mutableStateOf(true) }
+    var isGridView by remember { mutableStateOf(false) }
     var trashedFiles by remember { mutableStateOf<List<TrashedItem>>(emptyList()) }
     var selectedFiles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var sortOrder by remember { mutableStateOf(TrashSort.NEWEST) }
@@ -290,23 +304,11 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "Recycle Bin",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!isLoading && trashedFiles.isNotEmpty()) {
-                            Text(
-                                text = if (selectedFiles.isNotEmpty())
-                                    "${selectedFiles.size} of ${trashedFiles.size} selected"
-                                else
-                                    "${trashedFiles.size} items (${FileUtils.formatFileSize(totalTrashedBytes, context)}) • ${sortOrder.label}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Recycle Bin",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -347,6 +349,16 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                                     )
                                 }
                             }
+                        }
+
+                        IconButton(onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            isGridView = !isGridView
+                        }) {
+                            MaterialSymbol(
+                                name = if (isGridView) "view_list" else "grid_view",
+                                active = true
+                            )
                         }
 
                         TextButton(
@@ -439,70 +451,57 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                 }
                 else -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(bottom = 12.dp)
-                        ) {
-                            items(trashedFiles, key = { it.path }) { item ->
-                                val isSelected = selectedFiles.contains(item.path)
-                                val isStarred = FavoritesManager.isStarred(context, item.path)
-                                val compactNode = remember(item) {
-                                    CompactNode(
-                                        name = item.cleanName,
-                                        isDirectory = item.file.isDirectory,
-                                        size = item.size
-                                    )
-                                }
-
-                                ListItem(
-                                    headlineContent = {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Text(
-                                                text = item.cleanName,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            if (isStarred) {
-                                                MaterialSymbol("star", active = true, size = 16.dp, tint = MaterialTheme.colorScheme.error)
-                                            }
-                                        }
-                                    },
-                                    supportingContent = {
-                                        Text(
-                                            text = "${FileUtils.formatFileSize(item.size, context)}  ${dateFormat.format(Date(item.lastModified))}",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                        if (isGridView) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(150.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(trashedFiles, key = { it.path }) { item ->
+                                    val isSelected = selectedFiles.contains(item.path)
+                                    val compactNode = remember(item) {
+                                        CompactNode(
+                                            name = item.cleanName,
+                                            isDirectory = item.file.isDirectory,
+                                            size = item.size
                                         )
-                                    },
-                                    leadingContent = {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    selectedFiles = if (isSelected) selectedFiles - item.path else selectedFiles + item.path
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            val isApk = item.cleanName.endsWith(".apk", ignoreCase = true)
-                                            val isMedia = item.cleanName.lowercase().let { l ->
-                                                l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
-                                                l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
-                                                l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") || l.endsWith(".apk")
-                                            }
+                                    }
+                                    val isApk = item.cleanName.endsWith(".apk", ignoreCase = true)
+                                    val isMedia = item.cleanName.lowercase().let { l ->
+                                        l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+                                        l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+                                        l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") || l.endsWith(".apk")
+                                    }
 
+                                    Card(
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (selectedFiles.isNotEmpty()) {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        selectedFiles = if (isSelected) selectedFiles - item.path else selectedFiles + item.path
+                                                    } else if (!item.file.isDirectory) {
+                                                        FileUtils.openFile(context, item.file)
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    selectedFiles = if (isSelected) selectedFiles - item.path else selectedFiles + item.path
+                                                }
+                                            )
+                                    ) {
+                                        Box(modifier = Modifier.fillMaxSize()) {
                                             if (isMedia || isApk) {
                                                 MediaThumbnailView(
                                                     node = compactNode,
@@ -511,147 +510,280 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                                                     modifier = Modifier.fillMaxSize()
                                                 )
                                             } else {
-                                                Surface(
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                    modifier = Modifier.fillMaxSize()
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                                    contentAlignment = Alignment.Center
                                                 ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        MaterialSymbol(
-                                                            name = if (item.file.isDirectory) "folder_delete" else "description",
-                                                            active = true,
-                                                            size = 24.dp,
-                                                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
+                                                    MaterialSymbol(
+                                                        name = if (item.file.isDirectory) "folder_delete" else "description",
+                                                        active = true,
+                                                        size = 40.dp,
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
                                                 }
                                             }
 
-                                            // Tap to select overlay badge
+                                            // Bottom Scrim with file name and size
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .align(Alignment.BottomCenter)
+                                                    .background(
+                                                        Brush.verticalGradient(
+                                                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
+                                                        )
+                                                    )
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Column {
+                                                    Text(
+                                                        text = FileUtils.middleEllipsis(item.cleanName, 16),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        maxLines = 1,
+                                                        color = Color.White
+                                                    )
+                                                    Text(
+                                                        text = FileUtils.formatFileSize(item.size, context),
+                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                                        color = Color.White.copy(alpha = 0.85f)
+                                                    )
+                                                }
+                                            }
+
                                             if (isSelected) {
                                                 Box(
                                                     modifier = Modifier
                                                         .fillMaxSize()
-                                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)),
+                                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    MaterialSymbol(
-                                                        name = "check",
-                                                        active = true,
-                                                        size = 24.dp,
-                                                        tint = MaterialTheme.colorScheme.onPrimary
-                                                    )
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            MaterialSymbol("check", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
-                                    },
-                                    colors = ListItemDefaults.colors(
-                                        containerColor = if (isSelected)
-                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
-                                        else
-                                            Color.Transparent
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            if (!item.file.isDirectory) {
-                                                FileUtils.openFile(context, item.file)
-                                            } else {
-                                                AppNotifier.notify("Folder: ${item.cleanName} (${FileUtils.formatFileSize(item.size, context)})")
+                                    }
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(bottom = 12.dp)
+                            ) {
+                                items(trashedFiles, key = { it.path }) { item ->
+                                    val isSelected = selectedFiles.contains(item.path)
+                                    val isStarred = FavoritesManager.isStarred(context, item.path)
+                                    val compactNode = remember(item) {
+                                        CompactNode(
+                                            name = item.cleanName,
+                                            isDirectory = item.file.isDirectory,
+                                            size = item.size
+                                        )
+                                    }
+
+                                    ListItem(
+                                        headlineContent = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = item.cleanName,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+                                                if (isStarred) {
+                                                    MaterialSymbol("star", active = true, size = 16.dp, tint = MaterialTheme.colorScheme.error)
+                                                }
                                             }
-                                        }
-                                )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                    thickness = 0.5.dp,
-                                    modifier = Modifier.padding(start = 72.dp)
-                                )
+                                        },
+                                        supportingContent = {
+                                            Text(
+                                                text = "${FileUtils.formatFileSize(item.size, context)}  ${dateFormat.format(Date(item.lastModified))}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        leadingContent = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .clickable {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        selectedFiles = if (isSelected) selectedFiles - item.path else selectedFiles + item.path
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                val isApk = item.cleanName.endsWith(".apk", ignoreCase = true)
+                                                val isMedia = item.cleanName.lowercase().let { l ->
+                                                    l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+                                                    l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+                                                    l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") || l.endsWith(".apk")
+                                                }
+
+                                                if (isMedia || isApk) {
+                                                    MediaThumbnailView(
+                                                        node = compactNode,
+                                                        path = item.path,
+                                                        fallbackTint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                } else {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            MaterialSymbol(
+                                                                name = if (item.file.isDirectory) "folder_delete" else "description",
+                                                                active = true,
+                                                                size = 24.dp,
+                                                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // Tap to select overlay badge
+                                                if (isSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        MaterialSymbol(
+                                                            name = "check",
+                                                            active = true,
+                                                            size = 24.dp,
+                                                            tint = MaterialTheme.colorScheme.onPrimary
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        colors = ListItemDefaults.colors(
+                                            containerColor = if (isSelected)
+                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
+                                            else
+                                                Color.Transparent
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                if (!item.file.isDirectory) {
+                                                    FileUtils.openFile(context, item.file)
+                                                } else {
+                                                    AppNotifier.notify("Folder: ${item.cleanName} (${FileUtils.formatFileSize(item.size, context)})")
+                                                }
+                                            }
+                                    )
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                        thickness = 0.5.dp,
+                                        modifier = Modifier.padding(start = 72.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // Bottom Action Bar: Side-by-Side Restore & Delete Permanently in SAME Row
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 6.dp,
-                            modifier = Modifier.fillMaxWidth()
+                        // Bottom Action Bar: Side-by-Side Restore & Delete Permanently in SAME Row (Visible only when selected)
+                        AnimatedVisibility(
+                            visible = selectedFiles.isNotEmpty(),
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 6.dp,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                FilledTonalButton(
-                                    onClick = { handleRestoreSelected() },
-                                    enabled = selectedFiles.isNotEmpty(),
-                                    shape = RoundedCornerShape(28.dp),
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        contentColor = MaterialTheme.colorScheme.onSurface,
-                                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                    ),
+                                Row(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height(54.dp)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    FilledTonalButton(
+                                        onClick = { handleRestoreSelected() },
+                                        shape = RoundedCornerShape(28.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(54.dp)
                                     ) {
-                                        MaterialSymbol(
-                                            name = "restore_from_trash",
-                                            active = selectedFiles.isNotEmpty(),
-                                            size = 20.dp,
-                                            tint = if (selectedFiles.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                        )
-                                        Text(
-                                            text = if (selectedFiles.isNotEmpty())
-                                                "Restore (${selectedFiles.size})"
-                                            else
-                                                "Restore",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            maxLines = 1
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "restore_from_trash",
+                                                active = true,
+                                                size = 20.dp,
+                                                tint = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "Restore (${selectedFiles.size})",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
-                                }
 
-                                Button(
-                                    onClick = { handleDeleteSelected() },
-                                    enabled = selectedFiles.isNotEmpty(),
-                                    shape = RoundedCornerShape(28.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = MaterialTheme.colorScheme.onError,
-                                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(54.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    Button(
+                                        onClick = { handleDeleteSelected() },
+                                        shape = RoundedCornerShape(28.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(54.dp)
                                     ) {
-                                        MaterialSymbol(
-                                            name = "delete_forever",
-                                            active = selectedFiles.isNotEmpty(),
-                                            size = 20.dp,
-                                            tint = if (selectedFiles.isNotEmpty()) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                        )
-                                        Text(
-                                            text = if (selectedFiles.isNotEmpty())
-                                                "Delete (${selectedFiles.size})"
-                                            else
-                                                "Delete",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            maxLines = 1
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "delete_forever",
+                                                active = true,
+                                                size = 20.dp,
+                                                tint = MaterialTheme.colorScheme.onError
+                                            )
+                                            Text(
+                                                text = "Delete (${selectedFiles.size})",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                 }
                             }

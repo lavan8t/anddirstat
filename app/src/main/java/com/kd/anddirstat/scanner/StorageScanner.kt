@@ -31,7 +31,7 @@ class StorageScanner(private val context: Context) {
         includeFreeSpace: Boolean = true,
         scanApps: Boolean = true,
         useCacheIfValid: Boolean = false,
-        onProgress: ((phase: String, detail: String) -> Unit)? = null
+        onProgress: ((phase: String, detail: String, progress: Int, max: Int) -> Unit)? = null
     ): CompactNode = withContext(scanDispatcher) {
         val volumesToScan = if (selectedVolumes.isNotEmpty()) selectedVolumes else FileUtils.getAvailableStorageVolumes(context)
 
@@ -84,7 +84,8 @@ class StorageScanner(private val context: Context) {
                 if (etaSec in 1..3600) " (~${etaSec}s left)" else ""
             } else ""
 
-            onProgress?.invoke("$phase$etaStr", detail)
+            val pct = if (targetUsedBytes > 0) ((bytes.toDouble() / targetUsedBytes.toDouble()) * 100.0).toInt().coerceIn(0, 99) else 0
+            onProgress?.invoke("$phase$etaStr", detail, pct, 100)
         }
 
         val rootChildren = mutableListOf<CompactNode>()
