@@ -123,6 +123,7 @@ object AppNotifier {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            val shortText = if (type == "scan") "Scan" else "Delete"
             val builder = NotificationCompat.Builder(context, CHANNEL_PROGRESS_ID)
                 .setSmallIcon(R.mipmap.ic_launcher_round)
                 .setContentTitle(title)
@@ -135,6 +136,17 @@ object AppNotifier {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setCategory(NotificationCompat.CATEGORY_PROGRESS)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+
+            // Android 16 Live Updates / Status Bar Chip support
+            try {
+                val setRequestPromotedOngoingMethod = builder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
+                setRequestPromotedOngoingMethod.invoke(builder, true)
+            } catch (_: Exception) {}
+
+            try {
+                val setShortCriticalTextMethod = builder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
+                setShortCriticalTextMethod.invoke(builder, shortText)
+            } catch (_: Exception) {}
 
             if (indeterminate || max <= 0) {
                 builder.setProgress(0, 0, true)
