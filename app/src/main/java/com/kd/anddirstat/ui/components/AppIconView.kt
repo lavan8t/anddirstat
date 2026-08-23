@@ -5,9 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.LruCache
 import androidx.compose.foundation.Image
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Collections
@@ -133,7 +130,7 @@ fun AppIconView(
     packageName: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    fallbackVector: ImageVector = Icons.Rounded.Apps,
+    fallbackSymbol: String = "apps",
     fallbackTint: Color = MaterialTheme.colorScheme.primary
 ) {
     val context = LocalContext.current
@@ -154,9 +151,10 @@ fun AppIconView(
             modifier = modifier
         )
     } else {
-        Icon(
-            imageVector = fallbackVector,
-            contentDescription = contentDescription,
+        MaterialSymbol(
+            name = fallbackSymbol,
+            active = true,
+            size = 28.dp,
             tint = fallbackTint,
             modifier = modifier
         )
