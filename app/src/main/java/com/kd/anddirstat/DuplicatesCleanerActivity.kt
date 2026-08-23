@@ -170,66 +170,67 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
         scope.launch {
             isScanning = true
             val groups = withContext(Dispatchers.IO) {
-                val allFiles = mutableListOf<DuplicateFileItem>()
+                val candidateEntries = mutableListOf<Pair<CompactNode, String>>()
                 val root = TreeCacheManager.loadTree(context)
                 if (root != null) {
-                    fun traverse(node: CompactNode, currentPath: String) {
+                    val stack = ArrayDeque<Pair<CompactNode, String>>()
+                    stack.add(root to "")
+                    while (stack.isNotEmpty()) {
+                        val (node, currentPath) = stack.removeLast()
                         val path = if (currentPath.isEmpty()) node.name else "$currentPath/${node.name}"
-                        if (!node.isDirectory && node.size > 0 && !node.name.startsWith(".trashed") && !path.contains("[Recycle Bin]")) {
-                            val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
-                            if (f != null && f.exists() && f.canRead()) {
-                                allFiles.add(DuplicateFileItem(file = f, node = node, path = path, lastModified = f.lastModified()))
-                            }
+                        if (!node.isDirectory && node.size > 1024L && !node.name.startsWith(".trashed") && !path.contains("[Recycle Bin]")) {
+                            candidateEntries.add(node to path)
                         } else {
-                            node.children?.forEach { traverse(it, path) }
+                            node.children?.forEach { stack.add(it to path) }
                         }
                     }
-                    traverse(root, "")
                 }
 
-                if (allFiles.isEmpty()) {
+                if (candidateEntries.isEmpty()) {
                     val rootStorage = Environment.getExternalStorageDirectory()
                     if (rootStorage != null && rootStorage.exists()) {
-                        fun scanDir(dir: File, depth: Int = 0) {
-                            if (depth > 6 || !dir.exists() || !dir.canRead()) return
-                            val files = dir.listFiles() ?: return
+                        val stack = ArrayDeque<File>()
+                        stack.add(rootStorage)
+                        while (stack.isNotEmpty() && candidateEntries.size < 40000) {
+                            val dir = stack.removeLast()
+                            val files = dir.listFiles() ?: continue
                             for (f in files) {
-                                if (f.isFile && f.length() > 0 && !f.name.startsWith(".trashed")) {
+                                if (f.isFile && f.length() > 1024L && !f.name.startsWith(".")) {
                                     val node = CompactNode(name = f.name, isDirectory = false, size = f.length())
-                                    allFiles.add(DuplicateFileItem(file = f, node = node, path = f.absolutePath, lastModified = f.lastModified()))
-                                } else if (f.isDirectory && !f.name.equals("android", ignoreCase = true) && !f.name.startsWith(".")) {
-                                    scanDir(f, depth + 1)
+                                    candidateEntries.add(node to f.absolutePath)
+                                } else if (f.isDirectory && !f.name.equals("Android", ignoreCase = true) && !f.name.startsWith(".")) {
+                                    stack.add(f)
                                 }
                             }
                         }
-                        scanDir(rootStorage)
                     }
                 }
 
-                // Group by size and extension (files >= 10KB), or exact name and size for small files
-                val bySizeAndExt = allFiles.filter { it.file.length() >= 10240L }.groupBy { "${it.file.length()}_${it.file.extension.lowercase()}" }
-                val byExactNameAndSize = allFiles.groupBy { "${it.file.name.lowercase()}_${it.file.length()}" }
+                // Fast candidate grouping by file size
+                val bySize = candidateEntries.groupBy { it.first.size }
+                val duplicateCandidates = bySize.filter { it.value.size > 1 }
 
-                val groupedMap = mutableMapOf<String, MutableList<DuplicateFileItem>>()
-                for ((key, list) in bySizeAndExt) {
-                    if (list.size > 1) {
-                        groupedMap.getOrPut(key) { mutableListOf() }.addAll(list)
+                val resultGroups = mutableListOf<DuplicateGroup>()
+                for ((size, list) in duplicateCandidates) {
+                    val resolvedItems = mutableListOf<DuplicateFileItem>()
+                    for ((node, path) in list) {
+                        val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name) ?: File(path)
+                        if (f.exists() && f.canRead()) {
+                            resolvedItems.add(DuplicateFileItem(file = f, node = node, path = path, lastModified = f.lastModified()))
+                        }
+                    }
+                    val distinct = resolvedItems.distinctBy { it.file.absolutePath }
+                    if (distinct.size > 1) {
+                        resultGroups.add(
+                            DuplicateGroup(
+                                key = "${distinct.first().node.name}_$size",
+                                fileSize = size,
+                                files = distinct.sortedBy { it.lastModified }
+                            )
+                        )
                     }
                 }
-                for ((key, list) in byExactNameAndSize) {
-                    if (list.size > 1) {
-                        groupedMap.getOrPut(key) { mutableListOf() }.addAll(list)
-                    }
-                }
-
-                groupedMap.values.map { list ->
-                    val distinct = list.distinctBy { it.file.absolutePath }
-                    DuplicateGroup(
-                        key = "${distinct.first().node.name}_${distinct.first().file.length()}",
-                        fileSize = distinct.first().file.length(),
-                        files = distinct.sortedBy { it.lastModified }
-                    )
-                }.filter { it.files.size > 1 }
+                resultGroups
             }
 
             duplicateGroups = groups
@@ -282,20 +283,11 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                     }
                 },
                 title = {
-                    Column {
-                        Text(
-                            text = "Duplicate Files",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!isScanning && duplicateGroups.isNotEmpty()) {
-                            Text(
-                                text = "${duplicateGroups.size} groups • ${FileUtils.formatFileSize(totalWastedBytes)} recoverable",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Duplicate Files",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 actions = {
                     if (!isScanning && duplicateGroups.isNotEmpty()) {
@@ -473,7 +465,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                 }
 
                 else -> {
-                    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()) }
+                    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy  h:mm a", Locale.getDefault()) }
 
                     LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
@@ -508,7 +500,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = "${group.files.size} copies • ${FileUtils.formatFileSize(group.fileSize)} each • Waste: ${FileUtils.formatFileSize(group.fileSize * (group.files.size - 1))}",
+                                                text = "${group.files.size} copies  (${FileUtils.formatFileSize(group.fileSize * (group.files.size - 1))} wasted)",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 fontWeight = FontWeight.Medium
@@ -518,7 +510,6 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                         // Quick group selector
                                         val allGroupPaths = group.files.map { it.file.absolutePath }.toSet()
                                         val isGroupFullySelected = allGroupPaths.all { selectedPaths.contains(it) }
-                                        val isGroupPartiallySelected = allGroupPaths.any { selectedPaths.contains(it) } && !isGroupFullySelected
 
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             TextButton(
@@ -557,7 +548,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                                     Spacer(modifier = Modifier.height(4.dp))
 
-                                    // Group Items List
+                                    // Group Items List using Compose ListItem
                                     group.files.forEachIndexed { index, item ->
                                         val isSelected = selectedPaths.contains(item.file.absolutePath)
                                         val isStarred = FavoritesManager.isStarred(context, item.path)
@@ -569,60 +560,49 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                         }
                                         val childColor = remember(item.node) { FileUtils.getNodeIconColor(item.node, false) }
 
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    selectedPaths = if (isSelected) selectedPaths - item.file.absolutePath else selectedPaths + item.file.absolutePath
-                                                }
-                                                .padding(vertical = 6.dp, horizontal = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Checkbox(
-                                                checked = isSelected,
-                                                onCheckedChange = { checked ->
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    selectedPaths = if (checked) selectedPaths + item.file.absolutePath else selectedPaths - item.file.absolutePath
-                                                },
-                                                colors = CheckboxDefaults.colors(
-                                                    checkedColor = MaterialTheme.colorScheme.primary
-                                                )
-                                            )
-
-                                            Spacer(modifier = Modifier.width(4.dp))
-
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(40.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .clickable {
-                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        FileUtils.openFile(context, item.file)
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (isMedia) {
-                                                    MediaThumbnailView(
-                                                        node = item.node,
-                                                        path = item.path,
-                                                        fallbackTint = childColor,
-                                                        modifier = Modifier.fillMaxSize()
+                                        ListItem(
+                                            leadingContent = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Checkbox(
+                                                        checked = isSelected,
+                                                        onCheckedChange = { checked ->
+                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                            selectedPaths = if (checked) selectedPaths + item.file.absolutePath else selectedPaths - item.file.absolutePath
+                                                        },
+                                                        colors = CheckboxDefaults.colors(
+                                                            checkedColor = MaterialTheme.colorScheme.primary
+                                                        )
                                                     )
-                                                } else {
-                                                    MaterialSymbol(
-                                                        name = FileUtils.getNodeSymbolName(item.node, false),
-                                                        active = true,
-                                                        size = 24.dp,
-                                                        tint = childColor
-                                                    )
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(40.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                FileUtils.openFile(context, item.file)
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        if (isMedia) {
+                                                            MediaThumbnailView(
+                                                                node = item.node,
+                                                                path = item.path,
+                                                                fallbackTint = childColor,
+                                                                modifier = Modifier.fillMaxSize()
+                                                            )
+                                                        } else {
+                                                            MaterialSymbol(
+                                                                name = FileUtils.getNodeSymbolName(item.node, false),
+                                                                active = true,
+                                                                size = 24.dp,
+                                                                tint = childColor
+                                                            )
+                                                        }
+                                                    }
                                                 }
-                                            }
-
-                                            Spacer(modifier = Modifier.width(10.dp))
-
-                                            Column(modifier = Modifier.weight(1f)) {
+                                            },
+                                            headlineContent = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
                                                         text = if (index == 0) "Copy #${index + 1} (Oldest)" else if (index == group.files.lastIndex) "Copy #${index + 1} (Newest)" else "Copy #${index + 1}",
@@ -635,20 +615,34 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                         MaterialSymbol("star", active = true, size = 16.dp, tint = Color(0xFFFFB300))
                                                     }
                                                 }
-                                                Text(
-                                                    text = item.file.parent?.replace(Environment.getExternalStorageDirectory().absolutePath, "Storage") ?: item.path,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = dateFormat.format(Date(item.lastModified)),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                                )
-                                            }
-                                        }
+                                            },
+                                            supportingContent = {
+                                                Column(modifier = Modifier.padding(top = 2.dp)) {
+                                                    Text(
+                                                        text = item.file.parent?.replace(Environment.getExternalStorageDirectory().absolutePath, "Storage") ?: item.path,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = dateFormat.format(Date(item.lastModified)),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                            },
+                                            colors = ListItemDefaults.colors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else Color.Transparent
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    selectedPaths = if (isSelected) selectedPaths - item.file.absolutePath else selectedPaths + item.file.absolutePath
+                                                }
+                                        )
                                     }
                                 }
                             }
