@@ -9,6 +9,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -108,6 +110,7 @@ fun ExplorerView(
     onNodeClick: (CompactNode, String) -> Unit,
     onNodesDeleted: (Set<CompactNode>) -> Unit = {},
     onRefresh: () -> Unit = {},
+    onNavigateTo: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -123,8 +126,8 @@ fun ExplorerView(
     var trashedCount by remember { mutableIntStateOf(0) }
     var trashedSize by remember { mutableLongStateOf(0L) }
 
-    val starredEntries = remember(rootNode, starredPaths) {
-        if (starredPaths.isEmpty()) emptyList()
+    val starredEntries = remember(rootNode, starredPaths, isStarredExpanded) {
+        if (!isStarredExpanded || starredPaths.isEmpty()) emptyList()
         else {
             val list = mutableListOf<TopFileEntry>()
             fun collect(node: CompactNode, path: String) {
@@ -231,7 +234,7 @@ fun ExplorerView(
             }
     ) {
         LazyColumn(
-            contentPadding = PaddingValues(bottom = 110.dp),
+            contentPadding = PaddingValues(bottom = 16.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
@@ -248,8 +251,8 @@ fun ExplorerView(
                     Card(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val intent = Intent(context, StarredFilesActivity::class.java)
-                            context.startActivity(intent)
+                            onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.STARRED)
+                                ?: context.startActivity(Intent(context, StarredFilesActivity::class.java))
                         },
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -291,8 +294,8 @@ fun ExplorerView(
                     Card(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val intent = Intent(context, RecycleBinCleanerActivity::class.java)
-                            context.startActivity(intent)
+                            onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
+                                ?: context.startActivity(Intent(context, RecycleBinCleanerActivity::class.java))
                         },
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -373,6 +376,14 @@ fun ExplorerView(
                             }
 
                             if (row.hasChildren) {
+                                val arrowRotation by animateFloatAsState(
+                                    targetValue = if (row.isExpanded) 90f else 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    ),
+                                    label = "explorerChevronRotation"
+                                )
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
@@ -384,10 +395,11 @@ fun ExplorerView(
                                         }
                                 ) {
                                     MaterialSymbol(
-                                        name = if (row.isExpanded) "expand_more" else "chevron_right",
+                                        name = "chevron_right",
                                         active = true,
                                         size = 22.dp,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.graphicsLayer { rotationZ = arrowRotation }
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(2.dp))

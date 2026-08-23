@@ -36,7 +36,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "expand_less" -> R.drawable.sym_expand_less_1
             "more_vert" -> R.drawable.sym_more_vert_1
             "more_horiz" -> R.drawable.sym_more_horiz_1
-            "refresh" -> R.drawable.sym_refresh_1
+            "refresh", "reset", "restart_alt" -> R.drawable.sym_refresh_1
             "settings" -> R.drawable.sym_settings_1
             "description", "draft", "insert_drive_file" -> R.drawable.sym_description_1
             "image" -> R.drawable.sym_image_1
@@ -115,7 +115,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "expand_less" -> R.drawable.sym_expand_less_0
             "more_vert" -> R.drawable.sym_more_vert_0
             "more_horiz" -> R.drawable.sym_more_horiz_0
-            "refresh" -> R.drawable.sym_refresh_0
+            "refresh", "reset", "restart_alt" -> R.drawable.sym_refresh_0
             "settings" -> R.drawable.sym_settings_0
             "description", "draft", "insert_drive_file" -> R.drawable.sym_description_0
             "image" -> R.drawable.sym_image_0

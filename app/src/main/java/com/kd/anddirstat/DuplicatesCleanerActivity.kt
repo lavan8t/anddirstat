@@ -13,6 +13,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -576,11 +578,20 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                 )
                                             }
                                             Spacer(modifier = Modifier.width(6.dp))
+                                            val groupArrowRotation by animateFloatAsState(
+                                                targetValue = if (isExpanded) 180f else 0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                    stiffness = Spring.StiffnessMediumLow
+                                                ),
+                                                label = "groupChevronRotation"
+                                            )
                                             MaterialSymbol(
-                                                name = if (isExpanded) "expand_less" else "expand_more",
+                                                name = "expand_more",
                                                 active = true,
                                                 size = 24.dp,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.graphicsLayer { rotationZ = groupArrowRotation }
                                             )
                                         }
 

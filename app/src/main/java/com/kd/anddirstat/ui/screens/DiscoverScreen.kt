@@ -56,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -94,6 +95,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+data class SearchFilterCategory(
+    val id: String,
+    val label: String,
+    val icon: String? = null
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DiscoverView(
@@ -105,12 +112,12 @@ fun DiscoverView(
     onNodeClick: (CompactNode, String) -> Unit,
     onNodesDeleted: (Set<CompactNode>) -> Unit = {},
     onRefresh: () -> Unit = {},
+    onNavigateTo: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    var selectedPreset by remember { mutableStateOf<String?>("> 1 GB") }
     var selectedEntries by remember(rootNode, searchQuery) { mutableStateOf(setOf<TopFileEntry>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -120,27 +127,27 @@ fun DiscoverView(
     var deleteCurrentFileName by remember { mutableStateOf("") }
     var deleteIsTrash by remember { mutableStateOf(true) }
 
-    val filterPresets = remember {
-        listOf("Starred", "> 1 GB", "Old Downloads", "APKs")
+    val searchFilters = remember {
+        listOf(
+            SearchFilterCategory("all", "All"),
+            SearchFilterCategory("video", "Videos", "movie"),
+            SearchFilterCategory("image", "Images", "image"),
+            SearchFilterCategory("audio", "Audio", "music_note"),
+            SearchFilterCategory("doc", "Documents", "description"),
+            SearchFilterCategory("apk", "APKs", "android"),
+            SearchFilterCategory("archive", "Archives", "inventory_2"),
+            SearchFilterCategory("large", "> 1 GB", "storage"),
+            SearchFilterCategory("old", "Old Downloads", "history")
+        )
     }
+    var selectedSearchFilter by remember { mutableStateOf("all") }
 
     var recentSearches by remember(searchQuery) {
         mutableStateOf(com.kd.anddirstat.util.FavoritesManager.getRecentSearches(context))
     }
 
-    val presetListResults = remember(rootNode, selectedPreset) {
-        if (selectedPreset == "Old Downloads" || selectedPreset == "APKs") {
-            StorageFilterHelper.filterByPreset(rootNode, selectedPreset!!, context)
-        } else emptyList()
-    }
-
-    val displayedFiles = remember(rootNode, selectedPreset, topFiles) {
-        if (selectedPreset != null) {
-            val res = StorageFilterHelper.filterByPreset(rootNode, selectedPreset!!, context)
-            res.ifEmpty { topFiles.take(10) }
-        } else {
-            topFiles.take(10)
-        }
+    val displayedFiles = remember(topFiles) {
+        topFiles.take(10)
     }
 
     val appsContainer = rootNode.children?.firstOrNull { it.name == "Apps & System Packages" }
@@ -148,11 +155,72 @@ fun DiscoverView(
         appsContainer?.children?.sortedByDescending { it.size }?.take(15) ?: emptyList()
     }
 
-    val searchResults = remember(rootNode, searchQuery) {
-        if (searchQuery.isNotBlank()) {
+    val searchResults = remember(rootNode, searchQuery, selectedSearchFilter) {
+        val baseList = if (searchQuery.isNotBlank()) {
             StorageFilterHelper.searchTree(rootNode, searchQuery)
+        } else if (selectedSearchFilter != "all") {
+            when (selectedSearchFilter) {
+                "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB", context)
+                "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads", context)
+                "apk" -> StorageFilterHelper.filterByPreset(rootNode, "APKs", context)
+                else -> {
+                    val results = mutableListOf<TopFileEntry>()
+                    val videoExts = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v", "mpg", "mpeg", "vob")
+                    val imageExts = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "raw", "svg", "gif", "bmp", "ico", "dng", "cr2", "nef")
+                    val audioExts = setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid", "midi", "alac", "amr")
+                    val docExts = setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub", "mobi", "log", "rtf", "html", "htm", "json", "xml", "md", "yaml", "yml")
+                    val archiveExts = setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz")
+
+                    fun collect(node: CompactNode, path: String) {
+                        val fullPath = if (path.isEmpty()) node.name else "$path/${node.name}"
+                        if (!node.isDirectory) {
+                            val ext = node.name.substringAfterLast('.', "").lowercase()
+                            val matches = when (selectedSearchFilter) {
+                                "video" -> ext in videoExts
+                                "image" -> ext in imageExts
+                                "audio" -> ext in audioExts
+                                "doc" -> ext in docExts
+                                "archive" -> ext in archiveExts
+                                else -> false
+                            }
+                            if (matches) {
+                                results.add(TopFileEntry(node, fullPath))
+                            }
+                        }
+                        node.children?.forEach { collect(it, fullPath) }
+                    }
+                    collect(rootNode, "")
+                    results.sortedByDescending { it.node.size }
+                }
+            }
         } else {
             emptyList()
+        }
+
+        if (searchQuery.isNotBlank() && selectedSearchFilter != "all") {
+            val videoExts = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v", "mpg", "mpeg", "vob")
+            val imageExts = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "raw", "svg", "gif", "bmp", "ico", "dng", "cr2", "nef")
+            val audioExts = setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid", "midi", "alac", "amr")
+            val docExts = setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub", "mobi", "log", "rtf", "html", "htm", "json", "xml", "md", "yaml", "yml")
+            val apkExts = setOf("apk", "xapk", "apks", "aab", "obb")
+            val archiveExts = setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz")
+
+            baseList.filter { entry ->
+                val ext = entry.node.name.substringAfterLast('.', "").lowercase()
+                when (selectedSearchFilter) {
+                    "video" -> ext in videoExts
+                    "image" -> ext in imageExts
+                    "audio" -> ext in audioExts
+                    "doc" -> ext in docExts
+                    "apk" -> ext in apkExts || entry.node.children?.any { it.name.startsWith("App Code") } == true
+                    "archive" -> ext in archiveExts
+                    "large" -> entry.node.size >= 1024L * 1024L * 1024L
+                    "old" -> entry.path.contains("/download", ignoreCase = true)
+                    else -> true
+                }
+            }
+        } else {
+            baseList
         }
     }
 
@@ -161,17 +229,63 @@ fun DiscoverView(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface),
-            contentPadding = PaddingValues(bottom = 110.dp)
+            contentPadding = PaddingValues(bottom = 16.dp)
         ) {
             if (isSearchActive || searchQuery.isNotBlank()) {
-                if (searchQuery.isNotBlank()) {
+                // Filter chips row in Search mode
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(searchFilters) { filter ->
+                            val isSelected = selectedSearchFilter == filter.id
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedSearchFilter = filter.id
+                                },
+                                leadingIcon = if (filter.icon != null) {
+                                    {
+                                        MaterialSymbol(
+                                            name = filter.icon,
+                                            active = isSelected,
+                                            size = 16.dp,
+                                            tint = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                } else null,
+                                label = {
+                                    Text(
+                                        text = filter.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                },
+                                shape = CircleShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    labelColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                border = null,
+                                modifier = Modifier.height(36.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (searchQuery.isNotBlank() || selectedSearchFilter != "all") {
                     item {
                         Text(
                             text = "${searchResults.size} results found",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                         )
                     }
 
@@ -184,7 +298,7 @@ fun DiscoverView(
                                     .padding(48.dp)
                             ) {
                                 Text(
-                                    text = "No files found matching \"$searchQuery\"",
+                                    text = if (searchQuery.isNotBlank()) "No files found matching \"$searchQuery\"" else "No files found for selected filter",
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -415,242 +529,24 @@ fun DiscoverView(
                     }
                 }
             } else {
-
-            // 1. Filter Presets Row using official FilterChips
-            item {
-                Spacer(modifier = Modifier.height(10.dp))
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    itemsIndexed(filterPresets) { index, preset ->
-                        val isSelected = selectedPreset == preset
-                        val chipShape = when {
-                            isSelected -> RoundedCornerShape(20.dp)
-                            filterPresets.size == 1 -> RoundedCornerShape(20.dp)
-                            index == 0 -> RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp, topEnd = 4.dp, bottomEnd = 4.dp)
-                            index == filterPresets.lastIndex -> RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 20.dp, bottomEnd = 20.dp)
-                            else -> RoundedCornerShape(4.dp)
-                        }
-
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedPreset = if (isSelected) null else preset
-                            },
-                            label = {
-                                Text(
-                                    text = preset,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            },
-                            shape = chipShape,
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            ),
-                            border = null,
-                            modifier = Modifier.height(40.dp)
-                        )
-                    }
-                }
-            }
-
-            if (selectedPreset == "Old Downloads" || selectedPreset == "APKs") {
                 item {
-                    Text(
-                        text = "${presetListResults.size} $selectedPreset found",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                if (presetListResults.isEmpty()) {
+                // Largest Files Material 3 Expressive Carousel
+                if (displayedFiles.isNotEmpty()) {
                     item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(48.dp)
-                        ) {
-                            Text(
-                                text = "No $selectedPreset found",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = "Largest Files",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
-                } else {
-                    itemsIndexed(
-                        items = presetListResults,
-                        key = { index, entry -> "${entry.path}_preset_$index" }
-                    ) { index, entry ->
-                        val shape = when {
-                            presetListResults.size == 1 -> RoundedCornerShape(24.dp)
-                            index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-                            index == presetListResults.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            else -> RoundedCornerShape(4.dp)
-                        }
-                        val isApp = entry.node.children?.any { it.name.startsWith("App Code") } == true
-                        val appPkg = if (isApp) FileUtils.extractPackageName(entry.node, entry.path, context) else null
-                        val isSelectable = remember(entry.node) {
-                            val n = entry.node.name.trim().lowercase()
-                            n != "[system & os]" && n != "system & os" &&
-                            n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
-                            n != "[free space]" && n != "free space"
-                        }
-                        val isSelected = isSelectable && selectedEntries.contains(entry)
 
-                        Surface(
-                            shape = shape,
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainer,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .clip(shape)
-                                .combinedClickable(
-                                    onClick = {
-                                        if (selectedEntries.isNotEmpty() && isSelectable) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                        } else {
-                                            onNodeClick(entry.node, entry.path)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        if (isSelectable) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                        }
-                                    }
-                                )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .then(
-                                            if (isSelectable) {
-                                                Modifier.clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                                }
-                                            } else Modifier
-                                        )
-                                ) {
-                                    if (appPkg != null) {
-                                        AppIconView(
-                                            packageName = appPkg,
-                                            contentDescription = entry.node.name,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        MediaThumbnailView(
-                                            node = entry.node,
-                                            path = entry.path,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                    if (isSelected) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(MaterialTheme.colorScheme.primary),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            MaterialSymbol(
-                                                name = "check",
-                                                active = true,
-                                                size = 24.dp,
-                                                tint = MaterialTheme.colorScheme.onPrimary
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    val isStarred = remember(entry.path) { com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path) }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = entry.node.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        if (isStarred) {
-                                            MaterialSymbol(
-                                                name = "star",
-                                                active = true,
-                                                size = 18.dp,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = FileUtils.formatFileSize(entry.node.size),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = entry.path.replace(Environment.getExternalStorageDirectory().absolutePath, "Storage"),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(start = 12.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // 2. Largest Files Material 3 Expressive Carousel (No gap between files, text inside cover)
-            if (displayedFiles.isNotEmpty()) {
-                item {
-                    Text(
-                        text = "Largest Files",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                item {
+                    item {
                     val carouselState = rememberCarouselState { displayedFiles.size }
                     val textDropShadow = remember {
                         Shadow(
@@ -776,7 +672,6 @@ fun DiscoverView(
                         }
                     }
                 }
-            }
 
             item {
                 Spacer(modifier = Modifier.height(20.dp))
@@ -874,22 +769,14 @@ fun DiscoverView(
 
                         Spacer(modifier = Modifier.width(16.dp))
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = app.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = pkgName ?: "Application",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            text = app.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
 
                         Spacer(modifier = Modifier.width(12.dp))
 
@@ -923,162 +810,318 @@ fun DiscoverView(
             }
 
             item(key = "utility_tools_grid") {
-                Row(
+                androidx.compose.foundation.layout.BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(horizontal = 16.dp)
                 ) {
-                    // Tool 1: Screenshots Cleaner
-                    Card(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val intent = Intent(context, ScreenshotsCleanerActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(108.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                    val isWide = maxWidth >= 600.dp
+                    if (isWide) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            MaterialSymbol(
-                                name = "screenshot_monitor",
-                                active = true,
-                                size = 28.dp,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Screenshots Cleaner",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            // Tool 1: Screenshots Cleaner
+                            Card(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_SCREENSHOTS)
+                                        ?: context.startActivity(Intent(context, ScreenshotsCleanerActivity::class.java))
+                                },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(108.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    MaterialSymbol(
+                                        name = "screenshot_monitor",
+                                        active = true,
+                                        size = 28.dp,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Screenshots Cleaner",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Tool 2: Empty Folders Cleaner
+                            Card(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_EMPTY_FOLDERS)
+                                        ?: context.startActivity(Intent(context, EmptyFoldersCleanerActivity::class.java))
+                                },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(108.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    MaterialSymbol(
+                                        name = "folder_open",
+                                        active = true,
+                                        size = 28.dp,
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                    Text(
+                                        text = "Empty Folders",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Tool 3: Recycle Bin
+                            Card(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
+                                        ?: context.startActivity(Intent(context, RecycleBinCleanerActivity::class.java))
+                                },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(108.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    MaterialSymbol(
+                                        name = "delete_sweep",
+                                        active = true,
+                                        size = 28.dp,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = "Recycle Bin",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Tool 4: Duplicates Cleaner
+                            Card(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_DUPLICATES)
+                                        ?: context.startActivity(Intent(context, DuplicatesCleanerActivity::class.java))
+                                },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(108.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    MaterialSymbol(
+                                        name = "content_copy",
+                                        active = true,
+                                        size = 28.dp,
+                                        tint = MaterialTheme.colorScheme.tertiary
+                                    )
+                                    Text(
+                                        text = "Duplicates",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
-                    }
+                    } else {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Tool 1: Screenshots Cleaner
+                                Card(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_SCREENSHOTS)
+                                            ?: context.startActivity(Intent(context, ScreenshotsCleanerActivity::class.java))
+                                    },
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(108.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "screenshot_monitor",
+                                            active = true,
+                                            size = 28.dp,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = "Screenshots Cleaner",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
 
-                    // Tool 2: Empty Folders Cleaner
-                    Card(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val intent = Intent(context, EmptyFoldersCleanerActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(108.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            MaterialSymbol(
-                                name = "folder_open",
-                                active = true,
-                                size = 28.dp,
-                                tint = MaterialTheme.colorScheme.secondary
-                            )
-                            Text(
-                                text = "Empty Folders",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
+                                // Tool 2: Empty Folders Cleaner
+                                Card(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_EMPTY_FOLDERS)
+                                            ?: context.startActivity(Intent(context, EmptyFoldersCleanerActivity::class.java))
+                                    },
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(108.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "folder_open",
+                                            active = true,
+                                            size = 28.dp,
+                                            tint = MaterialTheme.colorScheme.secondary
+                                        )
+                                        Text(
+                                            text = "Empty Folders",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Tool 3: Recycle Bin
-                    Card(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val intent = Intent(context, RecycleBinCleanerActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(108.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            MaterialSymbol(
-                                name = "delete_sweep",
-                                active = true,
-                                size = 28.dp,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Text(
-                                text = "Recycle Bin",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Tool 3: Recycle Bin
+                                Card(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
+                                            ?: context.startActivity(Intent(context, RecycleBinCleanerActivity::class.java))
+                                    },
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(108.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "delete_sweep",
+                                            active = true,
+                                            size = 28.dp,
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                        Text(
+                                            text = "Recycle Bin",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
 
-                    // Tool 4: Duplicates Cleaner
-                    Card(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val intent = Intent(context, DuplicatesCleanerActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(108.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            MaterialSymbol(
-                                name = "content_copy",
-                                active = true,
-                                size = 28.dp,
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
-                            Text(
-                                text = "Duplicates",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                                // Tool 4: Duplicates Cleaner
+                                Card(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_DUPLICATES)
+                                            ?: context.startActivity(Intent(context, DuplicatesCleanerActivity::class.java))
+                                    },
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(108.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "content_copy",
+                                            active = true,
+                                            size = 28.dp,
+                                            tint = MaterialTheme.colorScheme.tertiary
+                                        )
+                                        Text(
+                                            text = "Duplicates",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

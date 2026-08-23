@@ -14,6 +14,18 @@ object AppDestinations {
     const val EXPLORER = "explorer"
     const val TYPES = "types"
     const val DISCOVER = "discover"
+
+    // Sub-destinations
+    const val SETTINGS = "settings"
+    const val CLEANER_DUPLICATES = "cleaner_duplicates"
+    const val CLEANER_EMPTY_FOLDERS = "cleaner_empty_folders"
+    const val CLEANER_SCREENSHOTS = "cleaner_screenshots"
+    const val CLEANER_RECYCLE_BIN = "cleaner_recycle_bin"
+    const val STARRED = "starred_files"
+
+    val TOP_LEVEL_DESTINATIONS = setOf(TREE, EXPLORER, TYPES, DISCOVER)
+
+    fun isTopLevel(route: String?): Boolean = route in TOP_LEVEL_DESTINATIONS
 }
 
 data class ExtensionStat(

@@ -1,5 +1,6 @@
 package com.kd.anddirstat.ui.screens
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,16 +28,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,14 +52,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
 import com.kd.anddirstat.AccentColor
 import com.kd.anddirstat.AppTheme
 import com.kd.anddirstat.GoogleSansFlexTitleAndFamily
@@ -60,6 +70,87 @@ import com.kd.anddirstat.GoogleSansFlexTitleDirStatFamily
 import com.kd.anddirstat.R
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.AppNotifier
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
+    val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
+    var currentTheme by remember {
+        mutableStateOf(AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM)
+    }
+    var pureBlack by remember { mutableStateOf(prefs.getBoolean("pure_black", false)) }
+    var dynamicTheme by remember {
+        mutableStateOf(prefs.getBoolean("dynamic_theme", false))
+    }
+    val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
+    var accentColor by remember {
+        mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
+    }
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+
+            TopAppBar(
+                title = {
+                    Text(
+                        "Settings",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        MaterialSymbol("arrow_back", active = true, size = 24.dp)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            SettingsView(
+                currentTheme = currentTheme,
+                onSelectTheme = { theme ->
+                    currentTheme = theme
+                    prefs.edit { putString("app_theme", theme.key) }
+                },
+                pureBlack = pureBlack,
+                onTogglePureBlack = { enabled ->
+                    pureBlack = enabled
+                    prefs.edit { putBoolean("pure_black", enabled) }
+                },
+                dynamicTheme = dynamicTheme,
+                onToggleDynamicTheme = { enabled ->
+                    dynamicTheme = enabled
+                    prefs.edit { putBoolean("dynamic_theme", enabled) }
+                },
+                accentColor = accentColor,
+                onSelectAccent = { color ->
+                    accentColor = color
+                    prefs.edit { putString("accent_color", color.key) }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
 
 data class SelectionOption(
     val label: String,
@@ -100,7 +191,7 @@ fun SettingsView(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         // Appearance Header
@@ -143,7 +234,7 @@ fun SettingsView(
                         },
                         active = true,
                         size = 24.dp,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 colors = ListItemDefaults.colors(
@@ -182,9 +273,9 @@ fun SettingsView(
                     leadingContent = {
                         MaterialSymbol(
                             name = "palette",
-                            active = dynamicTheme,
+                            active = true,
                             size = 24.dp,
-                            tint = if (dynamicTheme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
                     trailingContent = {
@@ -293,7 +384,7 @@ fun SettingsView(
                         name = "delete_sweep",
                         active = true,
                         size = 24.dp,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
                 colors = ListItemDefaults.colors(
