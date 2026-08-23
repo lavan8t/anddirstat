@@ -497,13 +497,58 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
+                                Column(modifier = Modifier.padding(12.dp)) {
                                     // Group Header
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        val firstItem = group.files.firstOrNull()
+                                        if (firstItem != null) {
+                                            val isMedia = remember(firstItem.node.name) {
+                                                val l = firstItem.node.name.lowercase()
+                                                l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+                                                l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+                                                l.endsWith(".apk")
+                                            }
+                                            val childColor = remember(firstItem.node) { FileUtils.getNodeIconColor(firstItem.node, false) }
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .clickable {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        FileUtils.openFile(context, firstItem.file)
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isMedia) {
+                                                    MediaThumbnailView(
+                                                        node = firstItem.node,
+                                                        path = firstItem.path,
+                                                        fallbackTint = childColor,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                } else {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            MaterialSymbol(
+                                                                name = FileUtils.getNodeSymbolName(firstItem.node, false),
+                                                                active = true,
+                                                                size = 24.dp,
+                                                                tint = childColor
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                        }
+
                                         Row(
                                             modifier = Modifier
                                                 .weight(1f)
@@ -514,13 +559,6 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                 },
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            MaterialSymbol(
-                                                name = if (isExpanded) "expand_more" else "chevron_right",
-                                                active = true,
-                                                size = 22.dp,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = group.files.firstOrNull()?.node?.name ?: "Duplicates",
@@ -531,49 +569,41 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = "${group.files.size} copies  (${FileUtils.formatFileSize(group.fileSize * (group.files.size - 1))} wasted)",
+                                                    text = "${group.files.size} copies  (${FileUtils.formatFileSize(group.fileSize * (group.files.size - 1))} can be freed)",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.primary,
                                                     fontWeight = FontWeight.Medium
                                                 )
                                             }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            MaterialSymbol(
+                                                name = if (isExpanded) "expand_less" else "expand_more",
+                                                active = true,
+                                                size = 24.dp,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
 
                                         // Quick group selector
                                         val allGroupPaths = group.files.map { it.file.absolutePath }.toSet()
                                         val isGroupFullySelected = allGroupPaths.all { selectedPaths.contains(it) }
 
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            TextButton(
-                                                onClick = {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    val olderCopies = group.files.sortedBy { it.lastModified }.dropLast(1).map { it.file.absolutePath }
-                                                    selectedPaths = if (olderCopies.all { selectedPaths.contains(it) }) {
-                                                        selectedPaths - olderCopies.toSet()
-                                                    } else {
-                                                        selectedPaths + olderCopies.toSet()
-                                                    }
-                                                },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Select Older", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                            }
-
-                                            Checkbox(
-                                                checked = isGroupFullySelected,
-                                                onCheckedChange = { checked ->
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    selectedPaths = if (checked) {
-                                                        selectedPaths + allGroupPaths
-                                                    } else {
-                                                        selectedPaths - allGroupPaths
-                                                    }
-                                                },
-                                                colors = CheckboxDefaults.colors(
-                                                    checkedColor = MaterialTheme.colorScheme.primary
-                                                )
+                                        Checkbox(
+                                            checked = isGroupFullySelected,
+                                            onCheckedChange = { checked ->
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedPaths = if (checked) {
+                                                    selectedPaths + allGroupPaths
+                                                } else {
+                                                    selectedPaths - allGroupPaths
+                                                }
+                                            },
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = MaterialTheme.colorScheme.primary
                                             )
-                                        }
+                                        )
                                     }
 
                                     if (isExpanded) {

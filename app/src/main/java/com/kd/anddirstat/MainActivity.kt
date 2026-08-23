@@ -88,6 +88,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -203,6 +204,7 @@ fun MainApp() {
         var currentScale by remember { mutableStateOf(1f) }
         var resetZoomKey by remember { mutableStateOf(0) }
         var discoverSearchQuery by remember { mutableStateOf("") }
+        var isDiscoverSearchActive by remember { mutableStateOf(false) }
         var selectedTreeNodes by remember { mutableStateOf(mapOf<CompactNode, String>()) }
         var showTreeDeleteDialog by remember { mutableStateOf(false) }
         var showVolumeSelectionDialog by remember { mutableStateOf(false) }
@@ -500,6 +502,22 @@ fun MainApp() {
         }
     }
 
+    PredictiveBackHandler(enabled = (isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()) && currentRoute == AppDestinations.DISCOVER && selectedNode == null) { progress ->
+        try {
+            isPredictiveBackActive = true
+            progress.collect { backEvent ->
+                predictiveBackSwipeEdge = backEvent.swipeEdge
+                predictiveBackProgress = backEvent.progress
+            }
+            isDiscoverSearchActive = false
+            discoverSearchQuery = ""
+        } catch (_: CancellationException) {
+        } finally {
+            isPredictiveBackActive = false
+            predictiveBackProgress = 0f
+        }
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -762,18 +780,37 @@ fun MainApp() {
                                         .padding(horizontal = 16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    MaterialSymbol(
-                                        name = "search",
-                                        active = true,
-                                        size = 24.dp,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
+                                    if (isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                isDiscoverSearchActive = false
+                                                discoverSearchQuery = ""
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "arrow_back",
+                                                active = true,
+                                                size = 22.dp,
+                                                tint = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    } else {
+                                        MaterialSymbol(
+                                            name = "search",
+                                            active = true,
+                                            size = 24.dp,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
                                     BasicTextField(
                                         value = discoverSearchQuery,
                                         onValueChange = {
                                             discoverSearchQuery = it
                                             if (it.isNotBlank()) {
+                                                isDiscoverSearchActive = true
                                                 com.kd.anddirstat.util.FavoritesManager.addRecentSearch(context, it)
                                             }
                                         },
@@ -793,12 +830,21 @@ fun MainApp() {
                                             }
                                             innerTextField()
                                         },
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .onFocusChanged { focusState ->
+                                                if (focusState.isFocused) {
+                                                    isDiscoverSearchActive = true
+                                                }
+                                            }
                                     )
                                     if (discoverSearchQuery.isNotEmpty()) {
                                         AppTooltip(text = "Clear search") {
                                             IconButton(
-                                                onClick = { discoverSearchQuery = "" },
+                                                onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    discoverSearchQuery = ""
+                                                },
                                                 modifier = Modifier.size(36.dp)
                                             ) {
                                                 MaterialSymbol(
@@ -1460,6 +1506,7 @@ fun MainApp() {
                                     rootNode = (rawScannedNode ?: rootNode)!!,
                                     topFiles = topFiles,
                                     searchQuery = discoverSearchQuery,
+                                    isSearchActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty(),
                                     onSearchQueryChange = { discoverSearchQuery = it },
                                     onNodeClick = { node, path ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

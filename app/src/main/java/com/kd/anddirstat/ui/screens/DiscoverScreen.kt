@@ -96,6 +96,7 @@ fun DiscoverView(
     rootNode: CompactNode,
     topFiles: List<TopFileEntry>,
     searchQuery: String = "",
+    isSearchActive: Boolean = false,
     onSearchQueryChange: ((String) -> Unit)? = null,
     onNodeClick: (CompactNode, String) -> Unit,
     onNodesDeleted: (Set<CompactNode>) -> Unit = {},
@@ -152,242 +153,243 @@ fun DiscoverView(
                 .background(MaterialTheme.colorScheme.surface),
             contentPadding = PaddingValues(bottom = 110.dp)
         ) {
-            if (searchQuery.isNotBlank()) {
-                item {
-                    Text(
-                        text = "${searchResults.size} results found",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                    )
-                }
-
-                if (searchResults.isEmpty()) {
+            if (isSearchActive || searchQuery.isNotBlank()) {
+                if (searchQuery.isNotBlank()) {
                     item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(48.dp)
-                        ) {
-                            Text(
-                                text = "No files found matching \"$searchQuery\"",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = "${searchResults.size} results found",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                        )
                     }
-                } else {
-                    itemsIndexed(
-                        items = searchResults,
-                        key = { index, entry -> "${entry.path}_$index" }
-                    ) { index, entry ->
-                        val shape = when {
-                            searchResults.size == 1 -> RoundedCornerShape(24.dp)
-                            index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-                            index == searchResults.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            else -> RoundedCornerShape(4.dp)
-                        }
-                        val isApp = entry.node.children?.any { it.name.startsWith("App Code") } == true
-                        val appPkg = if (isApp) FileUtils.extractPackageName(entry.node, entry.path, context) else null
-                        val isSelectable = remember(entry.node) {
-                            val n = entry.node.name.trim().lowercase()
-                            n != "[system & os]" && n != "system & os" &&
-                            n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
-                            n != "[free space]" && n != "free space"
-                        }
-                        val isSelected = isSelectable && selectedEntries.contains(entry)
 
-                        Surface(
-                            shape = shape,
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainer,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .combinedClickable(
-                                    onClick = {
-                                        if (selectedEntries.isNotEmpty() && isSelectable) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                        } else {
-                                            onNodeClick(entry.node, entry.path)
+                    if (searchResults.isEmpty()) {
+                        item {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(48.dp)
+                            ) {
+                                Text(
+                                    text = "No files found matching \"$searchQuery\"",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        itemsIndexed(
+                            items = searchResults,
+                            key = { index, entry -> "${entry.path}_$index" }
+                        ) { index, entry ->
+                            val shape = when {
+                                searchResults.size == 1 -> RoundedCornerShape(24.dp)
+                                index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                                index == searchResults.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                                else -> RoundedCornerShape(4.dp)
+                            }
+                            val isApp = entry.node.children?.any { it.name.startsWith("App Code") } == true
+                            val appPkg = if (isApp) FileUtils.extractPackageName(entry.node, entry.path, context) else null
+                            val isSelectable = remember(entry.node) {
+                                val n = entry.node.name.trim().lowercase()
+                                n != "[system & os]" && n != "system & os" &&
+                                n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
+                                n != "[free space]" && n != "free space"
+                            }
+                            val isSelected = isSelectable && selectedEntries.contains(entry)
+
+                            Surface(
+                                shape = shape,
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainer,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (selectedEntries.isNotEmpty() && isSelectable) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                            } else {
+                                                onNodeClick(entry.node, entry.path)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (isSelectable) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                            }
                                         }
-                                    },
-                                    onLongClick = {
-                                        if (isSelectable) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                    )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .then(
+                                                if (isSelectable) {
+                                                    Modifier.clickable {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                                    }
+                                                } else Modifier
+                                            )
+                                    ) {
+                                        if (appPkg != null) {
+                                            AppIconView(
+                                                packageName = appPkg,
+                                                contentDescription = entry.node.name,
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                            )
+                                        } else {
+                                            MaterialSymbol(
+                                                name = FileUtils.getNodeSymbolName(entry.node, false),
+                                                active = true,
+                                                size = 26.dp,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
                                         }
                                     }
-                                )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    val isStarred = remember(entry.path) { com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path) }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = entry.node.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            if (isStarred) {
+                                                MaterialSymbol(
+                                                    name = "star",
+                                                    active = true,
+                                                    size = 18.dp,
+                                                    tint = Color(0xFFEAB308)
+                                                )
+                                            }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = FileUtils.formatFileSize(entry.node.size),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = entry.path,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (index < searchResults.lastIndex) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                            }
+                        }
+                    }
+                } else if (recentSearches.isNotEmpty()) {
+                    // Search bar is opened/focused: show Recent Searches chips
+                    item(key = "recent_searches_section") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp, bottom = 4.dp)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    .padding(horizontal = 18.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
+                                Text(
+                                    text = "Recent Searches",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Clear",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .then(
-                                            if (isSelectable) {
-                                                Modifier.clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                                }
-                                            } else Modifier
-                                        )
-                                ) {
-                                    if (appPkg != null) {
-                                        AppIconView(
-                                            packageName = appPkg,
-                                            contentDescription = entry.node.name,
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                        )
-                                    } else {
-                                        MaterialSymbol(
-                                            name = FileUtils.getNodeSymbolName(entry.node, false),
-                                            active = true,
-                                            size = 26.dp,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                val isStarred = remember(entry.path) { com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path) }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            com.kd.anddirstat.util.FavoritesManager.clearRecentSearches(context)
+                                            recentSearches = emptyList()
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(recentSearches) { query ->
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onSearchQueryChange?.invoke(query)
+                                            }
                                     ) {
-                                        Text(
-                                            text = entry.node.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        if (isStarred) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
                                             MaterialSymbol(
-                                                name = "star",
-                                                active = true,
-                                                size = 18.dp,
-                                                tint = Color(0xFFEAB308)
+                                                name = "history",
+                                                active = false,
+                                                size = 16.dp,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = query,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface
                                             )
                                         }
                                     }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = FileUtils.formatFileSize(entry.node.size),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = entry.path,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(start = 8.dp)
-                                        )
-                                    }
                                 }
                             }
-                        }
-
-                        if (index < searchResults.lastIndex) {
-                            Spacer(modifier = Modifier.height(2.dp))
                         }
                     }
                 }
             } else {
-            // 0. Recent Searches Row (if any)
-            if (recentSearches.isNotEmpty()) {
-                item(key = "recent_searches_section") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 18.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Recent Searches",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "Clear",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        com.kd.anddirstat.util.FavoritesManager.clearRecentSearches(context)
-                                        recentSearches = emptyList()
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(recentSearches) { query ->
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onSearchQueryChange?.invoke(query)
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "history",
-                                            active = false,
-                                            size = 16.dp,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = query,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
 
             // 1. Filter Presets Row using official FilterChips
             item {
