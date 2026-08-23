@@ -16,21 +16,7 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
-import androidx.compose.material.icons.outlined.Android
-import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.kd.anddirstat.model.CompactNode
@@ -55,7 +41,7 @@ object FileUtils {
         val list = mutableListOf<StorageVolumeInfo>()
         val sm = context?.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && sm != null && context != null) {
+        if (sm != null && context != null) {
             val volumes = sm.storageVolumes
             for (vol in volumes) {
                 val state = vol.state
@@ -67,14 +53,9 @@ object FileUtils {
 
                     val dir: File? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         vol.directory
-                    } else {
-                        try {
-                            val getPathMethod = vol.javaClass.getMethod("getPathFile")
-                            getPathMethod.invoke(vol) as? File
-                        } catch (_: Exception) {
-                            if (isPrimary) Environment.getExternalStorageDirectory() else null
-                        }
-                    }
+                    } else if (isPrimary) {
+                        Environment.getExternalStorageDirectory()
+                    } else null
 
                     if (dir != null && dir.exists()) {
                         var total = 0L
@@ -285,6 +266,42 @@ object FileUtils {
         return deleted
     }
 
+    fun restoreTrashedFile(file: File, context: Context? = null): Boolean {
+        if (!file.exists()) return false
+        val parent = file.parentFile ?: return false
+        var cleanName = file.name.removePrefix(".trashed-")
+        if (cleanName.contains("-") && cleanName.substringBefore("-").all { it.isDigit() }) {
+            cleanName = cleanName.substringAfter("-")
+        }
+        var target = File(parent, cleanName)
+        if (target.exists()) {
+            target = File(parent, "restored_$cleanName")
+        }
+        val success = file.renameTo(target)
+        if (success && context != null) {
+            try {
+                android.media.MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(target.absolutePath, file.absolutePath),
+                    null,
+                    null
+                )
+            } catch (_: Exception) {}
+        }
+        return success
+    }
+
+    fun getFolderSize(dir: File): Long {
+        if (!dir.exists()) return 0L
+        if (!dir.isDirectory) return dir.length()
+        var size = 0L
+        val children = dir.listFiles() ?: return 0L
+        for (c in children) {
+            size += if (c.isDirectory) getFolderSize(c) else c.length()
+        }
+        return size
+    }
+
     object AppPackageRegistry {
         private val labelToPkg = java.util.concurrent.ConcurrentHashMap<String, String>()
         private val pkgToLabel = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -369,7 +386,7 @@ object FileUtils {
                 context.startActivity(intent)
                 launched = true
             } catch (_: Exception) {
-                Toast.makeText(context, "Cannot launch uninstaller for $cleanPkg", Toast.LENGTH_SHORT).show()
+                AppNotifier.notify("Cannot launch uninstaller for $cleanPkg")
             }
         }
     }
@@ -439,7 +456,7 @@ object FileUtils {
     fun openFile(context: Context, file: File) {
         val actual = if (file.exists()) file else resolveActualFile(file.path) ?: file
         if (!actual.exists()) {
-            Toast.makeText(context, "File not found: ${actual.name}", Toast.LENGTH_SHORT).show()
+            AppNotifier.notify("File not found: ${actual.name}")
             return
         }
 
@@ -503,7 +520,7 @@ object FileUtils {
                 }
                 context.startActivity(fallbackIntent)
             } catch (_: Exception) {
-                Toast.makeText(context, "No application found to open ${actual.name}", Toast.LENGTH_SHORT).show()
+                AppNotifier.notify("No application found to open ${actual.name}")
             }
         }
     }
@@ -558,38 +575,6 @@ object FileUtils {
             "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz", "dmg", "bin" -> "folder_zip"
             "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py", "sh" -> "code"
             else -> "draft"
-        }
-    }
-
-    fun getNodeIcon(node: CompactNode, isAppNode: Boolean = false): ImageVector {
-        val name = node.name.lowercase()
-        return when {
-            name == "[free space]" -> Icons.Outlined.Storage
-            name == "[system & os]" -> Icons.Outlined.Storage
-            name == "[recycle bin]" || name == "recycle bin" -> Icons.Outlined.Delete
-            name == "apps & system packages" || isAppNode -> Icons.Outlined.Apps
-            node.isDirectory -> if (node.children?.isNotEmpty() == true) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
-            name.endsWith(".apk") || name.endsWith(".apks") || name.endsWith(".xapk") || name.endsWith(".apkm") || name.endsWith(".obb") || name.endsWith(".aab") -> Icons.Outlined.Android
-            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || name.endsWith(".gz") -> Icons.Outlined.Archive
-            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".heic") || name.endsWith(".gif") || name.endsWith(".svg") -> Icons.Outlined.Image
-            name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi") || name.endsWith(".mov") || name.endsWith(".webm") || name.endsWith(".3gp") -> Icons.Outlined.Movie
-            name.endsWith(".mp3") || name.endsWith(".flac") || name.endsWith(".wav") || name.endsWith(".m4a") || name.endsWith(".ogg") || name.endsWith(".opus") -> Icons.Outlined.MusicNote
-            name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".txt") || name.endsWith(".xlsx") || name.endsWith(".pptx") -> Icons.Outlined.Description
-            else -> Icons.AutoMirrored.Outlined.InsertDriveFile
-        }
-    }
-
-    fun getExtensionIcon(extension: String): ImageVector {
-        val ext = extension.lowercase().removePrefix(".")
-        return when (ext) {
-            "trashed", "recycle bin", "[recycle bin]" -> Icons.Outlined.Delete
-            "apk", "apks", "xapk", "apkm", "obb", "aab" -> Icons.Outlined.Android
-            "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> Icons.Outlined.Movie
-            "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> Icons.Outlined.MusicNote
-            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" -> Icons.Outlined.Image
-            "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" -> Icons.Outlined.Description
-            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" -> Icons.Outlined.Archive
-            else -> Icons.AutoMirrored.Outlined.InsertDriveFile
         }
     }
 

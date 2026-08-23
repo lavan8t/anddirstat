@@ -3,7 +3,6 @@ package com.kd.anddirstat.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +15,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -79,7 +77,8 @@ fun ExpressiveNodeDetailsSheet(
         nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") ||
         nameLower.endsWith(".mov") || nameLower.endsWith(".webm") || nameLower.endsWith(".3gp") ||
         nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") ||
-        nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif")
+        nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif") ||
+        nameLower.endsWith(".apk")
     }
 
     val materialItemColor = when {
@@ -180,20 +179,18 @@ fun ExpressiveNodeDetailsSheet(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Total Size Card
+        // Total Size & App Breakdown Card (0 spacing)
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
                     Text(
                         text = "Total Size",
                         style = MaterialTheme.typography.bodyMedium,
@@ -208,47 +205,29 @@ fun ExpressiveNodeDetailsSheet(
                     )
                 }
 
-                Surface(
-                    shape = CircleShape,
-                    color = materialItemColor.copy(alpha = 0.15f),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        MaterialSymbol(
-                            name = if (isAppNode) "apps" else if (node.isDirectory) "folder" else "description",
-                            active = true,
-                            size = 24.dp,
-                            tint = materialItemColor
+                // App Size Breakdown (merged with 0 spacing)
+                if (isAppNode && (codeSize > 0 || dataSize > 0 || cacheSize > 0)) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp)
+                    ) {
+                        AppSizeRow(label = "App Code", size = codeSize)
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
+                        AppSizeRow(label = "Data", size = dataSize)
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        AppSizeRow(label = "Cache", size = cacheSize)
                     }
-                }
-            }
-        }
-
-        // App Size Breakdown Card
-        if (isAppNode && (codeSize > 0 || dataSize > 0 || cacheSize > 0)) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp)
-                ) {
-                    AppSizeRow(label = "App Code", size = codeSize)
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                    AppSizeRow(label = "Data", size = dataSize)
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                    AppSizeRow(label = "Cache", size = cacheSize)
                 }
             }
         }
@@ -299,12 +278,12 @@ fun ExpressiveNodeDetailsSheet(
                                 } catch (_: Exception) {}
                             },
                             colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                containerColor = Color.Transparent,
+                                contentColor = MaterialTheme.colorScheme.onSurface
                             ),
-                            modifier = Modifier.size(52.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                            MaterialSymbol("info", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onSurface)
                         }
 
                         IconButton(
@@ -317,12 +296,12 @@ fun ExpressiveNodeDetailsSheet(
                                 onDismiss()
                             },
                             colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
+                                containerColor = Color.Transparent,
+                                contentColor = MaterialTheme.colorScheme.error
                             ),
-                            modifier = Modifier.size(52.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                            MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.error)
                         }
                     } else if (!isAppNode && !isSpecialNode) {
                         val targetFile = realFile ?: File(path)
@@ -335,27 +314,57 @@ fun ExpressiveNodeDetailsSheet(
                                     onDismiss()
                                 },
                                 colors = IconButtonDefaults.iconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                    containerColor = Color.Transparent,
+                                    contentColor = MaterialTheme.colorScheme.primary
                                 ),
-                                modifier = Modifier.size(52.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
-                                MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                                MaterialSymbol("open_in_new", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+
+                        // Star / Favorite Button (Protects file from deletion)
+                        var isStarred by remember(path) { mutableStateOf(com.kd.anddirstat.util.FavoritesManager.isStarred(context, path)) }
+                        AppTooltip(text = if (isStarred) "Unstar (Remove protection)" else "Star (Protect from deletion)") {
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isStarred = com.kd.anddirstat.util.FavoritesManager.toggleStar(context, path)
+                                    val msg = if (isStarred) "Starred & protected from deletion" else "Unstarred"
+                                    com.kd.anddirstat.util.AppNotifier.notify(msg)
+                                },
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.Transparent,
+                                    contentColor = if (isStarred) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                MaterialSymbol(
+                                    name = if (isStarred) "star" else "star_outline",
+                                    active = isStarred,
+                                    size = 24.dp,
+                                    tint = if (isStarred) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
 
                         IconButton(
                             onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                showDeleteConfirmation = true
+                                if (isStarred) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    com.kd.anddirstat.util.AppNotifier.notify("Starred file is protected. Unstar it manually first to delete.")
+                                } else {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showDeleteConfirmation = true
+                                }
                             },
                             colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
+                                containerColor = Color.Transparent,
+                                contentColor = if (isStarred) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error
                             ),
-                            modifier = Modifier.size(52.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            MaterialSymbol("delete", active = true, size = 24.dp, tint = MaterialTheme.colorScheme.onError)
+                            MaterialSymbol("delete", active = !isStarred, size = 24.dp, tint = if (isStarred) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -370,10 +379,10 @@ fun ExpressiveNodeDetailsSheet(
                                 onToggleSelect()
                             },
                             colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                containerColor = Color.Transparent,
+                                contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             ),
-                            modifier = Modifier.size(52.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             MaterialSymbol(
                                 name = if (isSelected) "check_circle" else "check_circle_outline",
@@ -431,10 +440,10 @@ fun ExpressiveNodeDetailsSheet(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             if (FileUtils.deleteOrTrashFile(realFile, context)) {
                                 val msg = if (isAlreadyTrashed) "Deleted ${realFile.name}" else "Moved to Recycle Bin"
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                com.kd.anddirstat.util.AppNotifier.notify(msg)
                                 onDeleted()
                             } else {
-                                Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
+                                com.kd.anddirstat.util.AppNotifier.notify("Delete failed")
                             }
                         }
                     ) {

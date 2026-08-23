@@ -1,6 +1,7 @@
 package com.kd.anddirstat
 
 import android.app.Activity
+import android.content.Context
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
@@ -18,6 +19,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -69,129 +71,56 @@ val GoogleSansFlexFontFamily = FontFamily(
         resId = R.font.google_sans_flex,
         weight = FontWeight.Normal,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(400),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 0f),
-            FontVariation.width(100f)
+            FontVariation.weight(400)
         )
     ),
     Font(
         resId = R.font.google_sans_flex,
         weight = FontWeight.Medium,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(500),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 0f),
-            FontVariation.width(100f)
+            FontVariation.weight(500)
         )
     ),
     Font(
         resId = R.font.google_sans_flex,
         weight = FontWeight.SemiBold,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(600),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 50f),
-            FontVariation.width(100f)
+            FontVariation.weight(600)
         )
     ),
     Font(
         resId = R.font.google_sans_flex,
         weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(700),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 100f),
-            FontVariation.width(100f)
+            FontVariation.weight(700)
         )
     ),
     Font(
         resId = R.font.google_sans_flex,
         weight = FontWeight.ExtraBold,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(800),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 120f),
-            FontVariation.width(100f)
+            FontVariation.weight(800)
         )
     ),
     Font(
         resId = R.font.google_sans_flex,
         weight = FontWeight.Black,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(900),
-            FontVariation.Setting("ROND", 100f),
-            FontVariation.Setting("GRAD", 150f),
-            FontVariation.width(140f)
+            FontVariation.weight(900)
         )
     )
 )
 
-@OptIn(ExperimentalTextApi::class)
-val GoogleSansFlexStraightFamily = FontFamily(
-    Font(
-        resId = R.font.google_sans_flex,
-        weight = FontWeight.Normal,
-        variationSettings = FontVariation.Settings(
-            FontVariation.weight(400),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 0f),
-            FontVariation.width(100f)
-        )
-    ),
-    Font(
-        resId = R.font.google_sans_flex,
-        weight = FontWeight.Medium,
-        variationSettings = FontVariation.Settings(
-            FontVariation.weight(500),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 0f),
-            FontVariation.width(100f)
-        )
-    ),
-    Font(
-        resId = R.font.google_sans_flex,
-        weight = FontWeight.SemiBold,
-        variationSettings = FontVariation.Settings(
-            FontVariation.weight(600),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 50f),
-            FontVariation.width(100f)
-        )
-    ),
-    Font(
-        resId = R.font.google_sans_flex,
-        weight = FontWeight.Bold,
-        variationSettings = FontVariation.Settings(
-            FontVariation.weight(700),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 100f),
-            FontVariation.width(100f)
-        )
-    ),
-    Font(
-        resId = R.font.google_sans_flex,
-        weight = FontWeight.Black,
-        variationSettings = FontVariation.Settings(
-            FontVariation.weight(900),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 150f),
-            FontVariation.width(100f)
-        )
-    )
-)
-
-val GoogleSansFlexStraightRegularFamily = GoogleSansFlexStraightFamily
+val GoogleSansFlexStraightFamily = GoogleSansFlexFontFamily
+val GoogleSansFlexStraightRegularFamily = GoogleSansFlexFontFamily
 
 @OptIn(ExperimentalTextApi::class)
 val GoogleSansFlexTitleAndFamily = FontFamily(
     Font(
         resId = R.font.google_sans_flex,
+        weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(700),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 100f),
-            FontVariation.width(100f)
+            FontVariation.weight(700)
         )
     )
 )
@@ -200,11 +129,9 @@ val GoogleSansFlexTitleAndFamily = FontFamily(
 val GoogleSansFlexTitleDirStatFamily = FontFamily(
     Font(
         resId = R.font.google_sans_flex,
+        weight = FontWeight.Light,
         variationSettings = FontVariation.Settings(
-            FontVariation.weight(300),
-            FontVariation.Setting("ROND", 0f),
-            FontVariation.Setting("GRAD", 0f),
-            FontVariation.width(85f)
+            FontVariation.weight(300)
         )
     )
 )
@@ -311,6 +238,28 @@ val Material3Typography = Typography(
         lineHeight = 16.sp
     )
 )
+
+@Composable
+fun AndDirStatAppTheme(
+    content: @Composable () -> Unit
+) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
+    val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
+    val currentTheme = remember { AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM }
+    val pureBlack = remember { prefs.getBoolean("pure_black", false) }
+    val dynamicTheme = remember { prefs.getBoolean("dynamic_theme", Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) }
+    val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
+    val accentColor = remember { AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN }
+
+    AndDirStatTheme(
+        appTheme = currentTheme,
+        pureBlack = pureBlack,
+        dynamicTheme = dynamicTheme,
+        accentColor = accentColor,
+        content = content
+    )
+}
 
 @Composable
 fun AndDirStatTheme(

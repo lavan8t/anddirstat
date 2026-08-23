@@ -686,7 +686,7 @@ fun TreemapCanvas(
                 val tile = currentGliding
                 val isMedia = remember(tile.path) {
                     val ext = tile.path.substringAfterLast('.', "").lowercase()
-                    ext in listOf("jpg", "jpeg", "png", "webp", "gif", "mp4", "mkv", "avi", "mov", "webm", "3gp")
+                    ext in listOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "dng", "raw", "bmp", "mp4", "mkv", "avi", "mov", "webm", "3gp", "ts", "m4v", "flv", "wmv", "apk")
                 }
                 val textShadow = remember {
                     Shadow(

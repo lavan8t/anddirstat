@@ -5,8 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.LruCache
 import androidx.compose.foundation.Image
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -17,6 +15,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
 
 object AppIconCache {
     private val memoryCache = LruCache<String, ImageBitmap>(100)
@@ -49,7 +49,7 @@ fun AppIconView(
     packageName: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    fallbackVector: ImageVector = Icons.Outlined.Apps,
+    fallbackVector: ImageVector = Icons.Rounded.Apps,
     fallbackTint: Color = MaterialTheme.colorScheme.primary
 ) {
     val context = LocalContext.current

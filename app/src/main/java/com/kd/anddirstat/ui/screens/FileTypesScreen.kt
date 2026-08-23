@@ -234,6 +234,7 @@ fun FileTypesView(
             FileCategoryGroup("archives", "Archives & Disk Images", "archive", Color(0xFFF59E0B), archiveExts, archives, archives.sumOf { it.totalSize }, archives.sumOf { it.count }),
             FileCategoryGroup("others", "Other Files", "folder", Color(0xFF94A3B8), emptySet(), others, others.sumOf { it.totalSize }, others.sumOf { it.count })
         ).filter { it.totalSize > 0L || it.fileCount > 0 }
+            .sortedByDescending { it.totalSize }
     }
 
     fun collectFilesForExtension(
@@ -492,7 +493,6 @@ fun FileTypesView(
             if (isCatExpanded) {
                 category.stats.forEach { stat ->
                     val statFraction = if (category.totalSize > 0L) (stat.totalSize.toDouble() / category.totalSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
-                    val icon = FileUtils.getExtensionIcon(stat.extension)
                     val iconColor = FileUtils.getFileTypeIconColor(stat.extension, isDark)
                     val hasFiles = stat.count > 0
                     val isStatExpanded = hasFiles && expandedExtensions.contains(stat.extension)
@@ -629,7 +629,6 @@ fun FileTypesView(
                             val fileColor = FileUtils.getNodeIconColor(fileNode, isDark)
                             val isApp = fileNode.children?.any { it.name.startsWith("App Code") } == true
                             val appPkg = if (isApp) FileUtils.extractPackageName(fileNode) else null
-                            val fileIcon = FileUtils.getNodeIcon(fileNode, isApp)
 
                             ListItem(
                                 leadingContent = {

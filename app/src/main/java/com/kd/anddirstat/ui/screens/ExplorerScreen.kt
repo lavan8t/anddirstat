@@ -1,5 +1,7 @@
 package com.kd.anddirstat.ui.screens
 
+import android.content.Intent
+import android.os.Environment
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -30,14 +32,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,9 +49,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,20 +68,22 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.kd.anddirstat.RecycleBinCleanerActivity
 import com.kd.anddirstat.model.CompactNode
+import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.AppTooltip
+import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
+import com.kd.anddirstat.util.FavoritesManager
 import com.kd.anddirstat.util.FileUtils
-import java.util.Locale
-
-import android.widget.Toast
-import androidx.compose.runtime.rememberCoroutineScope
-import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Locale
 
 data class ExplorerTreeRow(
     val node: CompactNode,
@@ -104,6 +110,52 @@ fun ExplorerView(
     var selectedRows by remember(rootNode) { mutableStateOf(mapOf<CompactNode, String>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    var isStarredExpanded by remember { mutableStateOf(false) }
+    var starredPaths by remember(rootNode) { mutableStateOf(FavoritesManager.getStarredPaths(context)) }
+    var trashedCount by remember { mutableIntStateOf(0) }
+    var trashedSize by remember { mutableLongStateOf(0L) }
+
+    val starredEntries = remember(rootNode, starredPaths) {
+        if (starredPaths.isEmpty()) emptyList()
+        else {
+            val list = mutableListOf<TopFileEntry>()
+            fun collect(node: CompactNode, path: String) {
+                val fullPath = if (path.isEmpty()) node.name else "$path/${node.name}"
+                if (starredPaths.contains(fullPath) || FavoritesManager.isStarred(context, fullPath)) {
+                    list.add(TopFileEntry(node, fullPath))
+                }
+                node.children?.forEach { collect(it, fullPath) }
+            }
+            collect(rootNode, "")
+            list.distinctBy { it.path }.sortedByDescending { it.node.size }
+        }
+    }
+
+    LaunchedEffect(rootNode) {
+        withContext(Dispatchers.IO) {
+            var count = 0
+            var size = 0L
+            fun scanDir(dir: File, depth: Int = 0) {
+                if (depth > 5 || !dir.exists() || !dir.canRead()) return
+                val files = dir.listFiles() ?: return
+                for (f in files) {
+                    if (f.name.startsWith(".trashed") || dir.name.startsWith(".trashed")) {
+                        count++
+                        size += if (f.isDirectory) FileUtils.getFolderSize(f) else f.length()
+                    } else if (f.isDirectory && !f.name.equals("android", ignoreCase = true) && !f.name.startsWith(".")) {
+                        scanDir(f, depth + 1)
+                    }
+                }
+            }
+            val rootStorage = Environment.getExternalStorageDirectory()
+            if (rootStorage != null && rootStorage.exists()) {
+                scanDir(rootStorage)
+            }
+            trashedCount = count
+            trashedSize = size
+        }
+    }
+
     var isDeleting by remember { mutableStateOf(false) }
     var deleteCurrentCount by remember { mutableStateOf(0) }
     var deleteTotalCount by remember { mutableStateOf(0) }
@@ -117,7 +169,7 @@ fun ExplorerView(
         outList: ArrayList<ExplorerTreeRow>
     ) {
         val children = parent.children ?: return
-        val valid = children.filter { it.size > 0L }.sortedByDescending { it.size }
+        val valid = children.filter { it.size > 0L && !it.name.startsWith(".trashed") && it.name != "[Recycle Bin]" }.sortedByDescending { it.size }
         for (child in valid) {
             val childPath = if (parentPath == "Device Storage") child.name
                 else if (parentPath.endsWith("/")) "$parentPath${child.name}"
@@ -149,6 +201,234 @@ fun ExplorerView(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            // 1. Starred Special Folder
+            item(key = "virtual_folder_starred") {
+                val hasChildren = starredEntries.isNotEmpty()
+                ListItem(
+                    leadingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (hasChildren) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            isStarredExpanded = !isStarredExpanded
+                                        }
+                                ) {
+                                    MaterialSymbol(
+                                        name = if (isStarredExpanded) "expand_more" else "chevron_right",
+                                        active = true,
+                                        size = 22.dp,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(2.dp))
+                            } else {
+                                Spacer(modifier = Modifier.width(42.dp))
+                            }
+
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFFFB300).copy(alpha = 0.15f),
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    MaterialSymbol(
+                                        name = "star",
+                                        active = true,
+                                        size = 24.dp,
+                                        tint = Color(0xFFFFB300)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    headlineContent = {
+                        Text(
+                            text = "Starred",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = if (starredEntries.isEmpty()) "0 items" else "${starredEntries.size} items • ${FileUtils.formatFileSize(starredEntries.sumOf { it.node.size })}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        isStarredExpanded = !isStarredExpanded
+                    }
+                )
+            }
+
+            if (isStarredExpanded) {
+                if (starredEntries.isEmpty()) {
+                    item(key = "starred_empty_notice") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 68.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "No starred items yet. Long-press any file to star it.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    itemsIndexed(
+                        items = starredEntries,
+                        key = { _, entry -> "starred_item_${entry.path}" }
+                    ) { _, entry ->
+                        val child = entry.node
+                        val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
+                        val isMedia = remember(child.name, child.isDirectory) {
+                            if (child.isDirectory) false
+                            else {
+                                val l = child.name.lowercase()
+                                l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+                                l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+                                l.endsWith(".apk")
+                            }
+                        }
+                        val isSelected = selectedRows.containsKey(child)
+
+                        ListItem(
+                            leadingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Spacer(modifier = Modifier.width(42.dp))
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to entry.path)
+                                            }
+                                    ) {
+                                        if (isMedia) {
+                                            MediaThumbnailView(
+                                                node = child,
+                                                path = entry.path,
+                                                fallbackTint = childColor,
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                            )
+                                        } else {
+                                            MaterialSymbol(
+                                                name = FileUtils.getNodeSymbolName(child, false),
+                                                active = true,
+                                                size = 24.dp,
+                                                tint = childColor
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            headlineContent = {
+                                Text(
+                                    text = child.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = "${FileUtils.formatFileSize(child.size)} • ${entry.path}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent
+                            ),
+                            modifier = Modifier.combinedClickable(
+                                onClick = {
+                                    if (selectedRows.isNotEmpty()) {
+                                        selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to entry.path)
+                                    } else {
+                                        onNodeClick(child, entry.path)
+                                    }
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to entry.path)
+                                }
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 2. Recycle Bin Special Folder
+            item(key = "virtual_folder_recycle_bin") {
+                ListItem(
+                    leadingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(modifier = Modifier.width(42.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    MaterialSymbol(
+                                        name = "delete_sweep",
+                                        active = true,
+                                        size = 24.dp,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    headlineContent = {
+                        Text(
+                            text = "Recycle Bin",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = if (trashedCount == 0) "Empty" else "$trashedCount items • ${FileUtils.formatFileSize(trashedSize)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val intent = Intent(context, RecycleBinCleanerActivity::class.java)
+                        context.startActivity(intent)
+                    }
+                )
+            }
+
+            item(key = "virtual_folders_divider") {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                )
+            }
+
             itemsIndexed(
                 items = visibleRows,
                 key = { index, row -> "${row.path}_${row.node.name}_${row.depth}_$index" }
@@ -164,10 +444,10 @@ fun ExplorerView(
                         val l = child.name.lowercase()
                         l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
                         l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
-                        l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp")
+                        l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") ||
+                        l.endsWith(".apk")
                     }
                 }
-                val icon = FileUtils.getNodeIcon(child, isApp)
                 val isSelectable = remember(child) {
                     val n = child.name.trim().lowercase()
                     n != "[system & os]" && n != "system & os" &&
@@ -354,19 +634,19 @@ fun ExplorerView(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         AppTooltip(text = "Clear selection") {
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainer,
-                                modifier = Modifier.size(36.dp)
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.size(42.dp)
                             ) {
                                 IconButton(
                                     onClick = {
@@ -378,7 +658,7 @@ fun ExplorerView(
                                     MaterialSymbol(
                                         name = "close",
                                         active = true,
-                                        size = 18.dp,
+                                        size = 22.dp,
                                         tint = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
@@ -393,32 +673,41 @@ fun ExplorerView(
                             )
                             Text(
                                 text = FileUtils.formatFileSize(selectedRows.keys.sumOf { it.size }, context),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                    AppTooltip(text = "Delete selected") {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            modifier = Modifier.size(42.dp)
+                    Button(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showDeleteDialog = true
+                        },
+                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                        modifier = Modifier.height(44.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showDeleteDialog = true
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                MaterialSymbol(
-                                    name = "delete",
-                                    active = true,
-                                    size = 20.dp,
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
+                            MaterialSymbol(
+                                name = "delete",
+                                active = true,
+                                size = 20.dp,
+                                tint = MaterialTheme.colorScheme.onError
+                            )
+                            Text(
+                                text = "Delete",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onError
+                            )
                         }
                     }
                 }
@@ -435,9 +724,10 @@ fun ExplorerView(
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
                 icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Delete,
-                        contentDescription = null,
+                    MaterialSymbol(
+                        name = "delete",
+                        active = true,
+                        size = 28.dp,
                         tint = MaterialTheme.colorScheme.error
                     )
                 },
@@ -473,17 +763,35 @@ fun ExplorerView(
                             showDeleteDialog = false
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val itemsToDelete = selectedRows.toList()
+                            val (starredItems, unstarredItems) = itemsToDelete.partition { (node, path) ->
+                                com.kd.anddirstat.util.FavoritesManager.isStarred(context, path)
+                            }
+
+                            if (unstarredItems.isEmpty()) {
+                                com.kd.anddirstat.util.AppNotifier.notify("Cannot delete starred files. Unstar them manually first.")
+                                return@TextButton
+                            }
+
                             scope.launch {
                                 isDeleting = true
-                                deleteTotalCount = itemsToDelete.size
+                                deleteTotalCount = unstarredItems.size
                                 deleteIsTrash = !allAlreadyTrashed
                                 var processedCount = 0
                                 val packagesToUninstall = mutableListOf<String>()
 
                                 withContext(Dispatchers.IO) {
-                                    itemsToDelete.forEachIndexed { index, (node, path) ->
+                                    unstarredItems.forEachIndexed { index, (node, path) ->
                                         deleteCurrentCount = index + 1
                                         deleteCurrentFileName = node.name
+                                        com.kd.anddirstat.util.AppNotifier.updateProgress(
+                                            context = context,
+                                            title = if (allAlreadyTrashed) "Deleting permanently..." else "Moving to Recycle Bin...",
+                                            detail = "${index + 1} / ${unstarredItems.size}: ${node.name}",
+                                            progress = index + 1,
+                                            max = unstarredItems.size,
+                                            indeterminate = false,
+                                            type = "delete"
+                                        )
                                         val pkg = FileUtils.extractPackageName(node, path, context)
                                         if (pkg != null) {
                                             packagesToUninstall.add(pkg)
@@ -506,8 +814,9 @@ fun ExplorerView(
 
                                 isDeleting = false
                                 selectedRows = emptyMap()
-                                val msg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
+                                val msg = if (starredItems.isNotEmpty()) "$baseMsg (Skipped ${starredItems.size} starred items)" else baseMsg
+                                com.kd.anddirstat.util.AppNotifier.finishActivity(context, msg)
                                 onRefresh()
                             }
                         }

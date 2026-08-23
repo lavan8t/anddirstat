@@ -82,20 +82,6 @@ object StorageFilterHelper {
             }
         }
 
-        if (trashedItems.isNotEmpty()) {
-            val trashTotal = trashedItems.sumOf { it.size }
-            if (trashTotal > 0L) {
-                newChildren.add(
-                    CompactNode(
-                        name = "[Recycle Bin]",
-                        isDirectory = true,
-                        size = trashTotal,
-                        children = trashedItems.toTypedArray()
-                    )
-                )
-            }
-        }
-
         val totalSize = if (showFreeSpace && deviceTotalBytes > 0L) {
             deviceTotalBytes
         } else {
@@ -165,7 +151,22 @@ object StorageFilterHelper {
     fun aggregateTopFiles(rootNode: CompactNode, limit: Int = 30): List<TopFileEntry> {
         val list = mutableListOf<TopFileEntry>()
         fun collect(node: CompactNode, currentPath: String) {
-            if (node.name == "[Free Space]" || node.name == "[System & OS]") return
+            val name = node.name
+            // Skip non-internal-storage elements: Free space, System OS, Recycle Bin, and Apps container
+            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+                name == "Apps & System Packages" || name.startsWith(".trashed") ||
+                currentPath.startsWith("Apps & System Packages") || currentPath.contains("/Apps & System Packages")
+            ) return
+
+            // Skip synthetic app split nodes (App Code, Data, Cache)
+            if (name.startsWith("App Code") || name.startsWith("APK (") ||
+                name.startsWith("Data (") || name.startsWith("Cache (") ||
+                name.startsWith("External Data (") || name.startsWith("External Media (")
+            ) return
+
+            // Skip Android/data and Android/obb app data folders
+            if (currentPath.contains("Android/data") || currentPath.contains("Android/obb")) return
+
             if (!node.isDirectory) {
                 list.add(TopFileEntry(node, currentPath))
             } else {
@@ -210,15 +211,62 @@ object StorageFilterHelper {
         return result.sortedByDescending { it.node.size }.take(limit)
     }
 
-    fun filterByPreset(rootNode: CompactNode, preset: String): List<TopFileEntry> {
+    fun findDuplicates(rootNode: CompactNode, limit: Int = 200): List<TopFileEntry> {
+        val allFiles = mutableListOf<TopFileEntry>()
+        fun traverse(node: CompactNode, currentPath: String) {
+            val path = if (currentPath.isEmpty()) node.name else "$currentPath/${node.name}"
+            if (!node.isDirectory) {
+                if (node.size > 0 && !node.name.startsWith(".trashed") && !path.contains("[Recycle Bin]")) {
+                    allFiles.add(TopFileEntry(node, path))
+                }
+            } else {
+                node.children?.forEach { traverse(it, path) }
+            }
+        }
+        traverse(rootNode, "")
+
+        val duplicateList = mutableListOf<TopFileEntry>()
+        val seen = mutableSetOf<String>()
+
+        // 1. Match files by exact byte size (>= 10KB) with same extension
+        val bySizeAndExt = allFiles.filter { it.node.size >= 10240L }
+            .groupBy { "${it.node.size}_${it.node.name.substringAfterLast('.', "").lowercase()}" }
+
+        for ((_, group) in bySizeAndExt) {
+            if (group.size > 1) {
+                for (entry in group) {
+                    if (seen.add(entry.path)) {
+                        duplicateList.add(entry)
+                    }
+                }
+            }
+        }
+
+        // 2. Match files by exact name and size for smaller files
+        val byExactNameAndSize = allFiles.groupBy { "${it.node.name.lowercase()}_${it.node.size}" }
+        for ((_, group) in byExactNameAndSize) {
+            if (group.size > 1) {
+                for (entry in group) {
+                    if (seen.add(entry.path)) {
+                        duplicateList.add(entry)
+                    }
+                }
+            }
+        }
+
+        return duplicateList.sortedByDescending { it.node.size }.take(limit)
+    }
+
+    fun filterByPreset(rootNode: CompactNode, preset: String, context: android.content.Context? = null): List<TopFileEntry> {
         val allFiles = aggregateTopFiles(rootNode, limit = 500)
         return when (preset) {
+            "Starred" -> if (context != null) {
+                val starred = com.kd.anddirstat.util.FavoritesManager.getStarredPaths(context)
+                allFiles.filter { starred.contains(it.path) || com.kd.anddirstat.util.FavoritesManager.isStarred(context, it.path) }
+            } else emptyList()
             "> 1 GB" -> allFiles.filter { it.node.size >= 1024L * 1024L * 1024L }
             "Screenshots" -> getScreenshots(rootNode)
-            "Duplicates" -> {
-                val grouped = allFiles.groupBy { "${it.node.name}_${it.node.size}" }
-                grouped.filter { it.value.size > 1 }.values.flatten()
-            }
+            "Duplicates" -> findDuplicates(rootNode)
             "Old Downloads" -> allFiles.filter { it.path.contains("Download", ignoreCase = true) }
             "APKs" -> allFiles.filter {
                 val n = it.node.name.lowercase()
@@ -231,6 +279,10 @@ object StorageFilterHelper {
     fun searchTree(rootNode: CompactNode, rawQuery: String): List<TopFileEntry> {
         val query = rawQuery.trim()
         if (query.isEmpty()) return emptyList()
+
+        if (query.equals("Duplicates", ignoreCase = true) || query.equals("Duplicate", ignoreCase = true)) {
+            return findDuplicates(rootNode)
+        }
 
         val allFiles = aggregateTopFiles(rootNode, limit = 1000)
 

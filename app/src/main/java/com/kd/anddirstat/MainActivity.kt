@@ -1,11 +1,17 @@
 package com.kd.anddirstat
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import com.kd.anddirstat.util.AppNotifier
+import com.kd.anddirstat.util.LiveActivityPill
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,10 +32,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,10 +49,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -62,14 +66,14 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.foundation.IndicationNodeFactory
-import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -94,7 +98,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.kd.anddirstat.model.AppDestinations
 import com.kd.anddirstat.model.CompactNode
-import com.kd.anddirstat.ui.screens.SettingsView
 import com.kd.anddirstat.model.ExtensionStat
 import com.kd.anddirstat.model.NavEntry
 import com.kd.anddirstat.model.TopFileEntry
@@ -286,6 +289,7 @@ fun MainApp() {
         isLoading = true
         scanPhase = "Analyzing storage..."
         scanDetail = "Starting scan..."
+        AppNotifier.updateProgress(context, title = scanPhase, detail = scanDetail, indeterminate = true, type = "scan")
         scope.launch {
             val freeSpacePref = prefs.getBoolean("show_free_space", true)
             val systemAppsPref = prefs.getBoolean("show_system_apps", true)
@@ -299,6 +303,7 @@ fun MainApp() {
             val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true) { phase, detail ->
                 scanPhase = phase
                 scanDetail = detail
+                AppNotifier.updateProgress(context, title = phase, detail = detail, indeterminate = true, type = "scan")
             }
             rawScannedNode = scanned
             deviceTotalBytes = scanned.size
@@ -315,6 +320,7 @@ fun MainApp() {
             selectedNode = null
             selectedPath = null
             isLoading = false
+            AppNotifier.finishActivity(context, "Storage scan complete (${FileUtils.formatFileSize(scanned.size)})")
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
 
             // Prefetch app icons asynchronously in background IO
@@ -357,15 +363,32 @@ fun MainApp() {
         if (hasStoragePermission) requestScan()
     }
 
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {}
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     LaunchedEffect(hasStoragePermission) {
         if (hasStoragePermission && rootNode == null) {
-            isLoading = true
-            scanPhase = "Restoring storage map..."
-            scanDetail = "Loading cached data..."
+            val vols = FileUtils.getAvailableStorageVolumes(context)
             val cached = withContext(Dispatchers.IO) {
-                TreeCacheManager.loadTree(context)
+                try {
+                    TreeCacheManager.loadTree(context)
+                } catch (_: Exception) {
+                    null
+                }
             }
             if (cached != null) {
+                isLoading = true
+                scanPhase = "Restoring storage map..."
+                scanDetail = "Loading saved data..."
                 rawScannedNode = cached
                 deviceTotalBytes = cached.size
                 val freeSpacePref = prefs.getBoolean("show_free_space", true)
@@ -382,7 +405,12 @@ fun MainApp() {
                 topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
                 isLoading = false
             } else {
-                requestScan()
+                if (vols.isNotEmpty()) {
+                    performScan(vols)
+                } else {
+                    isLoading = false
+                    requestScan()
+                }
             }
         }
     }
@@ -419,9 +447,18 @@ fun MainApp() {
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        com.kd.anddirstat.util.AppNotifier.messages.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             val renderHeaderActions: @Composable () -> Unit = {
                 Row(
@@ -604,7 +641,7 @@ fun MainApp() {
                                 Text(
                                     text = "And",
                                     fontFamily = GoogleSansFlexTitleAndFamily,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.SemiBold,
                                     fontSize = 22.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -659,17 +696,17 @@ fun MainApp() {
                     TopAppBar(
                         title = {
                             Surface(
-                                shape = CircleShape,
+                                shape = RoundedCornerShape(28.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(48.dp)
-                                    .padding(end = 4.dp)
+                                    .height(56.dp)
+                                    .padding(end = 8.dp)
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(horizontal = 14.dp),
+                                        .padding(horizontal = 16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     MaterialSymbol(
@@ -681,17 +718,23 @@ fun MainApp() {
                                     Spacer(modifier = Modifier.width(12.dp))
                                     BasicTextField(
                                         value = discoverSearchQuery,
-                                        onValueChange = { discoverSearchQuery = it },
+                                        onValueChange = {
+                                            discoverSearchQuery = it
+                                            if (it.isNotBlank()) {
+                                                com.kd.anddirstat.util.FavoritesManager.addRecentSearch(context, it)
+                                            }
+                                        },
                                         singleLine = true,
                                         textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 16.sp
                                         ),
                                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                         decorationBox = { innerTextField ->
                                             if (discoverSearchQuery.isEmpty()) {
                                                 Text(
                                                     text = "Search files...",
-                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                                 )
                                             }
@@ -703,7 +746,7 @@ fun MainApp() {
                                         AppTooltip(text = "Clear search") {
                                             IconButton(
                                                 onClick = { discoverSearchQuery = "" },
-                                                modifier = Modifier.size(32.dp)
+                                                modifier = Modifier.size(36.dp)
                                             ) {
                                                 MaterialSymbol(
                                                     name = "close",
@@ -718,7 +761,7 @@ fun MainApp() {
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            containerColor = MaterialTheme.colorScheme.surface,
                             titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
@@ -748,7 +791,7 @@ fun MainApp() {
                         animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
                         label = "navIconScale"
                     )
-                    val targetWeight = if (selected) 750f else 450f
+                    val targetWeight = if (selected) 700f else 400f
                     val animatedWeight by animateFloatAsState(
                         targetValue = targetWeight,
                         animationSpec = spring(
@@ -896,18 +939,18 @@ fun MainApp() {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        .padding(horizontal = 18.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         Surface(
                                             shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.surfaceContainer,
-                                            modifier = Modifier.size(36.dp)
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            modifier = Modifier.size(42.dp)
                                         ) {
                                             IconButton(
                                                 onClick = { selectedTreeNodes = emptyMap() },
@@ -916,7 +959,7 @@ fun MainApp() {
                                                 MaterialSymbol(
                                                     name = "close",
                                                     active = true,
-                                                    size = 18.dp,
+                                                    size = 22.dp,
                                                     tint = MaterialTheme.colorScheme.onSurface
                                                 )
                                             }
@@ -930,26 +973,37 @@ fun MainApp() {
                                             )
                                             Text(
                                                 text = FileUtils.formatFileSize(selectedTreeNodes.keys.sumOf { it.size }, context),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.SemiBold,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.errorContainer,
-                                        modifier = Modifier.size(42.dp)
+                                    Button(
+                                        onClick = { showTreeDeleteDialog = true },
+                                        shape = RoundedCornerShape(24.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                                        modifier = Modifier.height(44.dp)
                                     ) {
-                                        IconButton(
-                                            onClick = { showTreeDeleteDialog = true },
-                                            modifier = Modifier.fillMaxSize()
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             MaterialSymbol(
                                                 name = "delete",
                                                 active = true,
                                                 size = 20.dp,
-                                                tint = MaterialTheme.colorScheme.onErrorContainer
+                                                tint = MaterialTheme.colorScheme.onError
+                                            )
+                                            Text(
+                                                text = "Delete",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                color = MaterialTheme.colorScheme.onError
                                             )
                                         }
                                     }
@@ -968,9 +1022,10 @@ fun MainApp() {
                         AlertDialog(
                             onDismissRequest = { showTreeDeleteDialog = false },
                             icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Delete,
-                                    contentDescription = null,
+                                MaterialSymbol(
+                                    name = "delete",
+                                    active = true,
+                                    size = 28.dp,
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             },
@@ -1005,15 +1060,24 @@ fun MainApp() {
                                     onClick = {
                                         showTreeDeleteDialog = false
                                         val itemsToDelete = selectedTreeNodes.toList()
+                                        val (starredItems, unstarredItems) = itemsToDelete.partition { (node, path) ->
+                                            com.kd.anddirstat.util.FavoritesManager.isStarred(context, path)
+                                        }
+
+                                        if (unstarredItems.isEmpty()) {
+                                            com.kd.anddirstat.util.AppNotifier.notify("Cannot delete starred files. Unstar them manually first.")
+                                            return@TextButton
+                                        }
+
                                         scope.launch {
                                             isTreeDeleting = true
-                                            treeDeleteTotalCount = itemsToDelete.size
+                                            treeDeleteTotalCount = unstarredItems.size
                                             treeDeleteIsTrash = !allAlreadyTrashed
                                             var processedCount = 0
                                             val packagesToUninstall = mutableListOf<String>()
 
                                             withContext(Dispatchers.IO) {
-                                                itemsToDelete.forEachIndexed { index, (node, path) ->
+                                                unstarredItems.forEachIndexed { index, (node, path) ->
                                                     treeDeleteCurrentCount = index + 1
                                                     treeDeleteCurrentFileName = node.name
                                                     val pkg = FileUtils.extractPackageName(node, path, context)
@@ -1038,8 +1102,9 @@ fun MainApp() {
 
                                             isTreeDeleting = false
                                             selectedTreeNodes = emptyMap()
-                                            val msg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
+                                            val msg = if (starredItems.isNotEmpty()) "$baseMsg (Skipped ${starredItems.size} starred items)" else baseMsg
+                                            com.kd.anddirstat.util.AppNotifier.notify(msg)
                                             performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                         }
                                     }
@@ -1274,6 +1339,7 @@ fun MainApp() {
                                     rootNode = rootNode!!,
                                     topFiles = topFiles,
                                     searchQuery = discoverSearchQuery,
+                                    onSearchQueryChange = { discoverSearchQuery = it },
                                     onNodeClick = { node, path ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedNode = node
@@ -1289,6 +1355,13 @@ fun MainApp() {
                     }
                 }
             }
+
+            // Live Activity Floating Pill
+            LiveActivityPill(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 4.dp)
+            )
 
             // Usage Access Warning Banner
             if (hasStoragePermission && !hasUsageAccess) {

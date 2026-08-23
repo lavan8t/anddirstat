@@ -22,8 +22,8 @@ object TreeCacheManager {
 
     suspend fun saveTree(context: Context, rootNode: CompactNode) = withContext(Dispatchers.IO) {
         try {
-            val file = File(context.cacheDir, CACHE_FILE_NAME)
-            val tempFile = File(context.cacheDir, "$CACHE_FILE_NAME.tmp")
+            val file = File(context.filesDir, CACHE_FILE_NAME)
+            val tempFile = File(context.filesDir, "$CACHE_FILE_NAME.tmp")
 
             DataOutputStream(BufferedOutputStream(FileOutputStream(tempFile), 64 * 1024)).use { out ->
                 out.writeInt(MAGIC_HEADER)
@@ -38,6 +38,9 @@ object TreeCacheManager {
                 tempFile.renameTo(file)
             }
         } catch (_: Exception) {
+            try {
+                File(context.filesDir, "$CACHE_FILE_NAME.tmp").delete()
+            } catch (_: Exception) {}
         }
     }
 
@@ -45,16 +48,22 @@ object TreeCacheManager {
         context: Context,
         maxAgeMs: Long = DEFAULT_CACHE_EXPIRY_MS
     ): CompactNode? = withContext(Dispatchers.IO) {
-        try {
-            val file = File(context.cacheDir, CACHE_FILE_NAME)
-            if (!file.exists() || !file.canRead()) return@withContext null
+        val file = File(context.filesDir, CACHE_FILE_NAME)
+        if (!file.exists() || !file.canRead() || file.length() < 16) return@withContext null
 
+        try {
             DataInputStream(BufferedInputStream(FileInputStream(file), 64 * 1024)).use { input ->
                 val magic = input.readInt()
-                if (magic != MAGIC_HEADER) return@withContext null
+                if (magic != MAGIC_HEADER) {
+                    file.delete()
+                    return@withContext null
+                }
 
                 val version = input.readInt()
-                if (version != CACHE_VERSION) return@withContext null
+                if (version != CACHE_VERSION) {
+                    file.delete()
+                    return@withContext null
+                }
 
                 val timestamp = input.readLong()
                 val age = System.currentTimeMillis() - timestamp
@@ -66,6 +75,7 @@ object TreeCacheManager {
                 readNode(input)
             }
         } catch (_: Exception) {
+            try { file.delete() } catch (_: Exception) {}
             null
         }
     }

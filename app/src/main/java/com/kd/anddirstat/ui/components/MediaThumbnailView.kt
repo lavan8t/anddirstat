@@ -59,26 +59,54 @@ object MediaThumbnailCache {
         try {
             var bmp: Bitmap? = null
 
-            // 1. ContentResolver / MediaStore query
-            try {
-                val baseUri = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                val proj = arrayOf(MediaStore.MediaColumns._ID)
-                context.contentResolver.query(
-                    baseUri,
-                    proj,
-                    "${MediaStore.MediaColumns.DATA}=?",
-                    arrayOf(actual.absolutePath),
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-                        val itemUri = ContentUris.withAppendedId(baseUri, id)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            bmp = context.contentResolver.loadThumbnail(itemUri, Size(320, 320), null)
+            // 0. APK Icon extraction
+            val isApk = actual.name.endsWith(".apk", ignoreCase = true) || path.endsWith(".apk", ignoreCase = true)
+            if (isApk) {
+                try {
+                    val pm = context.packageManager
+                    val info = pm.getPackageArchiveInfo(actual.absolutePath, 0)
+                    if (info != null && info.applicationInfo != null) {
+                        val appInfo = info.applicationInfo!!
+                        appInfo.sourceDir = actual.absolutePath
+                        appInfo.publicSourceDir = actual.absolutePath
+                        val drawable = appInfo.loadIcon(pm)
+                        if (drawable != null) {
+                            if (drawable is android.graphics.drawable.BitmapDrawable && drawable.bitmap != null) {
+                                bmp = drawable.bitmap
+                            } else {
+                                val b = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(b)
+                                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                                drawable.draw(canvas)
+                                bmp = b
+                            }
                         }
                     }
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
+
+            // 1. ContentResolver / MediaStore query
+            if (bmp == null) {
+                try {
+                    val baseUri = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                    val proj = arrayOf(MediaStore.MediaColumns._ID)
+                    context.contentResolver.query(
+                        baseUri,
+                        proj,
+                        "${MediaStore.MediaColumns.DATA}=?",
+                        arrayOf(actual.absolutePath),
+                        null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                            val itemUri = ContentUris.withAppendedId(baseUri, id)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                bmp = context.contentResolver.loadThumbnail(itemUri, Size(320, 320), null)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
 
             // 2. ThumbnailUtils Android 10+
             if (bmp == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -102,7 +130,24 @@ object MediaThumbnailCache {
                 } catch (_: Exception) {}
             }
 
-            // 4. Fallback for Images: BitmapFactory
+            // 4. Fallback for Images: ImageDecoder (Android 9+ / API 28+ for HEIC, HEIF, WebP, AVIF)
+            if (bmp == null && !isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    val source = android.graphics.ImageDecoder.createSource(actual)
+                    bmp = android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                        val width = info.size.width
+                        val height = info.size.height
+                        if (width > 320 || height > 320) {
+                            val maxDim = maxOf(width, height)
+                            val scale = 320f / maxDim
+                            decoder.setTargetSize((width * scale).toInt().coerceAtLeast(1), (height * scale).toInt().coerceAtLeast(1))
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 5. Fallback for Images: BitmapFactory
             if (bmp == null && !isVideo) {
                 try {
                     val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -123,7 +168,7 @@ object MediaThumbnailCache {
                 } catch (_: Exception) {}
             }
 
-            // 5. Fallback: Search DCIM/.thumbnails
+            // 6. Fallback: Search DCIM/.thumbnails
             if (bmp == null) {
                 try {
                     val dcimThumbDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), ".thumbnails")
@@ -159,6 +204,7 @@ fun MediaThumbnailView(
 ) {
     val context = LocalContext.current
     val nameLower = remember(node.name) { node.name.lowercase() }
+    val isApk = remember(nameLower) { nameLower.endsWith(".apk") || nameLower.startsWith("app code (") }
     val isVideo = remember(nameLower) {
         nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") ||
         nameLower.endsWith(".mov") || nameLower.endsWith(".webm") || nameLower.endsWith(".3gp") ||
@@ -166,16 +212,17 @@ fun MediaThumbnailView(
     }
     val isImage = remember(nameLower) {
         nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") ||
-        nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif") ||
-        nameLower.endsWith(".bmp") || nameLower.endsWith(".svg")
+        nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".heif") ||
+        nameLower.endsWith(".gif") || nameLower.endsWith(".bmp") || nameLower.endsWith(".svg") ||
+        nameLower.endsWith(".dng") || nameLower.endsWith(".raw")
     }
 
     var thumbnailBitmap by remember(path, node.name) {
         mutableStateOf(MediaThumbnailCache.get(path))
     }
 
-    LaunchedEffect(path, node.name, isVideo, isImage) {
-        if ((isVideo || isImage) && thumbnailBitmap == null) {
+    LaunchedEffect(path, node.name, isVideo, isImage, isApk) {
+        if ((isVideo || isImage || isApk) && thumbnailBitmap == null) {
             thumbnailBitmap = MediaThumbnailCache.loadThumbnail(context, path, node.name, isVideo)
         }
     }
@@ -192,11 +239,11 @@ fun MediaThumbnailView(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = FileUtils.getNodeIcon(node, false),
-                contentDescription = null,
-                tint = fallbackTint,
-                modifier = Modifier.size(36.dp)
+            MaterialSymbol(
+                name = FileUtils.getNodeSymbolName(node, false),
+                active = true,
+                size = 26.dp,
+                tint = fallbackTint
             )
         }
     }
