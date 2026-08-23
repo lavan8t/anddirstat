@@ -466,7 +466,7 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                                     },
                                     supportingContent = {
                                         Text(
-                                            text = "${FileUtils.formatFileSize(item.size, context)} • ${dateFormat.format(Date(item.lastModified))}",
+                                            text = "${FileUtils.formatFileSize(item.size, context)}  ${dateFormat.format(Date(item.lastModified))}",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
@@ -562,9 +562,7 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             tonalElevation = 6.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier
