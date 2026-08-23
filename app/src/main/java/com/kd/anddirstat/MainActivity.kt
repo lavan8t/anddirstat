@@ -17,6 +17,7 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresPermission
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -411,6 +412,7 @@ fun MainApp() {
         currentRoute = dest
     }
 
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     fun performScan(volumesToScan: List<StorageVolumeInfo>, scanApps: Boolean = scanAppsSelected) {
         if (!hasStoragePermission || (volumesToScan.isEmpty() && !scanApps)) return
         activeVolume = if (volumesToScan.size == 1) volumesToScan.first() else null
