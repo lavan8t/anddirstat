@@ -227,10 +227,11 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
             when (state) {
                 TitleLeadState.ICON -> {
                     Image(
-                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                        painter = painterResource(R.drawable.ic_appbar),
                         contentDescription = "AndDirStat",
                         modifier = Modifier
-                            .size(28.dp)
+                            .height(22.dp)
+                            .padding(end = 2.dp)
                             .graphicsLayer {
                                 scaleX = iconScale.value
                                 scaleY = iconScale.value
