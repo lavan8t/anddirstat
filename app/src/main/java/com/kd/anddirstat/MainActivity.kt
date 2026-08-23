@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -29,10 +30,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +53,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import kotlinx.coroutines.delay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -142,6 +152,126 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
         setContent {
             MainApp()
+        }
+    }
+}
+
+enum class TitleLeadState { ICON, AND, ANDROID }
+
+@OptIn(ExperimentalTextApi::class)
+@Composable
+fun AnimatedAppTitle(modifier: Modifier = Modifier) {
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    var leadState by remember { mutableStateOf(TitleLeadState.ICON) }
+    var isDirStatVisible by remember { mutableStateOf(false) }
+    val fontWidth = remember { Animatable(100f) }
+    val iconScale = remember { Animatable(1f) }
+
+    LaunchedEffect(Unit) {
+        delay(60)
+        isDirStatVisible = true
+        delay(260)
+        leadState = TitleLeadState.AND
+        fontWidth.snapTo(145f)
+        fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))
+    }
+
+    val currentFontWidth = fontWidth.value
+    val dynamicAndFamily = remember(currentFontWidth) {
+        FontFamily(
+            Font(
+                resId = R.font.google_sans_flex,
+                weight = FontWeight.Bold,
+                variationSettings = FontVariation.Settings(
+                    FontVariation.weight(700),
+                    FontVariation.Setting("ROND", 0f),
+                    FontVariation.Setting("wdth", currentFontWidth)
+                )
+            )
+        )
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                scope.launch {
+                    leadState = TitleLeadState.ICON
+                    iconScale.snapTo(0.7f)
+                    iconScale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium))
+                    delay(240)
+                    leadState = TitleLeadState.ANDROID
+                    fontWidth.snapTo(145f)
+                    fontWidth.animateTo(100f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow))
+                    delay(1400)
+                    leadState = TitleLeadState.AND
+                    fontWidth.snapTo(130f)
+                    fontWidth.animateTo(100f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium))
+                }
+            }
+    ) {
+        AnimatedContent(
+            targetState = leadState,
+            transitionSpec = {
+                (fadeIn(tween(140)) + scaleIn(initialScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)))
+                    .togetherWith(fadeOut(tween(100)) + scaleOut(targetScale = 0.8f, animationSpec = tween(100)))
+            },
+            label = "title_lead"
+        ) { state ->
+            when (state) {
+                TitleLeadState.ICON -> {
+                    Image(
+                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                        contentDescription = "AndDirStat",
+                        modifier = Modifier
+                            .size(28.dp)
+                            .graphicsLayer {
+                                scaleX = iconScale.value
+                                scaleY = iconScale.value
+                            }
+                    )
+                }
+                TitleLeadState.AND -> {
+                    Text(
+                        text = "And",
+                        fontFamily = dynamicAndFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                TitleLeadState.ANDROID -> {
+                    Text(
+                        text = "Android",
+                        fontFamily = dynamicAndFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = isDirStatVisible,
+            enter = slideInHorizontally(
+                initialOffsetX = { it / 2 },
+                animationSpec = spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium)
+            ) + fadeIn(tween(140))
+        ) {
+            Text(
+                text = "DirStat",
+                fontFamily = GoogleSansFlexTitleDirStatFamily,
+                fontWeight = FontWeight.Light,
+                fontSize = 22.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -708,22 +838,7 @@ fun MainApp() {
                 AppDestinations.TREE -> {
                     TopAppBar(
                         title = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "And",
-                                    fontFamily = GoogleSansFlexTitleAndFamily,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 22.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "DirStat",
-                                    fontFamily = GoogleSansFlexTitleDirStatFamily,
-                                    fontWeight = FontWeight.Light,
-                                    fontSize = 22.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            AnimatedAppTitle()
                         },
                         actions = { renderHeaderActions() },
                         colors = TopAppBarDefaults.topAppBarColors(

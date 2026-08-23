@@ -53,6 +53,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.kd.anddirstat.R
 import com.kd.anddirstat.AccentColor
 import com.kd.anddirstat.AppTheme
 import com.kd.anddirstat.GoogleSansFlexTitleAndFamily
@@ -318,6 +321,13 @@ fun SettingsView(
                     .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = "AndDirStat",
+                    modifier = Modifier
+                        .size(56.dp)
+                        .padding(bottom = 4.dp)
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
