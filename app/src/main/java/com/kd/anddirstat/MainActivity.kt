@@ -336,6 +336,42 @@ fun MainApp() {
         }
     }
 
+    fun removeDeletedNodes(deletedNodes: Set<CompactNode>) {
+        if (deletedNodes.isEmpty()) return
+        val currentRaw = rawScannedNode ?: return
+        scope.launch(Dispatchers.Default) {
+            val freeSpacePref = prefs.getBoolean("show_free_space", true)
+            val systemAppsPref = prefs.getBoolean("show_system_apps", true)
+            val hiddenFilesPref = prefs.getBoolean("show_hidden_files", false)
+            val systemOSPref = prefs.getBoolean("show_system_os", false)
+
+            val updatedRaw = StorageFilterHelper.pruneNodes(currentRaw, deletedNodes)
+            rawScannedNode = updatedRaw
+            deviceTotalBytes = updatedRaw.size
+
+            val filtered = StorageFilterHelper.filterStorageTree(
+                updatedRaw, freeSpacePref, systemAppsPref, hiddenFilesPref, systemOSPref, updatedRaw.size
+            )
+
+            withContext(Dispatchers.Main) {
+                rootNode = filtered
+                explorerNode = filtered
+                extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
+                topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+                if (selectedNode != null && deletedNodes.contains(selectedNode)) {
+                    selectedNode = null
+                    selectedPath = null
+                }
+            }
+
+            withContext(Dispatchers.IO) {
+                try {
+                    TreeCacheManager.saveTree(context, updatedRaw)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     fun requestScan() {
         if (!hasStoragePermission) return
         val vols = FileUtils.getAvailableStorageVolumes(context)
@@ -1315,6 +1351,7 @@ fun MainApp() {
                                         selectedNode = child
                                         selectedPath = childPath
                                     },
+                                    onNodesDeleted = { removeDeletedNodes(it) },
                                     onRefresh = {
                                         performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                     },
@@ -1345,6 +1382,7 @@ fun MainApp() {
                                         selectedNode = node
                                         selectedPath = path
                                     },
+                                    onNodesDeleted = { removeDeletedNodes(it) },
                                     onRefresh = {
                                         performScan(detectedVolumes.ifEmpty { FileUtils.getAvailableStorageVolumes(context) })
                                     },

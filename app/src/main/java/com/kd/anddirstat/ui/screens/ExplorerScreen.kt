@@ -99,6 +99,7 @@ data class ExplorerTreeRow(
 fun ExplorerView(
     rootNode: CompactNode,
     onNodeClick: (CompactNode, String) -> Unit,
+    onNodesDeleted: (Set<CompactNode>) -> Unit = {},
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -817,7 +818,8 @@ fun ExplorerView(
                                 val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
                                 val msg = if (starredItems.isNotEmpty()) "$baseMsg (Skipped ${starredItems.size} starred items)" else baseMsg
                                 com.kd.anddirstat.util.AppNotifier.finishActivity(context, msg)
-                                onRefresh()
+                                val deletedNodes = unstarredItems.map { it.first }.toSet()
+                                onNodesDeleted(deletedNodes)
                             }
                         }
                     ) {

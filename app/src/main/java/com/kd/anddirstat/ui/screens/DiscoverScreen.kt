@@ -98,6 +98,7 @@ fun DiscoverView(
     searchQuery: String = "",
     onSearchQueryChange: ((String) -> Unit)? = null,
     onNodeClick: (CompactNode, String) -> Unit,
+    onNodesDeleted: (Set<CompactNode>) -> Unit = {},
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1154,7 +1155,8 @@ fun DiscoverView(
                                 val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
                                 val msg = if (starredItems.isNotEmpty()) "$baseMsg (Skipped ${starredItems.size} starred items)" else baseMsg
                                 com.kd.anddirstat.util.AppNotifier.finishActivity(context, msg)
-                                onRefresh()
+                                val deletedNodes = unstarredItems.map { it.node }.toSet()
+                                onNodesDeleted(deletedNodes)
                             }
                         }
                     ) {

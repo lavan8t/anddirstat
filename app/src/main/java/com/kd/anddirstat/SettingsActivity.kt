@@ -49,11 +49,6 @@ class SettingsActivity : ComponentActivity() {
                 mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
             }
 
-            var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
-            var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
-            var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", false)) }
-            var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", false)) }
-
             val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
             AndDirStatTheme(
@@ -116,26 +111,6 @@ class SettingsActivity : ComponentActivity() {
                         onSelectAccent = { a ->
                             accentColor = a
                             prefs.edit { putString("accent_color", a.key) }
-                        },
-                        showFreeSpace = showFreeSpace,
-                        onToggleShowFreeSpace = { v ->
-                            showFreeSpace = v
-                            prefs.edit { putBoolean("show_free_space", v) }
-                        },
-                        showSystemApps = showSystemApps,
-                        onToggleShowSystemApps = { v ->
-                            showSystemApps = v
-                            prefs.edit { putBoolean("show_system_apps", v) }
-                        },
-                        showHiddenFiles = showHiddenFiles,
-                        onToggleShowHiddenFiles = { v ->
-                            showHiddenFiles = v
-                            prefs.edit { putBoolean("show_hidden_files", v) }
-                        },
-                        showSystemOS = showSystemOS,
-                        onToggleShowSystemOS = { v ->
-                            showSystemOS = v
-                            prefs.edit { putBoolean("show_system_os", v) }
                         },
                         modifier = Modifier
                             .fillMaxSize()

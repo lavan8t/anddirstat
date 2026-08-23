@@ -312,4 +312,20 @@ object StorageFilterHelper {
             it.path.contains(cleanQuery, ignoreCase = true)
         }
     }
+
+    fun pruneNodes(root: CompactNode, targets: Set<CompactNode>): CompactNode {
+        fun prune(node: CompactNode): CompactNode? {
+            if (targets.contains(node)) return null
+            val kids = node.children ?: return node
+            val remaining = kids.mapNotNull { prune(it) }
+            val newSize = if (node.isDirectory) remaining.sumOf { it.size } else node.size
+            return CompactNode(
+                name = node.name,
+                isDirectory = node.isDirectory,
+                size = newSize,
+                children = remaining.toTypedArray()
+            )
+        }
+        return prune(root) ?: CompactNode(root.name, root.isDirectory, 0L, emptyArray())
+    }
 }
