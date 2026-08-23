@@ -112,14 +112,15 @@ object FileUtils {
 
     fun formatFileSize(bytes: Long, context: Context? = null): String {
         if (context != null) return android.text.format.Formatter.formatShortFileSize(context, bytes)
+        if (bytes <= 0L) return "0 B"
         val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
         var size = bytes.toDouble()
         var unitIdx = 0
-        while (size >= 1024.0 && unitIdx < units.size - 1) {
-            size /= 1024.0
+        while (size >= 1000.0 && unitIdx < units.size - 1) {
+            size /= 1000.0
             unitIdx++
         }
-        return if (unitIdx == 0) "$bytes B" else String.format(Locale.US, "%.2f %s", size, units[unitIdx])
+        return if (unitIdx == 0) "$bytes B" else String.format(Locale.US, if (size >= 100.0) "%.1f %s" else "%.2f %s", size, units[unitIdx])
     }
 
     fun resolveActualFile(path: String, context: Context? = null): File? {

@@ -67,13 +67,14 @@ data class StorageOverviewData(
 )
 
 fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): StorageOverviewData {
-    var appsBytes = 0L
+    var userAppsBytes = 0L
+    var systemAppsBytes = 0L
     var videoBytes = 0L
     var imageBytes = 0L
     var audioBytes = 0L
     var docBytes = 0L
     var binBytes = 0L
-    var systemBytes = 0L
+    var systemOsBytes = 0L
     var otherBytes = 0L
     var freeSpaceBytes = 0L
 
@@ -94,22 +95,28 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
             continue
         }
         if (name == "[System & OS]") {
-            systemBytes += node.size
+            systemOsBytes += node.size
             continue
         }
-        if (name == "[Recycle Bin]" || name == "Recycle Bin") {
+        if (name == "[Recycle Bin]" || name == "Recycle Bin" || name.startsWith(".trashed")) {
             binBytes += node.size
             continue
         }
 
+        // Detect App nodes inside Apps & System Packages
         val isApp = node.children?.any { it.name.startsWith("App Code") } == true
-        if (isApp || name.startsWith("App Code") || name.startsWith("APK (") || name == "Apps & System Packages") {
-            appsBytes += node.size
+        if (isApp) {
+            val isSystemApp = name.endsWith(" (System)", ignoreCase = true)
+            if (isSystemApp) {
+                systemAppsBytes += node.size
+            } else {
+                userAppsBytes += node.size
+            }
             continue
         }
 
-        if (name.startsWith(".trashed")) {
-            binBytes += node.size
+        if (name == "Apps & System Packages") {
+            node.children?.forEach { stack.add(it to false) }
             continue
         }
 
@@ -122,7 +129,7 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
                 ext in imageExts -> imageBytes += node.size
                 ext in audioExts -> audioBytes += node.size
                 ext in docExts -> docBytes += node.size
-                isInsideAndroid -> systemBytes += node.size
+                isInsideAndroid -> systemOsBytes += node.size
                 else -> otherBytes += node.size
             }
         } else {
@@ -141,15 +148,16 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
         freeSpaceBytes = totalCapacity - rootNode.size
     }
     val usedSpace = maxOf(0L, totalCapacity - freeSpaceBytes)
+    val totalSystem = systemOsBytes + systemAppsBytes
 
     val categories = listOf(
-        StorageCategorySummary("Apps", appsBytes, Color(0xFF3B82F6), "apps"),
+        StorageCategorySummary("Apps", userAppsBytes, Color(0xFF3B82F6), "apps"),
+        StorageCategorySummary("System", totalSystem, Color(0xFF94A3B8), "android"),
         StorageCategorySummary("Videos", videoBytes, Color(0xFFFB923C), "movie"),
         StorageCategorySummary("Images", imageBytes, Color(0xFF34D399), "image"),
         StorageCategorySummary("Audio", audioBytes, Color(0xFFC084FC), "music_note"),
         StorageCategorySummary("Documents", docBytes, Color(0xFF38BDF8), "description"),
         StorageCategorySummary("Bin", binBytes, Color(0xFFF43F5E), "delete"),
-        StorageCategorySummary("System", systemBytes, Color(0xFF94A3B8), "android"),
         StorageCategorySummary("Other", otherBytes, Color(0xFFFACC15), "folder_zip")
     ).filter { it.size > 0L }.sortedByDescending { it.size }
 
