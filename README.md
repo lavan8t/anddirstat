@@ -1,52 +1,72 @@
+<p align="left">
+  <img src="logo.svg" height="60" alt="AndDirStat logo" />
+</p>
+
 # AndDirStat
 
-Android storage analyzer built with Material 3 Expressive. It scans your device, draws an interactive treemap of every file and folder sized to actual bytes, then gives you tools to clean up what you find.
+[![Download](https://img.shields.io/github/v/release/lavan8t/AndDirStat?label=Download&style=for-the-badge&logo=android)](https://github.com/lavan8t/AndDirStat/releases/latest)
 
-Most storage apps show you pie charts with vague categories. AndDirStat shows you the actual files taking up space, organized visually so large things are immediately obvious. Tap any block in the treemap to drill into that folder. Navigate from there to delete, star, or share directly.
+Requires Android 10+.
 
-[![Download latest](https://img.shields.io/github/v/release/lavan8t/AndDirStat?label=Download&style=for-the-badge)](https://github.com/lavan8t/AndDirStat/releases/latest)
+---
 
-Requires Android 10 (API 29) or higher.
+## The idea
+
+I'd been using [WinDirStat](https://windirstat.net) on Windows for years. It draws your entire drive as a rectangle, where each file is a colored block sized to its actual bytes. You can see at a glance that one folder is eating half your disk. Nothing else comes close to that kind of clarity.
+
+Android never had anything like it. The built-in storage settings show you a pie chart with labels like "Other files" and call it a day. I wanted the real thing on my phone, so I built it.
+
+---
+
+## What it does
+
+The main screen is a treemap. Every file and folder on your device gets drawn as a rectangle. Larger files are larger rectangles. Folders are subdivided into their contents. Colors are assigned by file type so images, videos, APKs, and documents are immediately distinguishable.
+
+Tap any block to drill into that folder. The treemap redraws for that subtree. Tap back to go up. Long-press to select and delete directly from the map.
+
+Beyond the treemap there's a full file explorer backed by the same scan, a file types breakdown with per-extension sizes, and a Discover screen where you can search by name or size threshold and use presets like "files over 1 GB" or "old downloads".
+
+Cleaners for screenshots, duplicates, empty folders, and a recycle bin with restore are all built in.
+
+---
+
+## How the treemap works
+
+The scanner walks the filesystem once and builds a tree of `CompactNode` objects. Each node holds a name, a size in bytes, and an array of children. Directories accumulate size bottom-up as the walk finishes. The whole tree for a typical phone with 50,000 files fits in a few MB of heap.
+
+The treemap layout uses a squarified algorithm. Given a rectangle and a list of children sorted by size, it packs them into rows where each rectangle is as close to square as possible. Pure horizontal or vertical strips look bad and make small files invisible. Squarification keeps aspect ratios reasonable across several orders of magnitude of file size.
+
+The layout is computed once per canvas size on a background thread and cached. Recompositions from taps and selection changes read from that cache without recalculating. After a deletion the node is pruned from the in-memory tree and the layout recalculates, so the scan only runs once per session.
+
+Colors come from a fixed palette keyed by extension category. Images are orange, videos are red, audio is purple, APKs are green, documents are blue, everything else is grey. The shade shifts slightly per node so adjacent same-type files don't merge visually.
 
 ---
 
 ## Features
 
-**Treemap.** Every file gets a rectangle sized to its bytes, colored by type. Large things are large on screen. Tap to drill in, tap again to go back up.
-
-**Explorer.** A full folder browser backed by the same scan. Navigation is instant because the tree is already in memory.
-
-**File types.** Total size per extension with bar charts. Find out you have 4 GB of forgotten `.mov` files.
-
-**Discover.** Search by name, extension, or size threshold (`> 500MB`, `< 100KB`). Presets for starred files, files over 1 GB, old downloads, and APKs. Large apps get their own list.
-
-**Cleaners.**
+- Treemap with drill-down navigation and multi-select delete
+- Full file explorer with the same scan backing it
+- File types breakdown by extension
+- Discover: search by name, extension, or size (`> 500MB`, `< 1KB`)
+- Presets: starred files, files over 1 GB, old downloads, APKs
 - Recycle bin with restore
-- Screenshot cleaner  
+- Screenshot cleaner
 - Duplicate file finder
 - Empty folder remover
-- Starred files
-
-**External storage.** Connect a USB drive or SD card and a chip appears below the app bar showing the device name. Tap it to list all connected volumes and map any of them independently.
+- Material 3 Expressive UI, no ads, no tracking, no network calls
 
 ---
 
 ## Download
-
-Always points to the latest release:
-
-[![Download](https://img.shields.io/github/v/release/lavan8t/AndDirStat?label=Latest%20Release&style=for-the-badge&logo=android)](https://github.com/lavan8t/AndDirStat/releases/latest)
-
-Four APK variants are attached to each release:
 
 | APK | Devices |
 |---|---|
 | `arm64-v8a` | Most phones made after 2016 |
 | `armeabi-v7a` | Older 32-bit ARM devices |
 | `x86_64` | Emulators |
-| `universal` | Works everywhere |
+| `universal` | Works everywhere, largest download |
 
-If you are unsure, pick `universal`.
+If unsure, pick `universal`.
 
 ---
 
@@ -64,34 +84,18 @@ APKs land in `app/build/outputs/apk/release/`.
 
 ## Contributing
 
-Pull requests are welcome. Open an issue first if you are planning something large so we can agree on direction before you write the code.
+Pull requests are welcome. Open an issue first if you are planning something large.
 
 Things that would be useful:
-- Supporting more file types in the treemap color scheme
-- Better handling of Android/data paths on different OEM builds
-- Tablet layout improvements
+- More file type colors and categories
+- Better handling of `Android/data` on different OEM builds
+- Tablet layout
 - Translations
 
-Fork the repo, make your changes on a branch, and open a PR against `main`.
+Fork, branch off `main`, open a PR.
 
 ---
 
-## Permissions
+## Credit
 
-| Permission | Reason |
-|---|---|
-| `MANAGE_EXTERNAL_STORAGE` | Full storage scan |
-| `PACKAGE_USAGE_STATS` | App size breakdown |
-| `QUERY_ALL_PACKAGES` | App list in Discover |
-| `REQUEST_DELETE_PACKAGES` | APK uninstall |
-| `POST_NOTIFICATIONS` | Scan progress |
-
----
-
-## Tech
-
-Kotlin, Jetpack Compose, Material 3 Expressive. No networking, analytics, or tracking. Everything runs on-device.
-
----
-
-Made by Lavanbarath B / [Kreativ Devs](https://github.com/lavan8t)
+Inspired by [WinDirStat](https://windirstat.net), the original disk usage visualizer for Windows. The squarified treemap algorithm traces back to research by Bruls, Huizing, and van Wijk at TU/e.
