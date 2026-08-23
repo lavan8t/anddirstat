@@ -12,6 +12,7 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
         <intent>
@@ -52,6 +53,34 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="Settings"
+            android:theme="@style/Theme.AndDirStat"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ScreenshotsCleanerActivity"
+            android:exported="false"
+            android:label="Screenshots Cleaner"
+            android:theme="@style/Theme.AndDirStat"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".EmptyFoldersCleanerActivity"
+            android:exported="false"
+            android:label="Empty Folders Cleaner"
+            android:theme="@style/Theme.AndDirStat"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".RecycleBinCleanerActivity"
+            android:exported="false"
+            android:label="Recycle Bin"
+            android:theme="@style/Theme.AndDirStat"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".DuplicatesCleanerActivity"
+            android:exported="false"
+            android:label="Duplicate Files"
             android:theme="@style/Theme.AndDirStat"
             android:windowSoftInputMode="adjustResize" />
 

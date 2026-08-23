@@ -72,7 +72,7 @@ fun SettingsView(
             .background(MaterialTheme.colorScheme.surface),
         contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp)
     ) {
-        // Appearance section header
+        // Appearance section
         item {
             Text(
                 text = "Appearance",
@@ -83,212 +83,156 @@ fun SettingsView(
             )
         }
 
-        // Card 1: Theme Select Card
         item {
+            val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            val isCustomActive = !dynamicTheme || !isDynamicSupported
+            val pureBlackTextColor = if (isDarkActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+
             Surface(
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
+                shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AppTheme.entries.forEach { theme ->
-                        val isSelected = currentTheme == theme
-                        val cardBg = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-                        val cardFg = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    // 1. Theme Select
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AppTheme.entries.forEach { theme ->
+                            val isSelected = currentTheme == theme
+                            val cardBg = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+                            val cardFg = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(cardBg)
-                                .clickable { onSelectTheme(theme) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(cardBg)
+                                    .clickable { onSelectTheme(theme) }
+                                    .padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                MaterialSymbol(
-                                    name = when (theme) {
-                                        AppTheme.SYSTEM -> "brightness_medium"
-                                        AppTheme.LIGHT  -> "light_mode"
-                                        AppTheme.DARK   -> "dark_mode"
-                                    },
-                                    active = isSelected,
-                                    size = 28.dp,
-                                    tint = cardFg
-                                )
-                                Text(
-                                    text = theme.title,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = cardFg
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    MaterialSymbol(
+                                        name = when (theme) {
+                                            AppTheme.SYSTEM -> "brightness_medium"
+                                            AppTheme.LIGHT  -> "light_mode"
+                                            AppTheme.DARK   -> "dark_mode"
+                                        },
+                                        active = isSelected,
+                                        size = 28.dp,
+                                        tint = cardFg
+                                    )
+                                    Text(
+                                        text = theme.title,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = cardFg
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            }
-        }
 
-        item {
-            Spacer(modifier = Modifier.height(2.dp))
-        }
+                    // 2. Pure Black Toggle (if dark active)
+                    if (isDarkActive) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onTogglePureBlack(!pureBlack) }
+                                .padding(horizontal = 18.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Use pure black",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = pureBlackTextColor
+                            )
+                            Switch(
+                                checked = pureBlack && isDarkActive,
+                                onCheckedChange = onTogglePureBlack,
+                                colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
 
-        // Card 2: Pure Black Toggle Card
-        item {
-            val textColor = if (isDarkActive) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-
-            Surface(
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = isDarkActive) { onTogglePureBlack(!pureBlack) }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Use pure black",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = textColor
-                    )
-                    Switch(
-                        checked = pureBlack && isDarkActive,
-                        onCheckedChange = onTogglePureBlack,
-                        enabled = isDarkActive,
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-            }
-        }
-
-        // Accent color section header
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Accent Color",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-            )
-        }
-
-        // Card 1: Dynamic Theme Toggle Card
-        item {
-            val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            val textColor = if (isDynamicSupported) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-
-            Surface(
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = isDynamicSupported) { onToggleDynamicTheme(!dynamicTheme) }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Dynamic color",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = textColor
-                        )
-                        Text(
-                            text = if (isDynamicSupported) "Material You wallpaper theming" else "Requires Android 12+",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDynamicSupported) 0.8f else 0.4f)
+                    // 3. Dynamic Color (Material You)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = isDynamicSupported) { onToggleDynamicTheme(!dynamicTheme) }
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Dynamic color",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isDynamicSupported) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
+                            Text(
+                                text = if (isDynamicSupported) "Material You wallpaper theming" else "Requires Android 12+",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDynamicSupported) 0.8f else 0.4f)
+                            )
+                        }
+                        Switch(
+                            checked = dynamicTheme && isDynamicSupported,
+                            onCheckedChange = onToggleDynamicTheme,
+                            enabled = isDynamicSupported,
+                            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
                         )
                     }
-                    Switch(
-                        checked = dynamicTheme && isDynamicSupported,
-                        onCheckedChange = onToggleDynamicTheme,
-                        enabled = isDynamicSupported,
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                }
-            }
-        }
 
-        item {
-            Spacer(modifier = Modifier.height(2.dp))
-        }
-
-        // Card 2: Custom Accent Colors Row (greyed out when dynamic theming is active)
-        item {
-            val isCustomActive = !dynamicTheme || Build.VERSION.SDK_INT < Build.VERSION_CODES.S
-
-            Surface(
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer {
-                            alpha = if (isCustomActive) 1.0f else 0.35f
-                        }
-                ) {
-                    items(AccentColor.entries) { ac ->
-                        val isSelected = isCustomActive && accentColor == ac
-                        val actualColor = ac.getActualColor(isDarkActive)
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .then(
-                                    if (isSelected) Modifier.border(
-                                        2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape
-                                    ) else Modifier
-                                )
-                                .padding(if (isSelected) 3.5.dp else 0.dp)
-                                .clip(CircleShape)
-                                .background(actualColor)
-                                .clickable(enabled = isCustomActive) { onSelectAccent(ac) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                MaterialSymbol(
-                                    name = "check",
-                                    active = true,
-                                    size = 20.dp,
-                                    tint = if (isDarkActive) Color.Black else Color.White
-                                )
+                    // 4. Accent Color Swatches
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                alpha = if (isCustomActive) 1.0f else 0.35f
+                            }
+                    ) {
+                        items(AccentColor.entries) { ac ->
+                            val isSelected = isCustomActive && accentColor == ac
+                            val actualColor = ac.getActualColor(isDarkActive)
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (isSelected) Modifier.border(
+                                            2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape
+                                        ) else Modifier
+                                    )
+                                    .padding(if (isSelected) 3.5.dp else 0.dp)
+                                    .clip(CircleShape)
+                                    .background(actualColor)
+                                    .clickable(enabled = isCustomActive) { onSelectAccent(ac) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    MaterialSymbol(
+                                        name = "check",
+                                        active = true,
+                                        size = 20.dp,
+                                        tint = if (isDarkActive) Color.Black else Color.White
+                                    )
+                                }
                             }
                         }
                     }
