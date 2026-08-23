@@ -37,6 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import com.kd.anddirstat.RecycleBinCleanerActivity
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -83,18 +86,18 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
     val audioExts = setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid")
     val docExts = setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub")
 
-    val stack = ArrayDeque<Pair<CompactNode, Boolean>>()
-    stack.add(rootNode to false)
+    val stack = ArrayDeque<Triple<CompactNode, Boolean, Boolean>>()
+    stack.add(Triple(rootNode, false, false))
 
     while (stack.isNotEmpty()) {
-        val (node, isInsideAndroid) = stack.removeLast()
+        val (node, isInsideAndroid, isInsideTrashed) = stack.removeLast()
         val name = node.name
 
-        if (name == "[Free Space]") {
+        if (name == "[Free Space]" || name == "Free Space") {
             freeSpaceBytes += node.size
             continue
         }
-        if (name == "[System & OS]") {
+        if (name == "[System & OS]" || name == "System & OS") {
             systemOsBytes += node.size
             continue
         }
@@ -102,7 +105,7 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
             tempSystemBytes += node.size
             continue
         }
-        if (name == "[Recycle Bin]" || name == "Recycle Bin" || name.startsWith(".trashed")) {
+        if (name == "[Recycle Bin]" || name == "Recycle Bin" || name.startsWith(".trashed") || isInsideTrashed) {
             binBytes += node.size
             continue
         }
@@ -128,10 +131,11 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
             }
         } else {
             val isAndroid = isInsideAndroid || name.equals("Android", ignoreCase = true)
+            val isTrashed = isInsideTrashed || name.startsWith(".trashed") || name.equals("Recycle Bin", ignoreCase = true) || name.equals("[Recycle Bin]", ignoreCase = true)
             val children = node.children
             if (children != null) {
                 for (i in children.indices.reversed()) {
-                    stack.add(children[i] to isAndroid)
+                    stack.add(Triple(children[i], isAndroid, isTrashed))
                 }
             }
         }
@@ -151,7 +155,7 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
         StorageCategorySummary("Images", imageBytes, Color(0xFF34D399), "image"),
         StorageCategorySummary("Audio", audioBytes, Color(0xFFC084FC), "music_note"),
         StorageCategorySummary("Documents", docBytes, Color(0xFF38BDF8), "description"),
-        StorageCategorySummary("Bin", binBytes, Color(0xFFF43F5E), "delete"),
+        StorageCategorySummary("Recycle Bin", binBytes, Color(0xFFF43F5E), "delete"),
         StorageCategorySummary("Other", otherBytes, Color(0xFFFACC15), "folder_zip")
     ).filter { it.size > 0L }.sortedByDescending { it.size }
 
@@ -182,6 +186,7 @@ fun FileTypesView(
     onNodeClick: (CompactNode, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
     val haptic = LocalHapticFeedback.current
     var expandedCategories by remember(rootNode) { mutableStateOf(setOf<String>()) }
@@ -507,40 +512,49 @@ fun FileTypesView(
         val usedStorageTotal = if (overview.usedSpace > 0L) overview.usedSpace else overview.totalCapacity
 
         categoryGroups.forEach { category ->
-            val isCatExpanded = expandedCategories.contains(category.id)
+            val isBinCategory = category.id == "bin"
+            val isCatExpanded = !isBinCategory && expandedCategories.contains(category.id)
             val catFraction = if (usedStorageTotal > 0L) (category.totalSize.toDouble() / usedStorageTotal.toDouble()).coerceIn(0.0, 1.0) else 0.0
+
+            val onCategoryClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                if (isBinCategory) {
+                    val intent = Intent(context, RecycleBinCleanerActivity::class.java)
+                    context.startActivity(intent)
+                } else {
+                    expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
+                }
+            }
 
             item(key = "cat_${category.id}") {
                 ListItem(
                     leadingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
-                                    }
-                            ) {
-                                MaterialSymbol(
-                                    name = if (isCatExpanded) "expand_more" else "chevron_right",
-                                    active = true,
-                                    size = 22.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            if (!isBinCategory) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onCategoryClick() }
+                                ) {
+                                    MaterialSymbol(
+                                        name = if (isCatExpanded) "expand_more" else "chevron_right",
+                                        active = true,
+                                        size = 22.dp,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(2.dp))
+                            } else {
+                                Spacer(modifier = Modifier.width(28.dp))
                             }
-                            Spacer(modifier = Modifier.width(2.dp))
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .size(44.dp)
                                     .clip(CircleShape)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
-                                    }
+                                    .clickable { onCategoryClick() }
                             ) {
                                 MaterialSymbol(
                                     name = category.icon,
@@ -581,7 +595,7 @@ fun FileTypesView(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "${category.stats.size} types • ${category.fileCount} files",
+                                    text = if (isBinCategory) "Tap to view and clean recycled files" else "${category.stats.size} types • ${category.fileCount} files",
                                     fontFamily = GoogleSansFlexFontFamily,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -606,13 +620,20 @@ fun FileTypesView(
                             )
                         }
                     },
+                    trailingContent = if (isBinCategory) {
+                        {
+                            MaterialSymbol(
+                                name = "chevron_right",
+                                active = true,
+                                size = 22.dp,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else null,
                     colors = ListItemDefaults.colors(
                         containerColor = if (isCatExpanded) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else Color.Transparent
                     ),
-                    modifier = Modifier.clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
-                    }
+                    modifier = Modifier.clickable { onCategoryClick() }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
             }

@@ -617,4 +617,15 @@ object FileUtils {
             }
         }
     }
+
+    fun cleanDisplayName(name: String): String {
+        return name
+            .removePrefix("[").removeSuffix("]")
+            .replace("Apps / Packages", "Apps & Packages")
+            .replace("Apps / System Packages", "Apps & System Packages")
+            .replace("System / OS", "System & OS")
+            .replace("System / Reserved", "System & OS")
+            .replace("trashed", "Trashed Files")
+            .trim()
+    }
 }

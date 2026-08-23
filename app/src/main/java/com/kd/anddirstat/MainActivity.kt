@@ -1410,7 +1410,7 @@ fun MainApp() {
                             }
                             AppDestinations.EXPLORER -> {
                                 ExplorerView(
-                                    rootNode = rootNode!!,
+                                    rootNode = (rawScannedNode ?: rootNode)!!,
                                     onNodeClick = { child, childPath ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedNode = child
@@ -1425,9 +1425,9 @@ fun MainApp() {
                             }
                             AppDestinations.TYPES -> {
                                 FileTypesView(
-                                    rootNode = rootNode!!,
+                                    rootNode = (rawScannedNode ?: rootNode)!!,
                                     stats = extensionStats,
-                                    totalDeviceSize = if (deviceTotalBytes > 0L) deviceTotalBytes else rootNode!!.size,
+                                    totalDeviceSize = if (deviceTotalBytes > 0L) deviceTotalBytes else (rawScannedNode ?: rootNode)!!.size,
                                     onNodeClick = { node, path ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         selectedNode = node
@@ -1438,7 +1438,7 @@ fun MainApp() {
                             }
                             AppDestinations.DISCOVER -> {
                                 DiscoverView(
-                                    rootNode = rootNode!!,
+                                    rootNode = (rawScannedNode ?: rootNode)!!,
                                     topFiles = topFiles,
                                     searchQuery = discoverSearchQuery,
                                     onSearchQueryChange = { discoverSearchQuery = it },
