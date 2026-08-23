@@ -3,6 +3,7 @@ package com.kd.anddirstat.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -45,21 +45,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
-import com.kd.anddirstat.R
 import com.kd.anddirstat.AccentColor
 import com.kd.anddirstat.AppTheme
 import com.kd.anddirstat.GoogleSansFlexTitleAndFamily
 import com.kd.anddirstat.GoogleSansFlexTitleDirStatFamily
+import com.kd.anddirstat.R
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.AppNotifier
 
@@ -325,8 +323,7 @@ fun SettingsView(
                     painter = painterResource(R.drawable.ic_appbar),
                     contentDescription = "AndDirStat",
                     modifier = Modifier
-                        .height(54.dp)
-                        .padding(bottom = 12.dp)
+                        .height(65.dp)
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -349,7 +346,7 @@ fun SettingsView(
                 }
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = "v1.0.0 • Open Source Disk Analyzer",
+                    text = "v1.0.0 Android Directory Statistics",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                 )

@@ -161,8 +161,12 @@ object StorageFilterHelper {
         val list = mutableListOf<TopFileEntry>()
         fun collect(node: CompactNode, currentPath: String) {
             val name = node.name
+            val lowerName = name.lowercase()
+            val lowerPath = currentPath.lowercase()
+
             // Skip non-internal-storage elements: Free space, System OS, Recycle Bin, and Apps container
             if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+                name.equals("System & OS", ignoreCase = true) || name.equals("[System & OS]", ignoreCase = true) ||
                 name == "Apps & System Packages" || name.startsWith(".trashed") ||
                 currentPath.startsWith("Apps & System Packages") || currentPath.contains("/Apps & System Packages")
             ) return
@@ -175,6 +179,19 @@ object StorageFilterHelper {
 
             // Skip Android/data and Android/obb app data folders
             if (currentPath.contains("Android/data") || currentPath.contains("Android/obb")) return
+
+            // Filter temporary and system runtime files
+            if (lowerName.endsWith(".tmp") || lowerName.endsWith(".temp") ||
+                lowerName.endsWith(".log") || lowerName.endsWith(".crdownload") ||
+                lowerName.endsWith(".part") || lowerName.endsWith(".cache") ||
+                lowerName.endsWith(".dmp") || lowerName.endsWith(".dump") ||
+                lowerName.endsWith(".trace") || lowerName == ".nomedia" ||
+                lowerName.startsWith(".pending") || lowerName.startsWith(".tmp") ||
+                lowerName == "thumbs.db" || lowerName == ".ds_store" ||
+                lowerPath.contains("/.thumbnails") || lowerPath.contains("/cache/") ||
+                lowerPath.contains("/.cache/") || lowerPath.contains("/temp/") ||
+                lowerPath.contains("/tmp/")
+            ) return
 
             if (!node.isDirectory) {
                 list.add(TopFileEntry(node, currentPath))

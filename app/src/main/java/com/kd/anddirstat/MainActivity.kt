@@ -35,6 +35,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -68,6 +69,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -158,28 +160,26 @@ class MainActivity : ComponentActivity() {
 
 enum class TitleLeadState { ICON, AND }
 
+private var hasPlayedTitleLaunchAnimation = false
+
 @OptIn(ExperimentalTextApi::class)
 @Composable
 fun AnimatedAppTitle(modifier: Modifier = Modifier) {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    var leadState by remember { mutableStateOf(TitleLeadState.ICON) }
-    var isDirStatVisible by remember { mutableStateOf(false) }
-    val fontWidth = remember { Animatable(100f) }
-    val dirStatFontWidth = remember { Animatable(100f) }
-    val iconScale = remember { Animatable(1f) }
+    var leadState by remember {
+        mutableStateOf(if (hasPlayedTitleLaunchAnimation) TitleLeadState.AND else TitleLeadState.ICON)
+    }
+    val fontWidth = remember { Animatable(if (hasPlayedTitleLaunchAnimation) 100f else 140f) }
 
     LaunchedEffect(Unit) {
-        delay(60)
-        isDirStatVisible = true
-        dirStatFontWidth.snapTo(55f)
-        launch {
-            dirStatFontWidth.animateTo(100f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow))
+        if (!hasPlayedTitleLaunchAnimation) {
+            delay(500)
+            leadState = TitleLeadState.AND
+            fontWidth.snapTo(140f)
+            fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))
+            hasPlayedTitleLaunchAnimation = true
         }
-        delay(260)
-        leadState = TitleLeadState.AND
-        fontWidth.snapTo(145f)
-        fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))
     }
 
     val currentFontWidth = fontWidth.value
@@ -197,20 +197,6 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
         )
     }
 
-    val currentDirStatWidth = dirStatFontWidth.value
-    val dynamicDirStatFamily = remember(currentDirStatWidth) {
-        FontFamily(
-            Font(
-                resId = R.font.google_sans_flex,
-                weight = FontWeight.Light,
-                variationSettings = FontVariation.Settings(
-                    FontVariation.weight(300),
-                    FontVariation.Setting("wdth", currentDirStatWidth)
-                )
-            )
-        )
-    }
-
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
@@ -221,15 +207,7 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 scope.launch {
                     leadState = TitleLeadState.ICON
-                    iconScale.snapTo(0.7f)
-                    launch {
-                        iconScale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium))
-                    }
-                    launch {
-                        dirStatFontWidth.snapTo(60f)
-                        dirStatFontWidth.animateTo(100f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow))
-                    }
-                    delay(320)
+                    delay(300)
                     leadState = TitleLeadState.AND
                     fontWidth.snapTo(140f)
                     fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))
@@ -239,8 +217,8 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
         AnimatedContent(
             targetState = leadState,
             transitionSpec = {
-                (fadeIn(tween(140)) + scaleIn(initialScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)))
-                    .togetherWith(fadeOut(tween(100)) + scaleOut(targetScale = 0.8f, animationSpec = tween(100)))
+                (fadeIn(tween(200)) + scaleIn(initialScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)))
+                    .togetherWith(fadeOut(tween(150)) + scaleOut(targetScale = 0.8f, animationSpec = tween(150)))
             },
             label = "title_lead"
         ) { state ->
@@ -251,11 +229,7 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
                         contentDescription = "AndDirStat",
                         modifier = Modifier
                             .height(22.dp)
-                            .padding(end = 2.dp)
-                            .graphicsLayer {
-                                scaleX = iconScale.value
-                                scaleY = iconScale.value
-                            }
+                            .padding(end = 4.dp)
                     )
                 }
                 TitleLeadState.AND -> {
@@ -270,21 +244,13 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
             }
         }
 
-        AnimatedVisibility(
-            visible = isDirStatVisible,
-            enter = slideInHorizontally(
-                initialOffsetX = { it / 2 },
-                animationSpec = spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium)
-            ) + fadeIn(tween(140))
-        ) {
-            Text(
-                text = "DirStat",
-                fontFamily = dynamicDirStatFamily,
-                fontWeight = FontWeight.Light,
-                fontSize = 22.sp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+        Text(
+            text = "DirStat",
+            fontFamily = GoogleSansFlexFontFamily,
+            fontWeight = FontWeight.Light,
+            fontSize = 22.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -352,6 +318,7 @@ fun MainApp() {
         var showVolumeSelectionDialog by remember { mutableStateOf(false) }
         var detectedVolumes by remember { mutableStateOf(emptyList<StorageVolumeInfo>()) }
         var selectedVolumeIds by remember { mutableStateOf(setOf<String>()) }
+        var activeVolume by remember { mutableStateOf<StorageVolumeInfo?>(null) }
         var scanAppsSelected by remember { mutableStateOf(true) }
 
         var isTreeDeleting by remember { mutableStateOf(false) }
@@ -426,6 +393,9 @@ fun MainApp() {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 FileUtils.AppUninstallerQueue.onResume(context)
+                if (hasStoragePermission) {
+                    detectedVolumes = FileUtils.getAvailableStorageVolumes(context)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -443,6 +413,7 @@ fun MainApp() {
 
     fun performScan(volumesToScan: List<StorageVolumeInfo>, scanApps: Boolean = scanAppsSelected) {
         if (!hasStoragePermission || (volumesToScan.isEmpty() && !scanApps)) return
+        activeVolume = if (volumesToScan.size == 1) volumesToScan.first() else null
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         isLoading = true
         scanPhase = "Analyzing storage..."
@@ -458,10 +429,10 @@ fun MainApp() {
             showHiddenFiles = hiddenFilesPref
             showSystemOS = systemOSPref
             val scanner = StorageScanner(context)
-            val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = scanApps) { phase, detail ->
+            val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = scanApps) { phase, detail, progress, max ->
                 scanPhase = phase
                 scanDetail = detail
-                AppNotifier.updateProgress(context, title = phase, detail = detail, indeterminate = true, type = "scan")
+                AppNotifier.updateProgress(context, title = phase, detail = detail, progress = progress, max = max, indeterminate = false, type = "scan")
             }
             rawScannedNode = scanned
             deviceTotalBytes = scanned.size
@@ -846,151 +817,286 @@ fun MainApp() {
                 }
             }
 
-            when (currentRoute) {
-                AppDestinations.TREE -> {
-                    TopAppBar(
-                        title = {
-                            AnimatedAppTitle()
-                        },
-                        actions = { renderHeaderActions() },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                }
-                AppDestinations.EXPLORER -> {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Explorer",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
+                when (currentRoute) {
+                    AppDestinations.TREE -> {
+                        TopAppBar(
+                            title = {
+                                AnimatedAppTitle()
+                            },
+                            actions = { renderHeaderActions() },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                actionIconContentColor = MaterialTheme.colorScheme.onSurface
                             )
-                        },
-                        actions = { renderHeaderActions() },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
                         )
-                    )
-                }
-                AppDestinations.TYPES -> {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "File Types",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    }
+                    AppDestinations.EXPLORER -> {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "Explorer",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                                )
+                            },
+                            actions = { renderHeaderActions() },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                actionIconContentColor = MaterialTheme.colorScheme.onSurface
                             )
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface
                         )
-                    )
-                }
-                AppDestinations.DISCOVER -> {
-                    TopAppBar(
-                        title = {
-                            Surface(
-                                shape = RoundedCornerShape(28.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .padding(end = 8.dp)
-                            ) {
-                                Row(
+                    }
+                    AppDestinations.TYPES -> {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = "File Types",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                                )
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+                    }
+                    AppDestinations.DISCOVER -> {
+                        TopAppBar(
+                            title = {
+                                Surface(
+                                    shape = RoundedCornerShape(28.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                        .padding(end = 8.dp)
                                 ) {
-                                    if (isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()) {
-                                        IconButton(
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                isDiscoverSearchActive = false
-                                                discoverSearchQuery = ""
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            MaterialSymbol(
-                                                name = "arrow_back",
-                                                active = true,
-                                                size = 22.dp,
-                                                tint = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        }
-                                    } else {
-                                        MaterialSymbol(
-                                            name = "search",
-                                            active = true,
-                                            size = 24.dp,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    BasicTextField(
-                                        value = discoverSearchQuery,
-                                        onValueChange = {
-                                            discoverSearchQuery = it
-                                            if (it.isNotBlank()) {
-                                                isDiscoverSearchActive = true
-                                                com.kd.anddirstat.util.FavoritesManager.addRecentSearch(context, it)
-                                            }
-                                        },
-                                        singleLine = true,
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            fontSize = 16.sp
-                                        ),
-                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                        decorationBox = { innerTextField ->
-                                            if (discoverSearchQuery.isEmpty()) {
-                                                Text(
-                                                    text = "Search files...",
-                                                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                                )
-                                            }
-                                            innerTextField()
-                                        },
+                                    Row(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .onFocusChanged { focusState ->
-                                                if (focusState.isFocused) {
-                                                    isDiscoverSearchActive = true
-                                                }
-                                            }
-                                    )
-                                    if (discoverSearchQuery.isNotEmpty()) {
-                                        AppTooltip(text = "Clear search") {
+                                            .fillMaxSize()
+                                            .padding(horizontal = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()) {
                                             IconButton(
                                                 onClick = {
                                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    isDiscoverSearchActive = false
                                                     discoverSearchQuery = ""
                                                 },
-                                                modifier = Modifier.size(36.dp)
+                                                modifier = Modifier.size(32.dp)
                                             ) {
                                                 MaterialSymbol(
-                                                    name = "close",
+                                                    name = "arrow_back",
                                                     active = true,
-                                                    size = 20.dp,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    size = 22.dp,
+                                                    tint = MaterialTheme.colorScheme.onSurface
                                                 )
+                                            }
+                                        } else {
+                                            MaterialSymbol(
+                                                name = "search",
+                                                active = true,
+                                                size = 24.dp,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        BasicTextField(
+                                            value = discoverSearchQuery,
+                                            onValueChange = {
+                                                discoverSearchQuery = it
+                                                if (it.isNotBlank()) {
+                                                    isDiscoverSearchActive = true
+                                                    com.kd.anddirstat.util.FavoritesManager.addRecentSearch(context, it)
+                                                }
+                                            },
+                                            singleLine = true,
+                                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 16.sp
+                                            ),
+                                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                            decorationBox = { innerTextField ->
+                                                if (discoverSearchQuery.isEmpty()) {
+                                                    Text(
+                                                        text = "Search files...",
+                                                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                innerTextField()
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .onFocusChanged { focusState ->
+                                                    if (focusState.isFocused) {
+                                                        isDiscoverSearchActive = true
+                                                    }
+                                                }
+                                        )
+                                        if (discoverSearchQuery.isNotEmpty()) {
+                                            AppTooltip(text = "Clear search") {
+                                                IconButton(
+                                                    onClick = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        discoverSearchQuery = ""
+                                                    },
+                                                    modifier = Modifier.size(36.dp)
+                                                ) {
+                                                    MaterialSymbol(
+                                                        name = "close",
+                                                        active = true,
+                                                        size = 20.dp,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface
+                            )
                         )
-                    )
+                    }
+                }
+
+                // Active Drive Selector Banner below TopAppBar - only shown when multiple drives / external devices are attached
+                if (!isLoading && hasStoragePermission && detectedVolumes.size > 1) {
+                    val currentVol = activeVolume ?: detectedVolumes.firstOrNull { it.isPrimary } ?: detectedVolumes.firstOrNull()
+                    val volName = currentVol?.name ?: "All Drives"
+                    val volIcon = when {
+                        currentVol?.isUsb == true -> "usb"
+                        currentVol?.isRemovable == true -> "sd_card"
+                        currentVol == null -> "storage"
+                        else -> "smartphone"
+                    }
+
+                    var showDriveDropdown by remember { mutableStateOf(false) }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showDriveDropdown = true
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                MaterialSymbol(
+                                    name = volIcon,
+                                    active = true,
+                                    size = 16.dp,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = volName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                MaterialSymbol(
+                                    name = "arrow_drop_down",
+                                    active = true,
+                                    size = 18.dp,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = showDriveDropdown,
+                            onDismissRequest = { showDriveDropdown = false }
+                        ) {
+                            Text(
+                                text = "Select Drive to Map",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                            detectedVolumes.forEach { vol ->
+                                val isCurrent = (currentVol?.id == vol.id)
+                                val icon = when {
+                                    vol.isUsb -> "usb"
+                                    vol.isRemovable -> "sd_card"
+                                    else -> "smartphone"
+                                }
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(
+                                                text = vol.name,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "${FileUtils.formatFileSize(vol.freeBytes)} free of ${FileUtils.formatFileSize(vol.totalBytes)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        MaterialSymbol(
+                                            name = icon,
+                                            active = isCurrent,
+                                            size = 20.dp,
+                                            tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    onClick = {
+                                        showDriveDropdown = false
+                                        activeVolume = vol
+                                        selectedVolumeIds = setOf(vol.id)
+                                        performScan(listOf(vol), scanApps = vol.isPrimary)
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Custom / Multi-Drive Scan...",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                },
+                                leadingIcon = {
+                                    MaterialSymbol(
+                                        name = "tune",
+                                        active = true,
+                                        size = 20.dp,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                onClick = {
+                                    showDriveDropdown = false
+                                    showVolumeSelectionDialog = true
+                                }
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -1399,6 +1505,7 @@ fun MainApp() {
                                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh,
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .clip(RoundedCornerShape(16.dp))
                                                 .clickable {
                                                     selectedVolumeIds = if (isSelected) {
                                                         if (selectedVolumeIds.size > 1 || scanAppsSelected) selectedVolumeIds - vol.id else selectedVolumeIds
@@ -1410,24 +1517,16 @@ fun MainApp() {
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                    .padding(horizontal = 16.dp, vertical = 14.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Surface(
-                                                    shape = CircleShape,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                    modifier = Modifier.size(44.dp)
-                                                ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        MaterialSymbol(
-                                                            name = iconName,
-                                                            active = true,
-                                                            size = 24.dp,
-                                                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-                                                Spacer(modifier = Modifier.width(14.dp))
+                                                MaterialSymbol(
+                                                    name = iconName,
+                                                    active = true,
+                                                    size = 28.dp,
+                                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.width(16.dp))
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
                                                         text = vol.name,
@@ -1461,6 +1560,7 @@ fun MainApp() {
                                         color = if (scanAppsSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh,
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .clip(RoundedCornerShape(16.dp))
                                             .clickable {
                                                 if (scanAppsSelected && selectedVolumeIds.isEmpty()) {
                                                     // Keep at least one item selected
@@ -1472,24 +1572,16 @@ fun MainApp() {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                .padding(horizontal = 16.dp, vertical = 14.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = if (scanAppsSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                                modifier = Modifier.size(44.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    MaterialSymbol(
-                                                        name = "apps",
-                                                        active = true,
-                                                        size = 24.dp,
-                                                        tint = if (scanAppsSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(14.dp))
+                                            MaterialSymbol(
+                                                name = "apps",
+                                                active = true,
+                                                size = 28.dp,
+                                                tint = if (scanAppsSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.width(16.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = "Installed Apps & Packages",

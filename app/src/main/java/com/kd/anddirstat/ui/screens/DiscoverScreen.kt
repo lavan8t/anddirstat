@@ -1,6 +1,7 @@
 package com.kd.anddirstat.ui.screens
 
 import android.content.Intent
+import android.os.Environment
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -120,11 +121,17 @@ fun DiscoverView(
     var deleteIsTrash by remember { mutableStateOf(true) }
 
     val filterPresets = remember {
-        listOf("Starred", "> 1 GB", "Screenshots", "Duplicates", "Old Downloads", "APKs")
+        listOf("Starred", "> 1 GB", "Old Downloads", "APKs")
     }
 
     var recentSearches by remember(searchQuery) {
         mutableStateOf(com.kd.anddirstat.util.FavoritesManager.getRecentSearches(context))
+    }
+
+    val presetListResults = remember(rootNode, selectedPreset) {
+        if (selectedPreset == "Old Downloads" || selectedPreset == "APKs") {
+            StorageFilterHelper.filterByPreset(rootNode, selectedPreset!!, context)
+        } else emptyList()
     }
 
     val displayedFiles = remember(rootNode, selectedPreset, topFiles) {
@@ -210,106 +217,121 @@ fun DiscoverView(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp)
+                                    .clip(shape)
                                     .combinedClickable(
-                                        onClick = {
-                                            if (selectedEntries.isNotEmpty() && isSelectable) {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                            } else {
-                                                onNodeClick(entry.node, entry.path)
-                                            }
-                                        },
-                                        onLongClick = {
-                                            if (isSelectable) {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                            }
-                                        }
-                                    )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(CircleShape)
-                                            .then(
+                                            onClick = {
+                                                if (selectedEntries.isNotEmpty() && isSelectable) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                                } else {
+                                                    onNodeClick(entry.node, entry.path)
+                                                }
+                                            },
+                                            onLongClick = {
                                                 if (isSelectable) {
-                                                    Modifier.clickable {
-                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
-                                                    }
-                                                } else Modifier
-                                            )
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                                }
+                                            }
+                                        )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (appPkg != null) {
-                                            AppIconView(
-                                                packageName = appPkg,
-                                                contentDescription = entry.node.name,
-                                                modifier = Modifier
-                                                    .size(32.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                            )
-                                        } else {
-                                            MaterialSymbol(
-                                                name = FileUtils.getNodeSymbolName(entry.node, false),
-                                                active = true,
-                                                size = 26.dp,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    val isStarred = remember(entry.path) { com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path) }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .then(
+                                                    if (isSelectable) {
+                                                        Modifier.clickable {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                                        }
+                                                    } else Modifier
+                                                )
                                         ) {
-                                            Text(
-                                                text = entry.node.name,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            if (isStarred) {
-                                                MaterialSymbol(
-                                                    name = "star",
-                                                    active = true,
-                                                    size = 18.dp,
-                                                    tint = MaterialTheme.colorScheme.primary
+                                            if (appPkg != null) {
+                                                AppIconView(
+                                                    packageName = appPkg,
+                                                    contentDescription = entry.node.name,
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                )
+                                            } else {
+                                                MediaThumbnailView(
+                                                    node = entry.node,
+                                                    path = entry.path,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                            if (isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    MaterialSymbol(
+                                                        name = "check",
+                                                        active = true,
+                                                        size = 24.dp,
+                                                        tint = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        val isStarred = remember(entry.path) { com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path) }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = entry.node.name,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+                                                if (isStarred) {
+                                                    MaterialSymbol(
+                                                        name = "star",
+                                                        active = true,
+                                                        size = 18.dp,
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = FileUtils.formatFileSize(entry.node.size),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = entry.path,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.padding(start = 8.dp)
                                                 )
                                             }
                                         }
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = FileUtils.formatFileSize(entry.node.size),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            Text(
-                                                text = entry.path,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.padding(start = 8.dp)
-                                            )
-                                        }
                                     }
                                 }
-                            }
 
                             if (index < searchResults.lastIndex) {
                                 Spacer(modifier = Modifier.height(2.dp))
@@ -396,9 +418,10 @@ fun DiscoverView(
 
             // 1. Filter Presets Row using official FilterChips
             item {
+                Spacer(modifier = Modifier.height(10.dp))
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     itemsIndexed(filterPresets) { index, preset ->
@@ -437,6 +460,178 @@ fun DiscoverView(
                     }
                 }
             }
+
+            if (selectedPreset == "Old Downloads" || selectedPreset == "APKs") {
+                item {
+                    Text(
+                        text = "${presetListResults.size} $selectedPreset found",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
+                }
+
+                if (presetListResults.isEmpty()) {
+                    item {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(48.dp)
+                        ) {
+                            Text(
+                                text = "No $selectedPreset found",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    itemsIndexed(
+                        items = presetListResults,
+                        key = { index, entry -> "${entry.path}_preset_$index" }
+                    ) { index, entry ->
+                        val shape = when {
+                            presetListResults.size == 1 -> RoundedCornerShape(24.dp)
+                            index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                            index == presetListResults.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
+                            else -> RoundedCornerShape(4.dp)
+                        }
+                        val isApp = entry.node.children?.any { it.name.startsWith("App Code") } == true
+                        val appPkg = if (isApp) FileUtils.extractPackageName(entry.node, entry.path, context) else null
+                        val isSelectable = remember(entry.node) {
+                            val n = entry.node.name.trim().lowercase()
+                            n != "[system & os]" && n != "system & os" &&
+                            n != "[recycle bin]" && n != "recycle bin" && n != "trashed" &&
+                            n != "[free space]" && n != "free space"
+                        }
+                        val isSelected = isSelectable && selectedEntries.contains(entry)
+
+                        Surface(
+                            shape = shape,
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clip(shape)
+                                .combinedClickable(
+                                    onClick = {
+                                        if (selectedEntries.isNotEmpty() && isSelectable) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                        } else {
+                                            onNodeClick(entry.node, entry.path)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (isSelectable) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                        }
+                                    }
+                                )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .then(
+                                            if (isSelectable) {
+                                                Modifier.clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                                }
+                                            } else Modifier
+                                        )
+                                ) {
+                                    if (appPkg != null) {
+                                        AppIconView(
+                                            packageName = appPkg,
+                                            contentDescription = entry.node.name,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        MediaThumbnailView(
+                                            node = entry.node,
+                                            path = entry.path,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(MaterialTheme.colorScheme.primary),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "check",
+                                                active = true,
+                                                size = 24.dp,
+                                                tint = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    val isStarred = remember(entry.path) { com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path) }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = entry.node.name,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isStarred) {
+                                            MaterialSymbol(
+                                                name = "star",
+                                                active = true,
+                                                size = 18.dp,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = FileUtils.formatFileSize(entry.node.size),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = entry.path.replace(Environment.getExternalStorageDirectory().absolutePath, "Storage"),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(start = 12.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
 
             item {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -616,139 +811,95 @@ fun DiscoverView(
                     else -> RoundedCornerShape(4.dp)
                 }
 
-                val dismissState = rememberSwipeToDismissBoxState(
-                    confirmValueChange = { value ->
-                        if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (pkgName != null) {
-                                FileUtils.uninstallApp(context, pkgName)
-                            }
-                            false
-                        } else {
-                            false
-                        }
-                    }
-                )
-
-                SwipeToDismissBox(
-                    state = dismissState,
+                Surface(
+                    shape = shape,
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    backgroundContent = {
-                        val isStartToEnd = dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd
-                        val alignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(shape)
-                                .background(MaterialTheme.colorScheme.errorContainer)
-                                .padding(horizontal = 20.dp),
-                            contentAlignment = alignment
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                MaterialSymbol(
-                                    name = "delete",
-                                    active = true,
-                                    size = 20.dp,
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                Text(
-                                    text = "Uninstall",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
+                        .padding(horizontal = 16.dp)
+                        .clip(shape)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (selectedEntries.isNotEmpty()) {
+                                selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
+                            } else if (pkgName != null) {
+                                try {
+                                    context.startActivity(
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            "package:$pkgName".toUri()
+                                        )
+                                    )
+                                } catch (_: Exception) {}
                             }
                         }
-                    }
                 ) {
-                    Surface(
-                        shape = shape,
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainer,
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(shape)
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (selectedEntries.isNotEmpty()) {
-                                    selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
-                                } else if (pkgName != null) {
-                                    try {
-                                        context.startActivity(
-                                            Intent(
-                                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                                "package:$pkgName".toUri()
-                                            )
-                                        )
-                                    } catch (_: Exception) {}
-                                }
-                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                AppIconView(
-                                    packageName = pkgName,
-                                    contentDescription = app.name,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                                if (isSelected) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "check",
-                                            active = true,
-                                            size = 24.dp,
-                                            tint = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                    }
+                            AppIconView(
+                                packageName = pkgName,
+                                contentDescription = app.name,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MaterialSymbol(
+                                        name = "check",
+                                        active = true,
+                                        size = 24.dp,
+                                        tint = MaterialTheme.colorScheme.onPrimary
+                                    )
                                 }
                             }
+                        }
 
-                            Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
 
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = app.name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = app.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = pkgName ?: "Application",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
-                            Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = FileUtils.formatFileSize(app.size, context),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = FileUtils.formatFileSize(app.size, context),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
@@ -934,6 +1085,7 @@ fun DiscoverView(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
 
         // Floating Selection Bar for Search Results (Rich, expressive, sitting right above bottom navbar)
         AnimatedVisibility(
