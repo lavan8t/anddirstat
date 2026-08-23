@@ -1,5 +1,9 @@
 package com.kd.anddirstat.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -31,8 +35,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -184,6 +191,7 @@ fun FileTypesView(
     stats: List<ExtensionStat>,
     totalDeviceSize: Long,
     onNodeClick: (CompactNode, String) -> Unit = { _, _ -> },
+    onNavigateTo: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -191,7 +199,19 @@ fun FileTypesView(
     val haptic = LocalHapticFeedback.current
     var expandedCategories by remember(rootNode) { mutableStateOf(setOf<String>()) }
     var expandedExtensions by remember(rootNode) { mutableStateOf(setOf<String>()) }
-    val overview = remember(rootNode, totalDeviceSize) { calculateStorageOverview(rootNode, totalDeviceSize) }
+    val initialOverview = remember(rootNode, totalDeviceSize) {
+        StorageOverviewData(
+            totalCapacity = if (totalDeviceSize > 0L) totalDeviceSize else rootNode.size,
+            freeSpace = 0L,
+            usedSpace = rootNode.size,
+            categories = emptyList()
+        )
+    }
+    val overview by produceState(initialValue = initialOverview, rootNode, totalDeviceSize) {
+        value = withContext(Dispatchers.Default) {
+            calculateStorageOverview(rootNode, totalDeviceSize)
+        }
+    }
     val usedPercent = if (overview.totalCapacity > 0L) (overview.usedSpace.toDouble() / overview.totalCapacity.toDouble() * 100.0) else 0.0
 
     val visibleStats = remember(stats) {
@@ -430,7 +450,7 @@ fun FileTypesView(
     }
 
     LazyColumn(
-        contentPadding = PaddingValues(top = 16.dp, bottom = 110.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -519,8 +539,8 @@ fun FileTypesView(
             val onCategoryClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 if (isBinCategory) {
-                    val intent = Intent(context, RecycleBinCleanerActivity::class.java)
-                    context.startActivity(intent)
+                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
+                        ?: context.startActivity(Intent(context, RecycleBinCleanerActivity::class.java))
                 } else {
                     expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
                 }
@@ -531,6 +551,14 @@ fun FileTypesView(
                     leadingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (!isBinCategory) {
+                                val catArrowRotation by animateFloatAsState(
+                                    targetValue = if (isCatExpanded) 90f else 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    ),
+                                    label = "catChevronRotation"
+                                )
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
@@ -539,10 +567,11 @@ fun FileTypesView(
                                         .clickable { onCategoryClick() }
                                 ) {
                                     MaterialSymbol(
-                                        name = if (isCatExpanded) "expand_more" else "chevron_right",
+                                        name = "chevron_right",
                                         active = true,
                                         size = 22.dp,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.graphicsLayer { rotationZ = catArrowRotation }
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(2.dp))
@@ -652,6 +681,14 @@ fun FileTypesView(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Spacer(modifier = Modifier.width(28.dp))
                                     if (hasFiles) {
+                                        val extArrowRotation by animateFloatAsState(
+                                            targetValue = if (isStatExpanded) 90f else 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            ),
+                                            label = "extChevronRotation"
+                                        )
                                         Box(
                                             contentAlignment = Alignment.Center,
                                             modifier = Modifier
@@ -663,10 +700,11 @@ fun FileTypesView(
                                                 }
                                         ) {
                                             MaterialSymbol(
-                                                name = if (isStatExpanded) "expand_more" else "chevron_right",
+                                                name = "chevron_right",
                                                 active = true,
                                                 size = 20.dp,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.graphicsLayer { rotationZ = extArrowRotation }
                                             )
                                         }
                                         Spacer(modifier = Modifier.width(2.dp))

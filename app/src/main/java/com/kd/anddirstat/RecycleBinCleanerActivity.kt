@@ -576,11 +576,14 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                                 }
                             }
                         } else {
-                            LazyColumn(
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(360.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxWidth(),
-                                contentPadding = PaddingValues(bottom = 12.dp)
+                                contentPadding = PaddingValues(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 items(trashedFiles, key = { it.path }) { item ->
                                     val isSelected = selectedFiles.contains(item.path)

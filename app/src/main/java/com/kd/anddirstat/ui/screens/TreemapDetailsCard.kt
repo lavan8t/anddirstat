@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -111,9 +113,9 @@ fun ExpressiveNodeDetailsSheet(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 24.dp)
-            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(top = 4.dp, bottom = 16.dp)
     ) {
         // Header Row: Icon/Thumbnail + Full Name + Path + Modified Date
         Row(
@@ -125,13 +127,13 @@ fun ExpressiveNodeDetailsSheet(
                     packageName = pkgName,
                     contentDescription = node.name,
                     modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
                 )
             } else if (isMediaFile && isRealFile) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.size(56.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(44.dp)
                 ) {
                     MediaThumbnailView(
                         node = node,
@@ -143,19 +145,19 @@ fun ExpressiveNodeDetailsSheet(
             } else {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(44.dp)
                 ) {
                     val symbolName = remember(node, isAppNode) { FileUtils.getNodeSymbolName(node, isAppNode) }
                     MaterialSymbol(
                         name = symbolName,
                         active = true,
-                        size = 38.dp,
+                        size = 30.dp,
                         tint = materialItemColor
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -181,11 +183,11 @@ fun ExpressiveNodeDetailsSheet(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Total Size & App Breakdown Card (0 spacing)
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -193,17 +195,17 @@ fun ExpressiveNodeDetailsSheet(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp)
+                        .padding(14.dp)
                 ) {
                     Text(
                         text = "Total Size",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = FileUtils.formatFileSize(node.size),
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -213,22 +215,22 @@ fun ExpressiveNodeDetailsSheet(
                 if (isAppNode && (codeSize > 0 || dataSize > 0 || cacheSize > 0)) {
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.padding(horizontal = 14.dp)
                     )
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp)
+                            .padding(vertical = 8.dp)
                     ) {
                         AppSizeRow(label = "App Code", size = codeSize)
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp)
                         )
                         AppSizeRow(label = "Data", size = dataSize)
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp)
                         )
                         AppSizeRow(label = "Cache", size = cacheSize)
                     }
@@ -240,7 +242,7 @@ fun ExpressiveNodeDetailsSheet(
         val isSpecialNode = isFreeSpace || nameLower == "[system & os]" || nameLower == "system & os"
 
         if (!isFreeSpace) {
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Action Buttons Row: Actions on the left, Single Select button pinned to bottom right
             Row(

@@ -419,16 +419,21 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                 }
             }
         } else {
-            LazyColumn(
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(360.dp),
                 contentPadding = PaddingValues(
                     top = innerPadding.calculateTopPadding() + 8.dp,
-                    bottom = innerPadding.calculateBottomPadding() + 24.dp
+                    bottom = innerPadding.calculateBottomPadding() + 24.dp,
+                    start = 8.dp,
+                    end = 8.dp
                 ),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                itemsIndexed(filteredList, key = { _, item -> item.path }) { _, item ->
+                items(filteredList, key = { it.path }) { item ->
                     val isSelected = selectedPaths.contains(item.path)
                     val isMedia = remember(item.name, item.isDirectory) {
                         if (item.isDirectory) false
