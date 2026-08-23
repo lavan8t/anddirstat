@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -23,14 +24,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -101,27 +106,73 @@ private fun renderTreemapToBitmap(
         val sW = maxOf(1f, tile.width)
         val sH = maxOf(1f, tile.height)
 
+        val appIcon = if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
+            AppIconCache.get(context, tile.pkgName)
+        } else if (tile.pkgName != null) {
+            AppIconCache.get(context, tile.pkgName)
+            null
+        } else null
+
+        val tileBaseColor = if (tile.pkgName != null) {
+            AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
+        } else {
+            tile.baseColor
+        }
+
         if (isAmoled) {
             paint.style = android.graphics.Paint.Style.STROKE
             paint.strokeWidth = 1.5f
-            paint.color = tile.baseColor.toArgb()
+            paint.color = tileBaseColor.toArgb()
             paint.shader = null
             canvas.drawRect(sLeft, sTop, sLeft + sW, sTop + sH, paint)
         } else {
-            // For small tiles (<8px), draw solid color with 0 shader allocations for 100x speedup
             if (sW < 8f || sH < 8f) {
                 paint.style = android.graphics.Paint.Style.FILL
                 paint.shader = null
-                paint.color = tile.baseColor.toArgb()
+                paint.color = tileBaseColor.toArgb()
                 canvas.drawRect(sLeft, sTop, sLeft + sW, sTop + sH, paint)
             } else {
-                val c1 = tile.gradientColors[0].toArgb()
-                val c2 = tile.gradientColors[1].toArgb()
-                val c3 = tile.gradientColors[2].toArgb()
-                val shader = android.graphics.LinearGradient(
-                    sLeft, sTop, sLeft + sW, sTop + sH,
-                    intArrayOf(c1, c2, c3),
-                    null,
+                val cHighlight = if (isDark) {
+                    Color(
+                        red = (tileBaseColor.red * 1.30f + 0.10f).coerceIn(0f, 1f),
+                        green = (tileBaseColor.green * 1.30f + 0.10f).coerceIn(0f, 1f),
+                        blue = (tileBaseColor.blue * 1.30f + 0.10f).coerceIn(0f, 1f),
+                        alpha = 1f
+                    ).toArgb()
+                } else {
+                    Color(
+                        red = (tileBaseColor.red * 1.35f + 0.15f).coerceIn(0f, 1f),
+                        green = (tileBaseColor.green * 1.35f + 0.15f).coerceIn(0f, 1f),
+                        blue = (tileBaseColor.blue * 1.35f + 0.15f).coerceIn(0f, 1f),
+                        alpha = 1f
+                    ).toArgb()
+                }
+                val cBase = tileBaseColor.toArgb()
+                val cShadow = if (isDark) {
+                    Color(
+                        red = (tileBaseColor.red * 0.45f).coerceIn(0f, 1f),
+                        green = (tileBaseColor.green * 0.45f).coerceIn(0f, 1f),
+                        blue = (tileBaseColor.blue * 0.45f).coerceIn(0f, 1f),
+                        alpha = 1f
+                    ).toArgb()
+                } else {
+                    Color(
+                        red = (tileBaseColor.red * 0.40f).coerceIn(0f, 1f),
+                        green = (tileBaseColor.green * 0.40f).coerceIn(0f, 1f),
+                        blue = (tileBaseColor.blue * 0.40f).coerceIn(0f, 1f),
+                        alpha = 1f
+                    ).toArgb()
+                }
+
+                // WinDirStat / QDirStat Cushion Treemap Lighting effect:
+                // Radial gradient centered top-left (35% X, 30% Y) with simulated directional light
+                val centerX = sLeft + sW * 0.35f
+                val centerY = sTop + sH * 0.30f
+                val radius = maxOf(sW, sH) * 1.05f
+                val shader = android.graphics.RadialGradient(
+                    centerX, centerY, radius,
+                    intArrayOf(cHighlight, cBase, cShadow),
+                    floatArrayOf(0f, 0.50f, 1.0f),
                     android.graphics.Shader.TileMode.CLAMP
                 )
                 paint.style = android.graphics.Paint.Style.FILL
@@ -130,19 +181,16 @@ private fun renderTreemapToBitmap(
             }
         }
 
-        if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
-            val appIcon = AppIconCache.get(context, tile.pkgName)
-            if (appIcon != null) {
-                val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
-                val iconX = sLeft + (sW - iconSize) / 2f
-                val iconY = sTop + (sH - iconSize) / 2f
-                val androidBmp = appIcon.asAndroidBitmap()
-                val srcRect = android.graphics.Rect(0, 0, androidBmp.width, androidBmp.height)
-                val dstRect = android.graphics.RectF(iconX, iconY, iconX + iconSize, iconY + iconSize)
-                paint.shader = null
-                paint.style = android.graphics.Paint.Style.FILL
-                canvas.drawBitmap(androidBmp, srcRect, dstRect, paint)
-            }
+        if (appIcon != null && sW >= 24f && sH >= 24f) {
+            val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
+            val iconX = sLeft + (sW - iconSize) / 2f
+            val iconY = sTop + (sH - iconSize) / 2f
+            val androidBmp = appIcon.asAndroidBitmap()
+            val srcRect = android.graphics.Rect(0, 0, androidBmp.width, androidBmp.height)
+            val dstRect = android.graphics.RectF(iconX, iconY, iconX + iconSize, iconY + iconSize)
+            paint.shader = null
+            paint.style = android.graphics.Paint.Style.FILL
+            canvas.drawBitmap(androidBmp, srcRect, dstRect, paint)
         }
     }
 
@@ -220,7 +268,9 @@ fun computeTreemapTiles(
         val isApp = inApps && children?.any { it.name.startsWith("App Code") } == true
 
         if (children == null || children.isEmpty() || isApp) {
-            val baseColor = getNodeColor(node, isDark)
+            val pkg = if (isApp) FileUtils.extractPackageName(node) else null
+            val appDominantColor = if (pkg != null) AppIconCache.getDominantColor(pkg) else null
+            val baseColor = appDominantColor ?: getNodeColor(node, isDark)
             val highlight = if (isDark) {
                 Color(
                     red = (baseColor.red * 1.30f + 0.10f).coerceIn(0f, 1f),
@@ -251,7 +301,6 @@ fun computeTreemapTiles(
                     alpha = 1f
                 )
             }
-            val pkg = if (isApp) FileUtils.extractPackageName(node) else null
             val gradientColors = listOf(highlight, baseColor, shadow)
             tiles.add(TreemapTile(node, currentPath, l, t, w, h, isApp, pkg, baseColor, gradientColors))
             return
@@ -559,24 +608,60 @@ fun TreemapCanvas(
                     val drawW = maxOf(1f, sW)
                     val drawH = maxOf(1f, sH)
 
+                    val tileBaseColor = if (tile.pkgName != null) {
+                        AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
+                    } else {
+                        tile.baseColor
+                    }
+
                     if (isAmoled) {
                         drawRect(
-                            color = tile.baseColor,
+                            color = tileBaseColor,
                             topLeft = Offset(sLeft, sTop),
                             size = Size(drawW, drawH),
                             style = Stroke(width = if (currentScale > 1.5f) 2.5f else 1.5f)
                         )
                     } else if (drawW < 8f || drawH < 8f) {
                         drawRect(
-                            color = tile.baseColor,
+                            color = tileBaseColor,
                             topLeft = Offset(sLeft, sTop),
                             size = Size(drawW, drawH)
                         )
                     } else {
-                        val brush = Brush.linearGradient(
-                            colors = tile.gradientColors,
-                            start = Offset(sLeft, sTop),
-                            end = Offset(sLeft + drawW, sTop + drawH)
+                        val cHighlight = if (isDark) {
+                            Color(
+                                red = (tileBaseColor.red * 1.30f + 0.10f).coerceIn(0f, 1f),
+                                green = (tileBaseColor.green * 1.30f + 0.10f).coerceIn(0f, 1f),
+                                blue = (tileBaseColor.blue * 1.30f + 0.10f).coerceIn(0f, 1f),
+                                alpha = 1f
+                            )
+                        } else {
+                            Color(
+                                red = (tileBaseColor.red * 1.35f + 0.15f).coerceIn(0f, 1f),
+                                green = (tileBaseColor.green * 1.35f + 0.15f).coerceIn(0f, 1f),
+                                blue = (tileBaseColor.blue * 1.35f + 0.15f).coerceIn(0f, 1f),
+                                alpha = 1f
+                            )
+                        }
+                        val cShadow = if (isDark) {
+                            Color(
+                                red = (tileBaseColor.red * 0.45f).coerceIn(0f, 1f),
+                                green = (tileBaseColor.green * 0.45f).coerceIn(0f, 1f),
+                                blue = (tileBaseColor.blue * 0.45f).coerceIn(0f, 1f),
+                                alpha = 1f
+                            )
+                        } else {
+                            Color(
+                                red = (tileBaseColor.red * 0.40f).coerceIn(0f, 1f),
+                                green = (tileBaseColor.green * 0.40f).coerceIn(0f, 1f),
+                                blue = (tileBaseColor.blue * 0.40f).coerceIn(0f, 1f),
+                                alpha = 1f
+                            )
+                        }
+                        val brush = Brush.radialGradient(
+                            colors = listOf(cHighlight, tileBaseColor, cShadow),
+                            center = Offset(sLeft + drawW * 0.35f, sTop + drawH * 0.30f),
+                            radius = maxOf(drawW, drawH) * 1.05f
                         )
                         drawRect(
                             brush = brush,
@@ -652,14 +737,14 @@ fun TreemapCanvas(
             }
         }
 
-        // Floating Glide Inspection Tooltip Overlay (Borderless & Fill-free, Isolated from Canvas render)
+        // Floating Glide Inspection Tooltip Overlay (Bigger preview on top, name below with middle ellipsis, size below name)
         val targetPos = glidingTouchPos
         val currentGliding = glidingTile
         if (targetPos != null && currentGliding != null) {
             val touchXPx = targetPos.x
             val touchYPx = targetPos.y
-            val cardWidthPx = with(density) { 240.dp.toPx() }
-            val cardHeightPx = with(density) { 68.dp.toPx() }
+            val cardWidthPx = with(density) { 180.dp.toPx() }
+            val cardHeightPx = with(density) { 140.dp.toPx() }
             val paddingPx = with(density) { 16.dp.toPx() }
 
             val clampedX = (touchXPx - cardWidthPx / 2f).coerceIn(paddingPx, (canvasSize.width - cardWidthPx - paddingPx).coerceAtLeast(paddingPx))
@@ -696,43 +781,57 @@ fun TreemapCanvas(
                     )
                 }
 
-                Row(
-                    modifier = Modifier
-                        .widthIn(min = 160.dp, max = 260.dp)
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (pureBlack && isDark) Color(0xEE000000) else Color(0xEE1E222D),
+                    border = BorderStroke(1.dp, Color(0x33FFFFFF)),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.widthIn(min = 140.dp, max = 200.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        if (tile.isApp && tile.pkgName != null) {
-                            AppIconView(packageName = tile.pkgName, contentDescription = null, modifier = Modifier.size(32.dp))
-                        } else if (isMedia) {
-                            MediaThumbnailView(node = tile.node, path = tile.path, modifier = Modifier.fillMaxSize())
-                        } else {
-                            val iconName = if (tile.node.isDirectory) "folder" else "description"
-                            MaterialSymbol(iconName, active = true, size = 24.dp, tint = tile.baseColor)
+                        // 1. Bigger Preview on Top
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0x22FFFFFF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (tile.isApp && tile.pkgName != null) {
+                                AppIconView(packageName = tile.pkgName, contentDescription = null, modifier = Modifier.size(52.dp))
+                            } else if (isMedia) {
+                                MediaThumbnailView(node = tile.node, path = tile.path, modifier = Modifier.fillMaxSize())
+                            } else {
+                                val iconName = if (tile.node.isDirectory) "folder" else "description"
+                                MaterialSymbol(iconName, active = true, size = 36.dp, tint = tile.baseColor)
+                            }
                         }
-                    }
 
-                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 2. File Name with Middle Ellipsis below preview
                         Text(
-                            text = tile.node.name,
+                            text = FileUtils.middleEllipsis(tile.node.name, 22),
                             style = MaterialTheme.typography.titleSmall.copy(shadow = textShadow),
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
                             color = Color.White
                         )
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        // 3. File Size below Name
                         Text(
                             text = FileUtils.formatFileSize(tile.node.size, context),
                             style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow),
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.9f)
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }

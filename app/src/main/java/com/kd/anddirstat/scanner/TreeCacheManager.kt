@@ -111,4 +111,11 @@ object TreeCacheManager {
             children = children
         )
     }
+
+    fun clearCache(context: Context) {
+        try {
+            File(context.filesDir, CACHE_FILE_NAME).delete()
+            File(context.filesDir, "$CACHE_FILE_NAME.tmp").delete()
+        } catch (_: Exception) {}
+    }
 }

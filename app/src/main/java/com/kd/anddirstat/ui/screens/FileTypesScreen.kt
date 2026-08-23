@@ -200,7 +200,6 @@ fun FileTypesView(
             val name = it.extension.lowercase().trim().removePrefix(".")
             name != "[system & os]" && name != "system & os" &&
             name != "[free space]" && name != "free space" &&
-            name != "[recycle bin]" && name != "recycle bin" && name != "trashed" &&
             name != "cache" && name != "app cache" &&
             name != "data" && name != "app data"
         }
@@ -212,6 +211,7 @@ fun FileTypesView(
     val docExts = remember { setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub", "mobi", "log", "rtf", "html", "htm", "json", "xml", "md", "yaml", "yml") }
     val appExts = remember { setOf("apk", "xapk", "apks", "aab", "obb") }
     val archiveExts = remember { setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz") }
+    val binExts = remember { setOf("[trashed]", "trashed") }
 
     val categoryGroups = remember(visibleStats) {
         val assignedStats = mutableSetOf<ExtensionStat>()
@@ -219,12 +219,13 @@ fun FileTypesView(
         fun getStatsForSet(extSet: Set<String>): List<ExtensionStat> {
             val matched = visibleStats.filter { stat ->
                 val ext = stat.extension.lowercase().removePrefix(".")
-                ext in extSet
+                ext in extSet || stat.extension.lowercase() in extSet
             }
             assignedStats.addAll(matched)
             return matched.sortedByDescending { it.totalSize }
         }
 
+        val bin = getStatsForSet(binExts)
         val videos = getStatsForSet(videoExts)
         val images = getStatsForSet(imageExts)
         val audio = getStatsForSet(audioExts)
@@ -234,6 +235,7 @@ fun FileTypesView(
         val others = visibleStats.filter { it !in assignedStats }.sortedByDescending { it.totalSize }
 
         listOf(
+            FileCategoryGroup("bin", "Recycle Bin", "delete", Color(0xFFF43F5E), binExts, bin, bin.sumOf { it.totalSize }, bin.sumOf { it.count }),
             FileCategoryGroup("videos", "Videos", "movie", Color(0xFFFB923C), videoExts, videos, videos.sumOf { it.totalSize }, videos.sumOf { it.count }),
             FileCategoryGroup("images", "Images", "image", Color(0xFF34D399), imageExts, images, images.sumOf { it.totalSize }, images.sumOf { it.count }),
             FileCategoryGroup("audio", "Audio", "music_note", Color(0xFFC084FC), audioExts, audio, audio.sumOf { it.totalSize }, audio.sumOf { it.count }),
@@ -253,6 +255,7 @@ fun FileTypesView(
         maxLimit: Int = 1000
     ) {
         val cleanTarget = targetExt.lowercase().removePrefix(".")
+        val isTargetBin = cleanTarget == "[trashed]" || cleanTarget == "trashed"
         val stack = ArrayDeque<Pair<CompactNode, String>>()
         stack.add(root to rootPath)
 
@@ -261,26 +264,37 @@ fun FileTypesView(
             val name = node.name
 
             if (name == "Cache" || name == "App Cache" || name == "Data" || name == "App Data" ||
-                name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]") {
+                name == "[Free Space]" || name == "[System & OS]") {
                 continue
             }
 
-            val isApp = node.children?.any { it.name.startsWith("App Code") } == true
-            val ext = if (isApp || name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
-                "apk"
+            val isTrashed = name.startsWith(".trashed") || name == "[Recycle Bin]" || currentPath.contains("[Recycle Bin]") || currentPath.contains(".trashed")
+            if (isTargetBin) {
+                if (!node.isDirectory && isTrashed) {
+                    outList.add(node to currentPath)
+                }
             } else {
-                val dotIdx = name.lastIndexOf('.')
-                if (dotIdx > 0 && dotIdx < name.length - 1) name.substring(dotIdx + 1).lowercase() else ""
-            }
+                if (isTrashed) {
+                    continue
+                }
 
-            val isMatch = if (cleanTarget == "[no ext]" || cleanTarget == "no ext" || cleanTarget.isEmpty()) {
-                ext.isEmpty()
-            } else {
-                ext == cleanTarget
-            }
+                val isApp = node.children?.any { it.name.startsWith("App Code") } == true
+                val ext = if (isApp || name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
+                    "apk"
+                } else {
+                    val dotIdx = name.lastIndexOf('.')
+                    if (dotIdx > 0 && dotIdx < name.length - 1) name.substring(dotIdx + 1).lowercase() else ""
+                }
 
-            if (!node.isDirectory && isMatch) {
-                outList.add(node to currentPath)
+                val isMatch = if (cleanTarget == "[no ext]" || cleanTarget == "no ext" || cleanTarget.isEmpty()) {
+                    ext.isEmpty()
+                } else {
+                    ext == cleanTarget
+                }
+
+                if (!node.isDirectory && isMatch) {
+                    outList.add(node to currentPath)
+                }
             }
 
             val children = node.children
