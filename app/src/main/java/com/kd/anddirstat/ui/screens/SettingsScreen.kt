@@ -24,14 +24,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -84,6 +87,7 @@ fun SettingsView(
 
     var showThemeSheet by remember { mutableStateOf(false) }
     var showAccentSheet by remember { mutableStateOf(false) }
+    var showClearCacheDialog by remember { mutableStateOf(false) }
 
     // Shapes: Terminal (start/end) rounded 24dp, intermediate rounded 4dp
     val topShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
@@ -285,7 +289,7 @@ fun SettingsView(
                 },
                 leadingContent = {
                     MaterialSymbol(
-                        name = "cached",
+                        name = "delete_sweep",
                         active = true,
                         size = 24.dp,
                         tint = MaterialTheme.colorScheme.primary
@@ -300,76 +304,14 @@ fun SettingsView(
                     .clip(singleShape)
                     .clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        com.kd.anddirstat.scanner.TreeCacheManager.clearCache(context)
-                        AppNotifier.notify("Cache cleared successfully")
+                        showClearCacheDialog = true
                     }
             )
         }
 
-        // About & Source Code Section Header
+        // App name & version footer + GitHub Button
         item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "About",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
-            )
-        }
-
-        // Source Code Link
-        item {
-            ListItem(
-                headlineContent = {
-                    Text(
-                        text = "Source code",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = "GitHub repository & open-source releases",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                },
-                leadingContent = {
-                    MaterialSymbol(
-                        name = "code",
-                        active = true,
-                        size = 24.dp,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
-                trailingContent = {
-                    MaterialSymbol(
-                        name = "open_in_new",
-                        active = true,
-                        size = 20.dp,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clip(singleShape)
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lavan8t/AndDirStat"))
-                            context.startActivity(intent)
-                        } catch (_: Exception) {}
-                    }
-            )
-        }
-
-        // App name & version footer
-        item {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(36.dp))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -384,24 +326,100 @@ fun SettingsView(
                         text = "And",
                         fontFamily = GoogleSansFlexTitleAndFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = "DirStat",
                         fontFamily = GoogleSansFlexTitleDirStatFamily,
                         fontWeight = FontWeight.Light,
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "v1.0.0 • Open Source Disk Analyzer",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                 )
+                Spacer(modifier = Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lavan8t/AndDirStat")))
+                            } catch (_: Exception) {}
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MaterialSymbol(
+                            name = "code",
+                            active = true,
+                            size = 18.dp,
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "lavan8t/AndDirStat",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        MaterialSymbol(
+                            name = "north_east",
+                            active = true,
+                            size = 16.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
+    }
+
+    // Confirmation dialog for Clear Cache & Re-index
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = {
+                Text(
+                    text = "Clear cache & re-index?",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "This will flush stored scan trees and app icon bitmaps. A fresh scan will be required.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showClearCacheDialog = false
+                        com.kd.anddirstat.scanner.TreeCacheManager.clearCache(context)
+                        AppNotifier.notify("Cache cleared successfully")
+                    }
+                ) {
+                    Text("Clear", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // Exact Latch Settings Selection Bottom Sheet for Theme
