@@ -29,12 +29,13 @@ class StorageScanner(private val context: Context) {
     suspend fun scanStorage(
         selectedVolumes: List<StorageVolumeInfo> = emptyList(),
         includeFreeSpace: Boolean = true,
+        scanApps: Boolean = true,
         useCacheIfValid: Boolean = false,
         onProgress: ((phase: String, detail: String) -> Unit)? = null
     ): CompactNode = withContext(scanDispatcher) {
         val volumesToScan = if (selectedVolumes.isNotEmpty()) selectedVolumes else FileUtils.getAvailableStorageVolumes(context)
 
-        if (useCacheIfValid && volumesToScan.size == 1 && volumesToScan.first().isPrimary) {
+        if (useCacheIfValid && volumesToScan.size == 1 && volumesToScan.first().isPrimary && scanApps) {
             val cached = TreeCacheManager.loadTree(context)
             if (cached != null) {
                 return@withContext cached
@@ -100,15 +101,17 @@ class StorageScanner(private val context: Context) {
                 mediaRootNode
             }
 
-            val appsDeferred = async(scanDispatcher) {
-                updateProgress("Scanning Applications", "Enumerating packages...")
-                scanAllInstalledApplications(totalScannedBytes) { phase, detail ->
-                    updateProgress(phase, detail)
+            val appsDeferred = if (scanApps) {
+                async(scanDispatcher) {
+                    updateProgress("Scanning Applications", "Enumerating packages...")
+                    scanAllInstalledApplications(totalScannedBytes) { phase, detail ->
+                        updateProgress(phase, detail)
+                    }
                 }
-            }
+            } else null
 
             val mediaRootNode = filesDeferred.await()
-            val (appsNode, totalAppsSize) = appsDeferred.await()
+            val (appsNode, totalAppsSize) = if (appsDeferred != null) appsDeferred.await() else (null to 0L)
 
             updateProgress("Finalizing", "Assembling internal storage layout...")
             val accounted = mediaRootNode.size + totalAppsSize + primaryVol.freeBytes

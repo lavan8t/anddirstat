@@ -195,6 +195,7 @@ fun MainApp() {
         var showVolumeSelectionDialog by remember { mutableStateOf(false) }
         var detectedVolumes by remember { mutableStateOf(emptyList<StorageVolumeInfo>()) }
         var selectedVolumeIds by remember { mutableStateOf(setOf<String>()) }
+        var scanAppsSelected by remember { mutableStateOf(true) }
 
         var isTreeDeleting by remember { mutableStateOf(false) }
         var treeDeleteCurrentCount by remember { mutableStateOf(0) }
@@ -283,8 +284,8 @@ fun MainApp() {
         currentRoute = dest
     }
 
-    fun performScan(volumesToScan: List<StorageVolumeInfo>) {
-        if (!hasStoragePermission || volumesToScan.isEmpty()) return
+    fun performScan(volumesToScan: List<StorageVolumeInfo>, scanApps: Boolean = scanAppsSelected) {
+        if (!hasStoragePermission || (volumesToScan.isEmpty() && !scanApps)) return
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         isLoading = true
         scanPhase = "Analyzing storage..."
@@ -300,7 +301,7 @@ fun MainApp() {
             showHiddenFiles = hiddenFilesPref
             showSystemOS = systemOSPref
             val scanner = StorageScanner(context)
-            val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true) { phase, detail ->
+            val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = scanApps) { phase, detail ->
                 scanPhase = phase
                 scanDetail = detail
                 AppNotifier.updateProgress(context, title = phase, detail = detail, indeterminate = true, type = "scan")
@@ -1174,7 +1175,7 @@ fun MainApp() {
                             onDismissRequest = { showVolumeSelectionDialog = false },
                             title = {
                                 Text(
-                                    text = "Select storage to scan",
+                                    text = "Select what to scan",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1184,11 +1185,13 @@ fun MainApp() {
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    // Section 1: Storage Drives
                                     Text(
-                                        text = "Select storage drives to index",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(bottom = 4.dp)
+                                        text = "Storage Drives",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                     )
 
                                     detectedVolumes.forEach { vol ->
@@ -1206,7 +1209,7 @@ fun MainApp() {
                                                 .fillMaxWidth()
                                                 .clickable {
                                                     selectedVolumeIds = if (isSelected) {
-                                                        if (selectedVolumeIds.size > 1) selectedVolumeIds - vol.id else selectedVolumeIds
+                                                        if (selectedVolumeIds.size > 1 || scanAppsSelected) selectedVolumeIds - vol.id else selectedVolumeIds
                                                     } else {
                                                         selectedVolumeIds + vol.id
                                                     }
@@ -1249,18 +1252,80 @@ fun MainApp() {
                                             }
                                         }
                                     }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    // Section 2: Apps & System Packages
+                                    Text(
+                                        text = "Applications",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = if (scanAppsSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (scanAppsSelected && selectedVolumeIds.isEmpty()) {
+                                                    // Keep at least one item selected
+                                                } else {
+                                                    scanAppsSelected = !scanAppsSelected
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (scanAppsSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                modifier = Modifier.size(44.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    MaterialSymbol(
+                                                        name = "apps",
+                                                        active = true,
+                                                        size = 24.dp,
+                                                        tint = if (scanAppsSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(14.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Installed Apps & Packages",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "Scan app binaries, caches, and app storage",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             },
                             confirmButton = {
+                                val totalCount = selectedVolumeIds.size + if (scanAppsSelected) 1 else 0
                                 FilledTonalButton(
                                     onClick = {
                                         showVolumeSelectionDialog = false
                                         val toScan = detectedVolumes.filter { selectedVolumeIds.contains(it.id) }
-                                        performScan(toScan)
+                                        performScan(toScan, scanApps = scanAppsSelected)
                                     },
-                                    enabled = selectedVolumeIds.isNotEmpty()
+                                    enabled = selectedVolumeIds.isNotEmpty() || scanAppsSelected
                                 ) {
-                                    Text("Scan (${selectedVolumeIds.size})", fontWeight = FontWeight.Bold)
+                                    Text("Scan ($totalCount)", fontWeight = FontWeight.Bold)
                                 }
                             },
                             dismissButton = {

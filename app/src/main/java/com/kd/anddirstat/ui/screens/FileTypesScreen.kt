@@ -67,8 +67,7 @@ data class StorageOverviewData(
 )
 
 fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): StorageOverviewData {
-    var userAppsBytes = 0L
-    var systemAppsBytes = 0L
+    var appsBytes = 0L
     var videoBytes = 0L
     var imageBytes = 0L
     var audioBytes = 0L
@@ -103,20 +102,10 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
             continue
         }
 
-        // Detect App nodes inside Apps & System Packages
+        // All app nodes under Apps & System Packages are categorized under Apps (matching Explorer)
         val isApp = node.children?.any { it.name.startsWith("App Code") } == true
-        if (isApp) {
-            val isSystemApp = name.endsWith(" (System)", ignoreCase = true)
-            if (isSystemApp) {
-                systemAppsBytes += node.size
-            } else {
-                userAppsBytes += node.size
-            }
-            continue
-        }
-
-        if (name == "Apps & System Packages") {
-            node.children?.forEach { stack.add(it to false) }
+        if (isApp || name == "Apps & System Packages") {
+            appsBytes += node.size
             continue
         }
 
@@ -148,11 +137,10 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
         freeSpaceBytes = totalCapacity - rootNode.size
     }
     val usedSpace = maxOf(0L, totalCapacity - freeSpaceBytes)
-    val totalSystem = systemOsBytes + systemAppsBytes
 
     val categories = listOf(
-        StorageCategorySummary("Apps", userAppsBytes, Color(0xFF3B82F6), "apps"),
-        StorageCategorySummary("System", totalSystem, Color(0xFF94A3B8), "android"),
+        StorageCategorySummary("Apps", appsBytes, Color(0xFF3B82F6), "apps"),
+        StorageCategorySummary("System", systemOsBytes, Color(0xFF94A3B8), "android"),
         StorageCategorySummary("Videos", videoBytes, Color(0xFFFB923C), "movie"),
         StorageCategorySummary("Images", imageBytes, Color(0xFF34D399), "image"),
         StorageCategorySummary("Audio", audioBytes, Color(0xFFC084FC), "music_note"),
@@ -279,7 +267,10 @@ fun FileTypesView(
                 }
 
                 val isApp = node.children?.any { it.name.startsWith("App Code") } == true
-                val ext = if (isApp || name.startsWith("App Code") || name.startsWith("APK (") || name.endsWith(".apk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
+                if (isApp || name.startsWith("App Code") || name == "Apps & System Packages" || currentPath.startsWith("Apps & System Packages")) {
+                    continue
+                }
+                val ext = if (name.endsWith(".apk", ignoreCase = true) || name.endsWith(".apks", ignoreCase = true) || name.endsWith(".xapk", ignoreCase = true) || name.endsWith(".obb", ignoreCase = true)) {
                     "apk"
                 } else {
                     val dotIdx = name.lastIndexOf('.')
