@@ -13,8 +13,8 @@ android {
         applicationId = "com.kd.anddirstat"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -32,11 +32,12 @@ android {
         create("release") {
             val ksPath = System.getenv("KEYSTORE_PATH") ?: "${project.rootDir}/release.keystore"
             val ksFile = File(ksPath)
-            if (ksFile.exists()) {
+            val pass = System.getenv("KEYSTORE_PASSWORD")
+            if (ksFile.exists() && !pass.isNullOrBlank()) {
                 storeFile = ksFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+                storePassword = pass
+                keyAlias = System.getenv("KEY_ALIAS") ?: "key0"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: pass
             }
         }
     }
@@ -54,7 +55,8 @@ android {
                 "proguard-rules.pro"
             )
             val relConfig = signingConfigs.getByName("release")
-            signingConfig = if (relConfig.storeFile != null && relConfig.storeFile!!.exists()) relConfig else signingConfigs.getByName("debug")
+            val hasRelPassword = !System.getenv("KEYSTORE_PASSWORD").isNullOrBlank()
+            signingConfig = if (relConfig.storeFile != null && relConfig.storeFile!!.exists() && hasRelPassword) relConfig else signingConfigs.getByName("debug")
         }
     }
     compileOptions {
