@@ -317,12 +317,24 @@ fun MainApp() {
                         startDestination = AppDestinations.TREE,
                         modifier = Modifier.fillMaxSize(),
                         enterTransition = {
-                            val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: -1)
+                            val targetRoute = targetState.destination.route
+                            val initialRoute = initialState.destination.route
+                            val isFwd = if (destIndexMap.containsKey(targetRoute) && destIndexMap.containsKey(initialRoute)) {
+                                (destIndexMap[targetRoute] ?: 0) > (destIndexMap[initialRoute] ?: 0)
+                            } else {
+                                targetRoute != AppDestinations.TREE
+                            }
                             if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
                             else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
                         },
                         exitTransition = {
-                            val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: -1)
+                            val targetRoute = targetState.destination.route
+                            val initialRoute = initialState.destination.route
+                            val isFwd = if (destIndexMap.containsKey(targetRoute) && destIndexMap.containsKey(initialRoute)) {
+                                (destIndexMap[targetRoute] ?: 0) > (destIndexMap[initialRoute] ?: 0)
+                            } else {
+                                targetRoute != AppDestinations.TREE
+                            }
                             if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
                             else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
                         },
