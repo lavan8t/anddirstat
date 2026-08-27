@@ -172,8 +172,8 @@ fun TreemapScreen(
                 ) {
                     AnimatedVisibility(
                         visible = isZoomed,
-                        enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.8f),
-                        exit = fadeOut(tween(100)) + scaleOut(targetScale = 0.8f)
+                        enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                        exit = fadeOut() + scaleOut(targetScale = 0.8f)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -255,8 +255,8 @@ fun TreemapScreen(
             // Top Left Corner: Reset Zoom (No bg fill)
             AnimatedVisibility(
                 visible = isZoomed,
-                enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.8f),
-                exit = fadeOut(tween(100)) + scaleOut(targetScale = 0.8f),
+                enter = fadeIn() + scaleIn(initialScale = 0.8f),
+                exit = fadeOut() + scaleOut(targetScale = 0.8f),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
@@ -333,14 +333,14 @@ fun TreemapScreen(
         AnimatedVisibility(
             visible = !isZoomed && selectedTreeNodes.isEmpty(),
             enter = if (isLandscape) {
-                slideInHorizontally(initialOffsetX = { -it }, animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(150))
+                slideInHorizontally(initialOffsetX = { -it }) + fadeIn()
             } else {
-                slideInVertically(initialOffsetY = { it }, animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(150))
+                slideInVertically(initialOffsetY = { it }) + fadeIn()
             },
             exit = if (isLandscape) {
-                slideOutHorizontally(targetOffsetX = { -it }, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(100))
+                slideOutHorizontally(targetOffsetX = { -it }) + fadeOut()
             } else {
-                slideOutVertically(targetOffsetY = { it }, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(100))
+                slideOutVertically(targetOffsetY = { it }) + fadeOut()
             },
             modifier = if (isLandscape) {
                 Modifier
@@ -361,14 +361,8 @@ fun TreemapScreen(
 
         AnimatedVisibility(
             visible = selectedTreeNodes.isNotEmpty(),
-            enter = slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessHigh)
-            ) + fadeIn(tween(120, easing = FastOutSlowInEasing)) + scaleIn(initialScale = 0.92f, animationSpec = spring(stiffness = Spring.StiffnessHigh)),
-            exit = slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = spring(stiffness = Spring.StiffnessHigh)
-            ) + fadeOut(tween(100, easing = FastOutSlowInEasing)) + scaleOut(targetScale = 0.92f, animationSpec = spring(stiffness = Spring.StiffnessHigh)),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn() + scaleIn(initialScale = 0.92f),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut() + scaleOut(targetScale = 0.92f),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()

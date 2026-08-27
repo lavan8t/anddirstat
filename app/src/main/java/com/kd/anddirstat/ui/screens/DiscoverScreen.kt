@@ -1121,24 +1121,8 @@ fun DiscoverView(
         // Floating Selection Bar for Search Results (Rich, expressive, sitting right above bottom navbar)
         AnimatedVisibility(
             visible = selectedEntries.isNotEmpty(),
-            enter = slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessHigh)
-            ) + fadeIn(
-                animationSpec = tween(120, easing = FastOutSlowInEasing)
-            ) + scaleIn(
-                initialScale = 0.92f,
-                animationSpec = spring(stiffness = Spring.StiffnessHigh)
-            ),
-            exit = slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = spring(stiffness = Spring.StiffnessHigh)
-            ) + fadeOut(
-                animationSpec = tween(100, easing = FastOutSlowInEasing)
-            ) + scaleOut(
-                targetScale = 0.92f,
-                animationSpec = spring(stiffness = Spring.StiffnessHigh)
-            ),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn() + scaleIn(initialScale = 0.92f),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut() + scaleOut(targetScale = 0.92f),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)

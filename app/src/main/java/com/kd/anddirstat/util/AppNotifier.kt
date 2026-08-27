@@ -209,8 +209,8 @@ fun LiveActivityPill(modifier: Modifier = Modifier) {
 
     AnimatedVisibility(
         visible = state.isActive,
-        enter = slideInVertically(initialOffsetY = { -it }, animationSpec = tween(250, easing = FastOutSlowInEasing)) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = tween(200)) + fadeOut(),
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
         modifier = modifier
     ) {
         val pct = if (!state.isIndeterminate && state.max > 0) {

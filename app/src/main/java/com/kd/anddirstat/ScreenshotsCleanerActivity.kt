@@ -598,22 +598,22 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
                                                 onDragCancel = {
                                                     isDragging = false
                                                     scope.launch {
-                                                        animOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                                        animOffsetX.animateTo(0f)
                                                     }
                                                 },
                                                 onDragEnd = {
                                                     isDragging = false
                                                     scope.launch {
                                                         if (animOffsetX.value < -160f) {
-                                                            animOffsetX.animateTo(-800f, tween(150, easing = FastOutSlowInEasing))
+                                                            animOffsetX.animateTo(-800f)
                                                             animOffsetX.snapTo(0f)
                                                             handleDelete()
                                                         } else if (animOffsetX.value > 160f) {
-                                                            animOffsetX.animateTo(800f, tween(150, easing = FastOutSlowInEasing))
+                                                            animOffsetX.animateTo(800f)
                                                             animOffsetX.snapTo(0f)
                                                             handleKeep()
                                                         } else {
-                                                            animOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                                            animOffsetX.animateTo(0f)
                                                         }
                                                     }
                                                 },
