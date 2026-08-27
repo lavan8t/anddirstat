@@ -1,6 +1,5 @@
 package com.kd.anddirstat.ui.screens
 
-import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -33,13 +32,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -58,14 +54,13 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.ui.components.AnimatedAppTitle
 import com.kd.anddirstat.ui.components.DriveSelectorCompactChip
 import com.kd.anddirstat.ui.components.MaterialSymbol
-import com.kd.anddirstat.ui.components.TreemapNavPill
 import com.kd.anddirstat.ui.components.TreeSelectionBar
+import com.kd.anddirstat.ui.components.TreemapNavPill
 import com.kd.anddirstat.ui.components.UnifiedDropdownMenu
 import com.kd.anddirstat.util.StorageVolumeInfo
 

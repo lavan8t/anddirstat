@@ -85,6 +85,7 @@ import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -111,31 +112,7 @@ enum class TrashSort(val label: String, val icon: String) {
     NAME_AZ("Name (A-Z)", "sort_by_alpha")
 }
 
-class RecycleBinCleanerActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(
-                OVERRIDE_TRANSITION_OPEN,
-                R.anim.slide_in_right,
-                R.anim.slide_out_left
-            )
-            overrideActivityTransition(
-                OVERRIDE_TRANSITION_CLOSE,
-                R.anim.slide_in_left,
-                R.anim.slide_out_right
-            )
-        }
-        enableEdgeToEdge()
-
-        setContent {
-            AndDirStatAppTheme {
-                RecycleBinCleanerView(onBack = { finish() })
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -229,40 +206,24 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
     }
 
     fun handleDeleteSelected() {
-        val toDelete = trashedFiles.filter { selectedFiles.contains(it.path) }
+        val toDelete = trashedFiles.filter { selectedFiles.contains(it.path) }.map { it.file }
         if (toDelete.isEmpty()) return
-
-        val (starred, unstarred) = toDelete.partition { FavoritesManager.isStarred(context, it.path) }
-        if (unstarred.isEmpty()) {
-            AppNotifier.notify("Cannot delete starred files. Unstar them first.")
-            return
-        }
 
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         scope.launch {
             isOperating = true
-            operationTotalCount = unstarred.size
             operationIsTrash = false
-            var deletedCount = 0
-
-            withContext(Dispatchers.IO) {
-                unstarred.forEachIndexed { index, item ->
-                    operationCurrentCount = index + 1
-                    operationCurrentFileName = item.cleanName
-                    try {
-                        if (item.file.exists()) {
-                            if (item.file.deleteRecursively()) {
-                                deletedCount++
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
+            FileMaintenanceEngine.batchDelete(
+                context = context,
+                files = toDelete,
+                isPermanent = true,
+                actionName = "Permanently deleted"
+            ) { curr, tot, name ->
+                operationCurrentCount = curr
+                operationTotalCount = tot
+                operationCurrentFileName = name
             }
-
             isOperating = false
-            val baseMsg = "Permanently deleted $deletedCount items"
-            val msg = if (starred.isNotEmpty()) "$baseMsg (Skipped ${starred.size} starred)" else baseMsg
-            AppNotifier.notify(msg)
             scanTrashedItems()
         }
     }
