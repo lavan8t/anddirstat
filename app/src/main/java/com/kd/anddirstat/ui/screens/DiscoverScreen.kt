@@ -78,10 +78,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
-import com.kd.anddirstat.DuplicatesCleanerActivity
-import com.kd.anddirstat.EmptyFoldersCleanerActivity
-import com.kd.anddirstat.RecycleBinCleanerActivity
-import com.kd.anddirstat.ScreenshotsCleanerActivity
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.scanner.StorageFilterHelper
@@ -826,7 +822,6 @@ fun DiscoverView(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_SCREENSHOTS)
-                                        ?: context.startActivity(Intent(context, ScreenshotsCleanerActivity::class.java))
                                 },
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -862,7 +857,6 @@ fun DiscoverView(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_EMPTY_FOLDERS)
-                                        ?: context.startActivity(Intent(context, EmptyFoldersCleanerActivity::class.java))
                                 },
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -898,7 +892,6 @@ fun DiscoverView(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
-                                        ?: context.startActivity(Intent(context, RecycleBinCleanerActivity::class.java))
                                 },
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -934,7 +927,6 @@ fun DiscoverView(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_DUPLICATES)
-                                        ?: context.startActivity(Intent(context, DuplicatesCleanerActivity::class.java))
                                 },
                                 shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -976,7 +968,6 @@ fun DiscoverView(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_SCREENSHOTS)
-                                            ?: context.startActivity(Intent(context, ScreenshotsCleanerActivity::class.java))
                                     },
                                     shape = RoundedCornerShape(20.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -1012,7 +1003,6 @@ fun DiscoverView(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_EMPTY_FOLDERS)
-                                            ?: context.startActivity(Intent(context, EmptyFoldersCleanerActivity::class.java))
                                     },
                                     shape = RoundedCornerShape(20.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -1055,7 +1045,6 @@ fun DiscoverView(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
-                                            ?: context.startActivity(Intent(context, RecycleBinCleanerActivity::class.java))
                                     },
                                     shape = RoundedCornerShape(20.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -1091,7 +1080,6 @@ fun DiscoverView(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_DUPLICATES)
-                                            ?: context.startActivity(Intent(context, DuplicatesCleanerActivity::class.java))
                                     },
                                     shape = RoundedCornerShape(20.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),

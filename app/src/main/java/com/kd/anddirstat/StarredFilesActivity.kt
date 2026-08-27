@@ -83,31 +83,7 @@ data class StarredItem(
     val exists: Boolean
 )
 
-class StarredFilesActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
-        val prefs = getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE)
-        val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
-        val currentTheme = AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM
-        val pureBlack = prefs.getBoolean("pure_black", false)
-        val dynamicTheme = prefs.getBoolean("dynamic_theme", false)
-        val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
-        val accentColor = AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN
-
-        setContent {
-            AndDirStatTheme(
-                appTheme = currentTheme,
-                pureBlack = pureBlack,
-                dynamicTheme = dynamicTheme,
-                accentColor = accentColor
-            ) {
-                StarredFilesScreen(onBack = { finish() })
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

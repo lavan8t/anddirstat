@@ -52,47 +52,7 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:label="Settings"
-            android:theme="@style/Theme.AndDirStat"
-            android:windowSoftInputMode="adjustResize" />
 
-        <activity
-            android:name=".ScreenshotsCleanerActivity"
-            android:exported="false"
-            android:label="Screenshots Cleaner"
-            android:theme="@style/Theme.AndDirStat"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
-            android:name=".EmptyFoldersCleanerActivity"
-            android:exported="false"
-            android:label="Empty Folders Cleaner"
-            android:theme="@style/Theme.AndDirStat"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
-            android:name=".RecycleBinCleanerActivity"
-            android:exported="false"
-            android:label="Recycle Bin"
-            android:theme="@style/Theme.AndDirStat"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
-            android:name=".DuplicatesCleanerActivity"
-            android:exported="false"
-            android:label="Duplicate Files"
-            android:theme="@style/Theme.AndDirStat"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
-            android:name=".StarredFilesActivity"
-            android:exported="false"
-            android:label="Starred Files"
-            android:theme="@style/Theme.AndDirStat"
-            android:windowSoftInputMode="adjustResize" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

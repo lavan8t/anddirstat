@@ -72,37 +72,14 @@ import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FavoritesManager
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class EmptyFoldersCleanerActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(
-                OVERRIDE_TRANSITION_OPEN,
-                R.anim.slide_in_right,
-                R.anim.slide_out_left
-            )
-            overrideActivityTransition(
-                OVERRIDE_TRANSITION_CLOSE,
-                R.anim.slide_in_left,
-                R.anim.slide_out_right
-            )
-        }
-        enableEdgeToEdge()
-
-        setContent {
-            AndDirStatAppTheme {
-                EmptyFoldersCleanerView(onBack = { finish() })
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -186,40 +163,23 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
 
     fun handleDeleteSelected() {
         val toDelete = emptyFolders.filter { selectedFolders.contains(it.absolutePath) }
+            .sortedByDescending { it.absolutePath.length }
         if (toDelete.isEmpty()) return
-
-        val (starred, unstarred) = toDelete.partition { FavoritesManager.isStarred(context, it.absolutePath) }
-        if (unstarred.isEmpty()) {
-            com.kd.anddirstat.util.AppNotifier.notify("Cannot delete starred folders. Unstar them first.")
-            return
-        }
 
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         scope.launch {
             isDeleting = true
-            deleteTotalCount = unstarred.size
-            var deletedCount = 0
-
-            withContext(Dispatchers.IO) {
-                // Delete deepest folders first
-                val sortedToDelete = unstarred.sortedByDescending { it.absolutePath.length }
-                sortedToDelete.forEachIndexed { index, file ->
-                    deleteCurrentCount = index + 1
-                    deleteCurrentFileName = file.name
-                    try {
-                        if (file.exists() && file.isDirectory) {
-                            if (file.delete()) {
-                                deletedCount++
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
+            FileMaintenanceEngine.batchDelete(
+                context = context,
+                files = toDelete,
+                isPermanent = true,
+                actionName = "Deleted"
+            ) { curr, tot, name ->
+                deleteCurrentCount = curr
+                deleteTotalCount = tot
+                deleteCurrentFileName = name
             }
-
             isDeleting = false
-            val baseMsg = "Deleted $deletedCount empty folders"
-            val msg = if (starred.isNotEmpty()) "$baseMsg (Skipped ${starred.size} starred)" else baseMsg
-            com.kd.anddirstat.util.AppNotifier.notify(msg)
             scanEmptyFolders()
         }
     }
