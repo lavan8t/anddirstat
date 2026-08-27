@@ -14,8 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -368,8 +367,8 @@ fun MainApp() {
                             } else {
                                 targetRoute != AppDestinations.TREE
                             }
-                            if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
-                            else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                            if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }) + fadeIn()
+                            else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }) + fadeIn()
                         },
                         exitTransition = {
                             val targetRoute = targetState.destination.route
@@ -379,16 +378,16 @@ fun MainApp() {
                             } else {
                                 targetRoute != AppDestinations.TREE
                             }
-                            if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
-                            else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
+                            if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }) + fadeOut()
+                            else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }) + fadeOut()
                         },
                         popEnterTransition = {
-                            if (isLandscape) slideInVertically(initialOffsetY = { (-it * 0.10f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
-                            else slideInHorizontally(initialOffsetX = { (-it * 0.10f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                            if (isLandscape) slideInVertically(initialOffsetY = { (-it * 0.10f).toInt() }) + fadeIn()
+                            else slideInHorizontally(initialOffsetX = { (-it * 0.10f).toInt() }) + fadeIn()
                         },
                         popExitTransition = {
-                            if (isLandscape) slideOutVertically(targetOffsetY = { (it * 0.15f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeOut(tween(180, easing = FastOutSlowInEasing))
-                            else slideOutHorizontally(targetOffsetX = { (it * 0.15f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeOut(tween(180, easing = FastOutSlowInEasing))
+                            if (isLandscape) slideOutVertically(targetOffsetY = { (it * 0.15f).toInt() }) + fadeOut()
+                            else slideOutHorizontally(targetOffsetX = { (it * 0.15f).toInt() }) + fadeOut()
                         }
                     ) {
                         composable(AppDestinations.TREE) {

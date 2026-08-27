@@ -762,10 +762,8 @@ fun TreemapCanvas(
 
             AnimatedVisibility(
                 visible = glidingTile != null,
-                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessHigh)) +
-                        scaleIn(initialScale = 0.88f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh)),
-                exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessHigh)) +
-                       scaleOut(targetScale = 0.88f, animationSpec = spring(stiffness = Spring.StiffnessHigh)),
+                enter = fadeIn() + scaleIn(initialScale = 0.88f),
+                exit = fadeOut() + scaleOut(targetScale = 0.88f),
                 modifier = Modifier.offset { animatedOffset }
             ) {
                 val tile = currentGliding

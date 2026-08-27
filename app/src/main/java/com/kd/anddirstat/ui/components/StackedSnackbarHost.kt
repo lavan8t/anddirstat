@@ -72,14 +72,8 @@ fun StackedSnackbarHost(
 
                     AnimatedVisibility(
                         visible = true,
-                        enter = slideInVertically(
-                            initialOffsetY = { it },
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)
-                        ) + fadeIn(tween(150)) + scaleIn(initialScale = 0.9f),
-                        exit = slideOutVertically(
-                            targetOffsetY = { it },
-                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
-                        ) + fadeOut(tween(100)) + scaleOut(targetScale = 0.9f)
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn() + scaleIn(initialScale = 0.9f),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut() + scaleOut(targetScale = 0.9f)
                     ) {
                         Surface(
                             shape = RoundedCornerShape(16.dp),

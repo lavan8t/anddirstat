@@ -101,8 +101,8 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
         AnimatedContent(
             targetState = leadState,
             transitionSpec = {
-                (fadeIn(tween(200)) + scaleIn(initialScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)))
-                    .togetherWith(fadeOut(tween(150)) + scaleOut(targetScale = 0.8f, animationSpec = tween(150)))
+                (fadeIn() + scaleIn(initialScale = 0.8f))
+                    .togetherWith(fadeOut() + scaleOut(targetScale = 0.8f))
             },
             label = "title_lead"
         ) { state ->
