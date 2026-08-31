@@ -4,6 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kd.anddirstat.util.FileUtils
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,9 +23,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -29,20 +43,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,9 +65,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -89,66 +99,42 @@ fun SettingsScreen(onBack: () -> Unit) {
         mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN)
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.surface,
-        topBar = {
-
-            TopAppBar(
-                title = {
-                    Text(
-                        "Settings",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        MaterialSymbol("arrow_back", active = true, size = 24.dp)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
-    ) { paddingValues ->
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
+            .padding(start = cutoutStart)
+    ) {
+        SettingsView(
+            currentTheme = currentTheme,
+            onSelectTheme = { theme ->
+                currentTheme = theme
+                prefs.edit { putString("app_theme", theme.key) }
+            },
+            pureBlack = pureBlack,
+            onTogglePureBlack = { enabled ->
+                pureBlack = enabled
+                prefs.edit { putBoolean("pure_black", enabled) }
+            },
+            dynamicTheme = dynamicTheme,
+            onToggleDynamicTheme = { enabled ->
+                dynamicTheme = enabled
+                prefs.edit { putBoolean("dynamic_theme", enabled) }
+            },
+            accentColor = accentColor,
+            onSelectAccent = { color ->
+                accentColor = color
+                prefs.edit { putString("accent_color", color.key) }
+            },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            SettingsView(
-                currentTheme = currentTheme,
-                onSelectTheme = { theme ->
-                    currentTheme = theme
-                    prefs.edit { putString("app_theme", theme.key) }
-                },
-                pureBlack = pureBlack,
-                onTogglePureBlack = { enabled ->
-                    pureBlack = enabled
-                    prefs.edit { putBoolean("pure_black", enabled) }
-                },
-                dynamicTheme = dynamicTheme,
-                onToggleDynamicTheme = { enabled ->
-                    dynamicTheme = enabled
-                    prefs.edit { putBoolean("dynamic_theme", enabled) }
-                },
-                accentColor = accentColor,
-                onSelectAccent = { color ->
-                    accentColor = color
-                    prefs.edit { putString("accent_color", color.key) }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 720.dp)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-        }
+                .widthIn(max = 720.dp)
+                .padding(horizontal = 8.dp)
+        )
     }
 }
 
@@ -172,6 +158,11 @@ fun SettingsView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
+    val isUnder4Gb = remember { FileUtils.isUnder4GbRam(context) }
+    var lowRamOptimizations by remember {
+        mutableStateOf(prefs.getBoolean("low_ram_optimizations", false))
+    }
     val haptic = LocalHapticFeedback.current
     val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
     val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -180,6 +171,18 @@ fun SettingsView(
     var showThemeSheet by remember { mutableStateOf(false) }
     var showAccentSheet by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Shapes: Terminal (start/end) rounded 24dp, intermediate rounded 4dp
     val topShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
@@ -191,7 +194,7 @@ fun SettingsView(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         // Appearance Header
@@ -201,7 +204,7 @@ fun SettingsView(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
             )
         }
 
@@ -242,7 +245,7 @@ fun SettingsView(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 8.dp)
                     .clip(shape)
                     .clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -293,7 +296,7 @@ fun SettingsView(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 8.dp)
                         .clip(shape)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -341,11 +344,144 @@ fun SettingsView(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 8.dp)
                         .clip(bottomShape)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             showAccentSheet = true
+                        }
+                )
+            }
+        }
+
+        if (!hasUsageAccess) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Permissions",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+
+            item {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = "Usage Access",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Grant access to index app cache & package data",
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    leadingContent = {
+                        MaterialSymbol(
+                            name = "apps",
+                            active = true,
+                            size = 24.dp,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    trailingContent = {
+                        FilledTonalButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                })
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Grant", style = MaterialTheme.typography.labelMedium)
+                        }
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .clip(singleShape)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        }
+                )
+            }
+        }
+
+        if (isUnder4Gb) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Performance",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+
+            item {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = "Low RAM Optimizations",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Simplifies treemap shading for smoother rendering on low memory devices",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = {
+                        MaterialSymbol(
+                            name = "speed",
+                            active = true,
+                            size = 24.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = lowRamOptimizations,
+                            onCheckedChange = {
+                                lowRamOptimizations = it
+                                prefs.edit { putBoolean("low_ram_optimizations", it) }
+                            },
+                            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .clip(singleShape)
+                        .clickable {
+                            val newVal = !lowRamOptimizations
+                            lowRamOptimizations = newVal
+                            prefs.edit { putBoolean("low_ram_optimizations", newVal) }
                         }
                 )
             }
@@ -359,7 +495,7 @@ fun SettingsView(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
             )
         }
 
@@ -392,13 +528,58 @@ fun SettingsView(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 8.dp)
                     .clip(singleShape)
                     .clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showClearCacheDialog = true
                     }
             )
+        }
+
+        // Reset Kept Screenshots
+        item {
+            val screenshotsPrefs = remember { context.getSharedPreferences("screenshots_cleaner_prefs", Context.MODE_PRIVATE) }
+            var hasKept by remember { mutableStateOf(screenshotsPrefs.getStringSet("kept_screenshots", emptySet())?.isNotEmpty() == true) }
+            if (hasKept) {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = "Reset kept screenshots",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Show all previously kept screenshots again in the cleaner",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = {
+                        MaterialSymbol(
+                            name = "restart_alt",
+                            active = true,
+                            size = 24.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .clip(singleShape)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            screenshotsPrefs.edit().remove("kept_screenshots").apply()
+                            hasKept = false
+                            AppNotifier.notify("Reset kept screenshots")
+                        }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
 
         // App name & version footer + GitHub Button

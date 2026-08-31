@@ -275,7 +275,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                 },
                 title = {
                     Text(
-                        text = "Duplicate Files",
+                        text = if (selectedPaths.isNotEmpty()) "${selectedPaths.size} Selected" else "Duplicate Files",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -299,7 +299,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                 onDismissRequest = { showAutoSelectMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Select all older copies (Keep newest)") },
+                                    text = { Text("Keep Newest") },
                                     leadingIcon = { MaterialSymbol("history", active = true, size = 20.dp) },
                                     onClick = {
                                         showAutoSelectMenu = false
@@ -314,7 +314,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Select all newer copies (Keep oldest)") },
+                                    text = { Text("Keep Oldest") },
                                     leadingIcon = { MaterialSymbol("schedule", active = true, size = 20.dp) },
                                     onClick = {
                                         showAutoSelectMenu = false
@@ -329,7 +329,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Deselect all") },
+                                    text = { Text("Deselect All") },
                                     leadingIcon = { MaterialSymbol("clear_all", active = true, size = 20.dp) },
                                     onClick = {
                                         showAutoSelectMenu = false
@@ -482,6 +482,9 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         val firstItem = group.files.firstOrNull()
+                                        val allGroupPaths = remember(group) { group.files.map { it.file.absolutePath }.toSet() }
+                                        val isGroupFullySelected = allGroupPaths.isNotEmpty() && allGroupPaths.all { selectedPaths.contains(it) }
+
                                         if (firstItem != null) {
                                             val isMedia = remember(firstItem.node.name) {
                                                 val l = firstItem.node.name.lowercase()
@@ -496,7 +499,11 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .clickable {
                                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        FileUtils.openFile(context, firstItem.file)
+                                                        selectedPaths = if (isGroupFullySelected) {
+                                                            selectedPaths - allGroupPaths
+                                                        } else {
+                                                            selectedPaths + allGroupPaths
+                                                        }
                                                     },
                                                 contentAlignment = Alignment.Center
                                             ) {
@@ -510,7 +517,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                 } else {
                                                     Surface(
                                                         shape = RoundedCornerShape(10.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                        color = if (isGroupFullySelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
                                                         modifier = Modifier.fillMaxSize()
                                                     ) {
                                                         Box(contentAlignment = Alignment.Center) {
@@ -518,9 +525,25 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                                 name = FileUtils.getNodeSymbolName(firstItem.node, false),
                                                                 active = true,
                                                                 size = 24.dp,
-                                                                tint = childColor
+                                                                tint = if (isGroupFullySelected) MaterialTheme.colorScheme.primary else childColor
                                                             )
                                                         }
+                                                    }
+                                                }
+
+                                                if (isGroupFullySelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        MaterialSymbol(
+                                                            name = "check",
+                                                            active = true,
+                                                            size = 22.dp,
+                                                            tint = MaterialTheme.colorScheme.onPrimary
+                                                        )
                                                     }
                                                 }
                                             }
@@ -570,27 +593,6 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                 modifier = Modifier.graphicsLayer { rotationZ = groupArrowRotation }
                                             )
                                         }
-
-                                        Spacer(modifier = Modifier.width(6.dp))
-
-                                        // Quick group selector
-                                        val allGroupPaths = group.files.map { it.file.absolutePath }.toSet()
-                                        val isGroupFullySelected = allGroupPaths.all { selectedPaths.contains(it) }
-
-                                        Checkbox(
-                                            checked = isGroupFullySelected,
-                                            onCheckedChange = { checked ->
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                selectedPaths = if (checked) {
-                                                    selectedPaths + allGroupPaths
-                                                } else {
-                                                    selectedPaths - allGroupPaths
-                                                }
-                                            },
-                                            colors = CheckboxDefaults.colors(
-                                                checkedColor = MaterialTheme.colorScheme.primary
-                                            )
-                                        )
                                     }
 
                                     if (isExpanded) {
@@ -612,41 +614,52 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
 
                                         ListItem(
                                             leadingContent = {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Checkbox(
-                                                        checked = isSelected,
-                                                        onCheckedChange = { checked ->
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(40.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clickable {
                                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                            selectedPaths = if (checked) selectedPaths + item.file.absolutePath else selectedPaths - item.file.absolutePath
+                                                            selectedPaths = if (isSelected) selectedPaths - item.file.absolutePath else selectedPaths + item.file.absolutePath
                                                         },
-                                                        colors = CheckboxDefaults.colors(
-                                                            checkedColor = MaterialTheme.colorScheme.primary
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    if (isMedia) {
+                                                        MediaThumbnailView(
+                                                            node = item.node,
+                                                            path = item.path,
+                                                            fallbackTint = childColor,
+                                                            modifier = Modifier.fillMaxSize()
                                                         )
-                                                    )
-                                                    Spacer(modifier = Modifier.width(2.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(40.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .clickable {
-                                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                                FileUtils.openFile(context, item.file)
-                                                            },
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        if (isMedia) {
-                                                            MediaThumbnailView(
-                                                                node = item.node,
-                                                                path = item.path,
-                                                                fallbackTint = childColor,
-                                                                modifier = Modifier.fillMaxSize()
-                                                            )
-                                                        } else {
+                                                    } else {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                MaterialSymbol(
+                                                                    name = FileUtils.getNodeSymbolName(item.node, false),
+                                                                    active = true,
+                                                                    size = 22.dp,
+                                                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else childColor
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (isSelected) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
                                                             MaterialSymbol(
-                                                                name = FileUtils.getNodeSymbolName(item.node, false),
+                                                                name = "check",
                                                                 active = true,
-                                                                size = 24.dp,
-                                                                tint = childColor
+                                                                size = 20.dp,
+                                                                tint = MaterialTheme.colorScheme.onPrimary
                                                             )
                                                         }
                                                     }
@@ -711,17 +724,13 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                     .align(Alignment.BottomCenter)
                     .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
             ) {
-                Surface(
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shadowElevation = 4.dp,
-                    tonalElevation = 3.dp,
+                Box(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {

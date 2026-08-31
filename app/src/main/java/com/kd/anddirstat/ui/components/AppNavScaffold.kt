@@ -3,6 +3,9 @@ package com.kd.anddirstat.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -22,7 +25,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.util.StorageVolumeInfo
 
@@ -50,9 +55,13 @@ fun AppNavScaffold(
 ) {
     val haptic = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = if (isLandscape) cutoutStart else 0.dp),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBars,
         topBar = {
@@ -66,7 +75,10 @@ fun AppNavScaffold(
                 title = {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 actions = {
@@ -112,8 +124,7 @@ fun AppNavScaffold(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = padding.calculateTopPadding())
-                .navigationBarsPadding()
+                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())
         ) {
             content(padding)
         }

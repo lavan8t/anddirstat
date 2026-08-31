@@ -81,7 +81,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "zoom_in" -> R.drawable.sym_zoom_in_1
             "zoom_out" -> R.drawable.sym_zoom_out_1
             "check" -> R.drawable.sym_check_1
-            "check_circle" -> R.drawable.sym_check_circle_1
+            "check_circle", "check_box", "select" -> R.drawable.sym_check_circle_1
             "warning" -> R.drawable.sym_warning_1
             "error" -> R.drawable.sym_error_1
             "info" -> R.drawable.sym_info_1
@@ -159,7 +159,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "zoom_in" -> R.drawable.sym_zoom_in_0
             "zoom_out" -> R.drawable.sym_zoom_out_0
             "check" -> R.drawable.sym_check_0
-            "check_circle" -> R.drawable.sym_check_circle_0
+            "check_circle", "check_box", "check_box_outline_blank", "select" -> R.drawable.sym_check_circle_0
             "warning" -> R.drawable.sym_warning_0
             "error" -> R.drawable.sym_error_0
             "info" -> R.drawable.sym_info_0

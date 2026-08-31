@@ -102,7 +102,8 @@ class StorageScanner(private val context: Context) {
                 mediaRootNode
             }
 
-            val appsDeferred = if (scanApps) {
+            val hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
+            val appsDeferred = if (scanApps && hasUsageAccess) {
                 async(scanDispatcher) {
                     updateProgress("Scanning Applications", "Enumerating packages...")
                     scanAllInstalledApplications(totalScannedBytes) { phase, detail ->
@@ -225,6 +226,10 @@ class StorageScanner(private val context: Context) {
         totalScannedBytes: AtomicLong,
         onProgress: ((phase: String, detail: String) -> Unit)? = null
     ): Pair<CompactNode?, Long> {
+        if (!FileUtils.checkUsageAccessPermission(context)) {
+            return null to 0L
+        }
+
         val pm = context.packageManager
         val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
         val userHandle = Process.myUserHandle()
@@ -282,43 +287,9 @@ class StorageScanner(private val context: Context) {
                 }
             }
 
-            if (codeSize == 0L) {
-                try {
-                    val baseApk = File(appInfo.sourceDir)
-                    if (baseApk.exists()) {
-                        codeSize += baseApk.length()
-                    }
-                    appInfo.splitSourceDirs?.forEach { splitPath ->
-                        val splitFile = File(splitPath)
-                        if (splitFile.exists()) {
-                            codeSize += splitFile.length()
-                        }
-                    }
-                } catch (_: Exception) {
-                }
-            }
-
-            if (dataSize == 0L && cacheSize == 0L) {
-                try {
-                    val extData = File("/storage/emulated/0/Android/data/${appInfo.packageName}")
-                    if (extData.exists()) {
-                        dataSize += getDirSize(extData)
-                    }
-                    val extMedia = File("/storage/emulated/0/Android/media/${appInfo.packageName}")
-                    if (extMedia.exists()) {
-                        dataSize += getDirSize(extMedia)
-                    }
-                    val extObb = File("/storage/emulated/0/Android/obb/${appInfo.packageName}")
-                    if (extObb.exists()) {
-                        dataSize += getDirSize(extObb)
-                    }
-                } catch (_: Exception) {
-                }
-            }
-
-            val fullLabel = if (appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0) "$label (System)" else label
-            FileUtils.AppPackageRegistry.register(fullLabel, appInfo.packageName)
-            FileUtils.AppPackageRegistry.register(label, appInfo.packageName)
+            val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            val fullLabel = label
+            FileUtils.AppPackageRegistry.register(label, appInfo.packageName, isSystem = isSystemApp)
 
             appParts.add(CompactNode(name = "App Code (${appInfo.packageName}.apk)", isDirectory = false, size = maxOf(0L, codeSize)))
             appTotal += codeSize

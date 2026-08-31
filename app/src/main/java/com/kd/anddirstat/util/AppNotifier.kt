@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import androidx.annotation.RequiresPermission
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -57,6 +56,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+
 data class LiveActivityState(
     val isActive: Boolean = false,
     val title: String = "",
@@ -98,7 +100,6 @@ object AppNotifier {
         }
     }
 
-    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     fun updateProgress(
         context: Context,
         title: String,
@@ -119,6 +120,19 @@ object AppNotifier {
         )
 
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    return
+                }
+            }
+            if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                return
+            }
+
             ensureChannel(context)
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -162,6 +176,14 @@ object AppNotifier {
             }
 
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+        } catch (_: SecurityException) {
+        } catch (_: Exception) {}
+    }
+
+    fun dismissAll(context: Context) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancelAll()
         } catch (_: Exception) {}
     }
 
@@ -171,6 +193,19 @@ object AppNotifier {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             nm?.cancel(NOTIFICATION_ID)
             if (!finalMessage.isNullOrBlank()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        return
+                    }
+                }
+                if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                    return
+                }
+
                 val pi = PendingIntent.getActivity(
                     context,
                     0,
@@ -189,6 +224,7 @@ object AppNotifier {
                     .build()
                 nm?.notify(NOTIFICATION_ID + 1, doneNotification)
             }
+        } catch (_: SecurityException) {
         } catch (_: Exception) {}
     }
 }

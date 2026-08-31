@@ -1,8 +1,16 @@
 package com.kd.anddirstat.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -12,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,20 +28,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,16 +57,23 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.GoogleSansFlexFontFamily
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.ExtensionStat
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.MaterialSymbol
+import com.kd.anddirstat.ui.components.MediaThumbnailView
+import com.kd.anddirstat.ui.components.StorageTrendCard
 import com.kd.anddirstat.util.FileUtils
+import com.kd.anddirstat.util.StorageTrendManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -186,6 +207,7 @@ fun FileTypesView(
     totalDeviceSize: Long,
     onNodeClick: (CompactNode, String) -> Unit = { _, _ -> },
     onNavigateTo: ((String) -> Unit)? = null,
+    onDismissPopup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -435,16 +457,44 @@ fun FileTypesView(
         }
     }
 
-    val filesByExt = remember(rootNode, expandedExtensions) {
-        expandedExtensions.associateWith { ext ->
-            val list = ArrayList<Pair<CompactNode, String>>()
-            collectFilesForExtension(rootNode, ext, rootNode.name, list)
-            list.sortedByDescending { it.first.size }
+    val filesByExt by produceState(
+        initialValue = emptyMap<String, List<Pair<CompactNode, String>>>(),
+        key1 = rootNode,
+        key2 = expandedExtensions
+    ) {
+        if (expandedExtensions.isEmpty()) {
+            value = emptyMap()
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            expandedExtensions.associateWith { ext ->
+                val list = ArrayList<Pair<CompactNode, String>>()
+                collectFilesForExtension(rootNode, ext, rootNode.name, list)
+                list.sortedByDescending { it.first.size }
+            }
+        }
+    }
+
+    val extFileLimits = remember(rootNode) { mutableStateMapOf<String, Int>() }
+    val catStatsLimits = remember(rootNode) { mutableStateMapOf<String, Int>() }
+
+    var hasAnimatedUsage by rememberSaveable { mutableStateOf(false) }
+
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) onDismissPopup()
+    }
+
+    val heroBarProgress = remember { Animatable(1f) }
+    LaunchedEffect(overview.usedSpace, overview.totalCapacity) {
+        if (overview.usedSpace > 0L) {
+            StorageTrendManager.recordSnapshot(context, overview.usedSpace, overview.totalCapacity)
         }
     }
 
     LazyColumn(
-        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
+        state = listState,
+        contentPadding = PaddingValues(top = 16.dp, bottom = 116.dp),
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -456,64 +506,84 @@ fun FileTypesView(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 8.dp)
             ) {
+                val usedStr = FileUtils.formatFileSize(overview.usedSpace)
+                val totalStr = FileUtils.formatFileSize(overview.totalCapacity)
                 Text(
-                    text = "${FileUtils.formatFileSize(overview.usedSpace)} of ${FileUtils.formatFileSize(overview.totalCapacity)} used",
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(fontSize = MaterialTheme.typography.titleLarge.fontSize, fontWeight = FontWeight.Bold)) {
+                            append(usedStr)
+                        }
+                        withStyle(SpanStyle(fontSize = MaterialTheme.typography.bodyLarge.fontSize, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                            append("/$totalStr")
+                        }
+                    },
                     fontFamily = GoogleSansFlexFontFamily,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${FileUtils.formatFileSize(overview.freeSpace)} free",
-                        fontFamily = GoogleSansFlexFontFamily,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = String.format(Locale.US, "%.0f%%", usedPercent),
-                        fontFamily = GoogleSansFlexFontFamily,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Proportional Multi-Colored Segmented Bar
+                // Proportional Multi-Colored Segmented Bar with reduced width and % at end
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (overview.totalCapacity > 0L) {
-                        overview.categories.forEach { cat ->
-                            val weight = (cat.size.toFloat() / overview.totalCapacity.toFloat()).coerceAtLeast(0.005f)
-                            Box(
-                                modifier = Modifier
-                                    .weight(weight)
-                                    .height(10.dp)
-                                    .background(cat.color)
-                            )
-                        }
-                        if (overview.freeSpace > 0L) {
-                            val freeWeight = (overview.freeSpace.toFloat() / overview.totalCapacity.toFloat()).coerceAtLeast(0.005f)
-                            Box(
-                                modifier = Modifier
-                                    .weight(freeWeight)
-                                    .height(10.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                            )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(16.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(fraction = heroBarProgress.value)
+                                .clip(RoundedCornerShape(8.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(1.5.dp)
+                            ) {
+                                if (overview.totalCapacity > 0L) {
+                                    overview.categories.forEach { cat ->
+                                        val weight = (cat.size.toFloat() / overview.totalCapacity.toFloat()).coerceAtLeast(0.005f)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(weight)
+                                                .fillMaxHeight()
+                                                .background(cat.color)
+                                        )
+                                    }
+                                    if (overview.freeSpace > 0L) {
+                                        val freeWeight = (overview.freeSpace.toFloat() / overview.totalCapacity.toFloat()).coerceAtLeast(0.005f)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(freeWeight)
+                                                .fillMaxHeight()
+                                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    val displayUsedPercent = usedPercent * heroBarProgress.value
+                    Text(
+                        text = String.format(Locale.US, "%.0f%%", displayUsedPercent),
+                        fontFamily = GoogleSansFlexFontFamily,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
 
@@ -525,373 +595,539 @@ fun FileTypesView(
         // Main Categories List with Sub-File Types
         val usedStorageTotal = if (overview.usedSpace > 0L) overview.usedSpace else overview.totalCapacity
 
-        categoryGroups.forEach { category ->
+        categoryGroups.forEachIndexed { catIndex, category ->
             val isBinCategory = category.id == "bin"
-            val isCatExpanded = !isBinCategory && expandedCategories.contains(category.id)
+            val isSystemCategory = category.id == "system" || category.name.equals("System & OS", ignoreCase = true)
+            val isNonExpandable = isBinCategory || isSystemCategory
+            val isCatExpanded = !isNonExpandable && expandedCategories.contains(category.id)
             val catFraction = if (usedStorageTotal > 0L) (category.totalSize.toDouble() / usedStorageTotal.toDouble()).coerceIn(0.0, 1.0) else 0.0
 
             val onCategoryClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 if (isBinCategory) {
                     onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
-                } else {
+                } else if (!isNonExpandable) {
                     expandedCategories = if (isCatExpanded) expandedCategories - category.id else expandedCategories + category.id
                 }
             }
 
             item(key = "cat_${category.id}") {
-                ListItem(
-                    leadingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (!isBinCategory) {
-                                val catArrowRotation by animateFloatAsState(
-                                    targetValue = if (isCatExpanded) 90f else 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    ),
-                                    label = "catChevronRotation"
-                                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ListItem(
+                        leadingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (!isNonExpandable) {
+                                    val catArrowRotation by animateFloatAsState(
+                                        targetValue = if (isCatExpanded) 90f else 0f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        ),
+                                        label = "catChevronRotation"
+                                    )
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .clickable { onCategoryClick() }
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "chevron_right",
+                                            active = true,
+                                            size = 18.dp,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.graphicsLayer { rotationZ = catArrowRotation }
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                } else {
+                                    Spacer(modifier = Modifier.width(26.dp))
+                                }
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(40.dp)
+                                        .size(44.dp)
                                         .clip(CircleShape)
                                         .clickable { onCategoryClick() }
                                 ) {
                                     MaterialSymbol(
-                                        name = "chevron_right",
+                                        name = category.icon,
                                         active = true,
-                                        size = 22.dp,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.graphicsLayer { rotationZ = catArrowRotation }
+                                        size = 24.dp,
+                                        tint = category.color
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(2.dp))
-                            } else {
-                                Spacer(modifier = Modifier.width(28.dp))
                             }
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .clickable { onCategoryClick() }
-                            ) {
-                                MaterialSymbol(
-                                    name = category.icon,
-                                    active = true,
-                                    size = 24.dp,
-                                    tint = category.color
-                                )
-                            }
-                        }
-                    },
-                    headlineContent = {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = category.name,
-                                fontFamily = GoogleSansFlexFontFamily,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = FileUtils.formatFileSize(category.totalSize),
-                                fontFamily = GoogleSansFlexFontFamily,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = category.color
-                            )
-                        }
-                    },
-                    supportingContent = {
-                        Column(modifier = Modifier.padding(top = 4.dp)) {
+                        },
+                        headlineContent = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isBinCategory) "Tap to view and clean recycled files" else "${category.stats.size} types • ${category.fileCount} files",
+                                    text = category.name,
                                     fontFamily = GoogleSansFlexFontFamily,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = String.format(Locale.US, "%.1f%%", catFraction * 100.0),
+                                    text = FileUtils.formatFileSize(category.totalSize),
                                     fontFamily = GoogleSansFlexFontFamily,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    color = category.color
                                 )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { catFraction.toFloat() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .clip(CircleShape),
-                                color = category.color,
-                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                strokeCap = StrokeCap.Round
-                            )
-                        }
-                    },
-                    trailingContent = if (isBinCategory) {
-                        {
-                            MaterialSymbol(
-                                name = "chevron_right",
-                                active = true,
-                                size = 22.dp,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else null,
-                    colors = ListItemDefaults.colors(
-                        containerColor = if (isCatExpanded) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else Color.Transparent
-                    ),
-                    modifier = Modifier.clickable { onCategoryClick() }
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-            }
-
-            // Sub File Types inside this Category
-            if (isCatExpanded) {
-                category.stats.forEach { stat ->
-                    val statFraction = if (category.totalSize > 0L) (stat.totalSize.toDouble() / category.totalSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
-                    val iconColor = FileUtils.getFileTypeIconColor(stat.extension, isDark)
-                    val hasFiles = stat.count > 0
-                    val isStatExpanded = hasFiles && expandedExtensions.contains(stat.extension)
-
-                    item(key = "ext_${category.id}_${stat.extension}") {
-                        ListItem(
-                            leadingContent = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Spacer(modifier = Modifier.width(28.dp))
-                                    if (hasFiles) {
-                                        val extArrowRotation by animateFloatAsState(
-                                            targetValue = if (isStatExpanded) 90f else 0f,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            ),
-                                            label = "extChevronRotation"
-                                        )
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
-                                                }
-                                        ) {
-                                            MaterialSymbol(
-                                                name = "chevron_right",
-                                                active = true,
-                                                size = 20.dp,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.graphicsLayer { rotationZ = extArrowRotation }
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                    } else {
-                                        Spacer(modifier = Modifier.width(38.dp))
-                                    }
-
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .clickable {
-                                                if (hasFiles) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
-                                                }
-                                            }
-                                    ) {
-                                        val extSymbol = remember(stat.extension) { FileUtils.getExtensionSymbolName(stat.extension) }
-                                        MaterialSymbol(
-                                            name = extSymbol,
-                                            active = true,
-                                            size = 24.dp,
-                                            tint = iconColor
-                                        )
-                                    }
-                                }
-                            },
-                            headlineContent = {
+                        },
+                        supportingContent = {
+                            Column(modifier = Modifier.padding(top = 4.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    val displayName = remember(stat.extension) {
-                                        val clean = stat.extension.removePrefix("[").removeSuffix("]").trim()
-                                        when {
-                                            clean.equals("trashed", ignoreCase = true) -> "Trashed Files"
-                                            clean.equals("system & os", ignoreCase = true) -> "System & OS"
-                                            clean.equals("temporary system files", ignoreCase = true) -> "Temporary System Files"
-                                            clean.equals("no ext", ignoreCase = true) -> "No Extension"
-                                            clean.equals("installed apps", ignoreCase = true) -> "Installed Apps"
-                                            clean.startsWith(".") -> clean
-                                            else -> clean
-                                        }
-                                    }
                                     Text(
-                                        text = displayName,
-                                        fontFamily = GoogleSansFlexFontFamily,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = FileUtils.formatFileSize(stat.totalSize),
-                                        fontFamily = GoogleSansFlexFontFamily,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            },
-                            supportingContent = {
-                                Column(modifier = Modifier.padding(top = 2.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "${stat.count} files",
-                                            fontFamily = GoogleSansFlexFontFamily,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = String.format(Locale.US, "%.1f%%", statFraction * 100.0),
-                                            fontFamily = GoogleSansFlexFontFamily,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    LinearProgressIndicator(
-                                        progress = { statFraction.toFloat() },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(3.dp)
-                                            .clip(CircleShape),
-                                        color = iconColor,
-                                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        strokeCap = StrokeCap.Round
-                                    )
-                                }
-                            },
-                            colors = ListItemDefaults.colors(
-                                containerColor = if (isStatExpanded) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f) else Color.Transparent
-                            ),
-                            modifier = if (hasFiles) {
-                                Modifier.clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
-                                }
-                            } else Modifier
-                        )
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f),
-                            modifier = Modifier.padding(start = 32.dp)
-                        )
-                    }
-
-                    // Individual Files under this Extension
-                    if (isStatExpanded) {
-                        val files = filesByExt[stat.extension] ?: emptyList()
-
-                        itemsIndexed(
-                            items = files,
-                            key = { index, (fileNode, filePath) -> "${category.id}_${stat.extension}_${filePath}_$index" }
-                        ) { _, (fileNode, filePath) ->
-                            val fileFraction = if (stat.totalSize > 0L) (fileNode.size.toDouble() / stat.totalSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
-                            val fileColor = FileUtils.getNodeIconColor(fileNode, isDark)
-                            val isApp = fileNode.children?.any { it.name.startsWith("App Code") } == true
-                            val appPkg = if (isApp) FileUtils.extractPackageName(fileNode) else null
-
-                            ListItem(
-                                leadingContent = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Spacer(modifier = Modifier.width(60.dp))
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier.size(36.dp)
-                                        ) {
-                                            if (appPkg != null) {
-                                                AppIconView(
-                                                    packageName = appPkg,
-                                                    contentDescription = fileNode.name,
-                                                    modifier = Modifier
-                                                        .size(28.dp)
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                )
-                                            } else {
-                                                val fileSymbol = remember(fileNode, isApp) { FileUtils.getNodeSymbolName(fileNode, isApp) }
-                                                MaterialSymbol(
-                                                    name = fileSymbol,
-                                                    active = true,
-                                                    size = 22.dp,
-                                                    tint = fileColor
-                                                )
-                                            }
-                                        }
-                                    }
-                                },
-                                headlineContent = {
-                                    Text(
-                                        text = fileNode.name,
+                                        text = when {
+                                            isBinCategory -> "Tap to view and clean recycled files"
+                                            isSystemCategory -> "Android OS and system runtime data"
+                                            else -> "${category.stats.size} types • ${category.fileCount} files"
+                                        },
                                         fontFamily = GoogleSansFlexFontFamily,
                                         style = MaterialTheme.typography.bodyMedium,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                },
-                                supportingContent = {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = FileUtils.formatFileSize(fileNode.size),
-                                            fontFamily = GoogleSansFlexFontFamily,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = String.format(Locale.US, "%.1f%%", fileFraction * 100.0),
-                                            fontFamily = GoogleSansFlexFontFamily,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier.clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onNodeClick(fileNode, filePath)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    val displayCatPercent = catFraction * 100.0
+                                    Text(
+                                        text = String.format(Locale.US, "%.1f%%", displayCatPercent),
+                                        fontFamily = GoogleSansFlexFontFamily,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            )
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f),
-                                modifier = Modifier.padding(start = 72.dp)
-                            )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { catFraction.toFloat().coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(5.dp)
+                                        .clip(CircleShape),
+                                    color = category.color,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    strokeCap = StrokeCap.Round
+                                )
+                            }
+                        },
+                        trailingContent = if (isBinCategory) {
+                            {
+                                MaterialSymbol(
+                                    name = "chevron_right",
+                                    active = true,
+                                    size = 22.dp,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else null,
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (isCatExpanded) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else Color.Transparent
+                        ),
+                        modifier = Modifier.clickable { onCategoryClick() }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                    // Inner contents slide down smoothly when expanding
+                    AnimatedVisibility(
+                        visible = isCatExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            val catLimit = catStatsLimits[category.id] ?: 15
+                            val displayStats = if (category.stats.size > catLimit) category.stats.take(catLimit) else category.stats
+
+                            displayStats.forEachIndexed { statIndex, stat ->
+                                val statFraction = if (category.totalSize > 0L) (stat.totalSize.toDouble() / category.totalSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
+                                val iconColor = FileUtils.getFileTypeIconColor(stat.extension, isDark)
+                                val hasFiles = stat.count > 0
+                                val isStatExpanded = hasFiles && expandedExtensions.contains(stat.extension)
+
+                                val extBarProgress = remember(stat.extension) { Animatable(1f) }
+
+                                ListItem(
+                                    leadingContent = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            if (hasFiles) {
+                                                val extArrowRotation by animateFloatAsState(
+                                                    targetValue = if (isStatExpanded) 90f else 0f,
+                                                    animationSpec = spring(
+                                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                                        stiffness = Spring.StiffnessMediumLow
+                                                    ),
+                                                    label = "extChevronRotation"
+                                                )
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .clickable {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                            expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
+                                                        }
+                                                ) {
+                                                    MaterialSymbol(
+                                                        name = "chevron_right",
+                                                        active = true,
+                                                        size = 18.dp,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.graphicsLayer { rotationZ = extArrowRotation }
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                            } else {
+                                                Spacer(modifier = Modifier.width(26.dp))
+                                            }
+
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .clickable {
+                                                        if (hasFiles) {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                            expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
+                                                        }
+                                                    }
+                                            ) {
+                                                val extSymbol = remember(stat.extension) { FileUtils.getExtensionSymbolName(stat.extension) }
+                                                MaterialSymbol(
+                                                    name = extSymbol,
+                                                    active = true,
+                                                    size = 24.dp,
+                                                    tint = iconColor
+                                                )
+                                            }
+                                        }
+                                    },
+                                    headlineContent = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val displayName = remember(stat.extension) {
+                                                val clean = stat.extension.removePrefix("[").removeSuffix("]").trim()
+                                                when {
+                                                    clean.equals("trashed", ignoreCase = true) -> "Trashed Files"
+                                                    clean.equals("system & os", ignoreCase = true) -> "System & OS"
+                                                    clean.equals("temporary system files", ignoreCase = true) -> "Temporary System Files"
+                                                    clean.equals("no ext", ignoreCase = true) -> "No Extension"
+                                                    clean.equals("installed apps", ignoreCase = true) -> "Installed Apps"
+                                                    clean.startsWith(".") -> clean
+                                                    else -> clean
+                                                }
+                                            }
+                                            Text(
+                                                text = displayName,
+                                                fontFamily = GoogleSansFlexFontFamily,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = FileUtils.formatFileSize(stat.totalSize),
+                                                fontFamily = GoogleSansFlexFontFamily,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    },
+                                    supportingContent = {
+                                        Column(modifier = Modifier.padding(top = 2.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${stat.count} files",
+                                                    fontFamily = GoogleSansFlexFontFamily,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                val displayExtPercent = statFraction * 100.0 * extBarProgress.value
+                                                Text(
+                                                    text = String.format(Locale.US, "%.1f%%", displayExtPercent),
+                                                    fontFamily = GoogleSansFlexFontFamily,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            LinearProgressIndicator(
+                                                progress = { (statFraction.toFloat() * extBarProgress.value).coerceIn(0f, 1f) },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(3.dp)
+                                                    .clip(CircleShape),
+                                                color = iconColor,
+                                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                strokeCap = StrokeCap.Round
+                                            )
+                                        }
+                                    },
+                                    colors = ListItemDefaults.colors(
+                                        containerColor = if (isStatExpanded) MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f) else Color.Transparent
+                                    ),
+                                    modifier = if (hasFiles) {
+                                        Modifier.clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            expandedExtensions = if (isStatExpanded) expandedExtensions - stat.extension else expandedExtensions + stat.extension
+                                        }
+                                    } else Modifier
+                                )
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f),
+                                    modifier = Modifier.padding(start = 32.dp)
+                                )
+
+                                // Individual Files under this Extension slide down when expanding
+                                AnimatedVisibility(
+                                    visible = isStatExpanded,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        val files = filesByExt[stat.extension] ?: emptyList()
+                                        val fileLimit = extFileLimits[stat.extension] ?: 20
+                                        val displayFiles = if (files.size > fileLimit) files.take(fileLimit) else files
+
+                                        if (files.isEmpty() && stat.count > 0) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 12.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                            }
+                                        } else {
+                                            displayFiles.forEach { (fileNode, filePath) ->
+                                                val fileFraction = if (stat.totalSize > 0L) (fileNode.size.toDouble() / stat.totalSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
+                                                val fileColor = FileUtils.getNodeIconColor(fileNode, isDark)
+                                                val isApp = fileNode.children?.any { it.name.startsWith("App Code") } == true
+                                                val appPkg = if (isApp) FileUtils.extractPackageName(fileNode) else null
+                                                val isMedia = remember(fileNode.name) {
+                                                    val l = fileNode.name.lowercase()
+                                                    l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+                                                    l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+                                                    l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") ||
+                                                    l.endsWith(".apk")
+                                                }
+
+                                                ListItem(
+                                                    leadingContent = {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Spacer(modifier = Modifier.width(44.dp))
+                                                            Box(
+                                                                contentAlignment = Alignment.Center,
+                                                                modifier = Modifier.size(36.dp)
+                                                            ) {
+                                                                if (isMedia) {
+                                                                    MediaThumbnailView(
+                                                                        node = fileNode,
+                                                                        path = filePath,
+                                                                        fallbackTint = fileColor,
+                                                                        modifier = Modifier
+                                                                            .size(32.dp)
+                                                                            .clip(RoundedCornerShape(6.dp))
+                                                                    )
+                                                                } else if (appPkg != null) {
+                                                                    AppIconView(
+                                                                        packageName = appPkg,
+                                                                        contentDescription = fileNode.name,
+                                                                        modifier = Modifier
+                                                                            .size(28.dp)
+                                                                            .clip(RoundedCornerShape(6.dp))
+                                                                    )
+                                                                } else {
+                                                                    val fileSymbol = remember(fileNode, isApp) { FileUtils.getNodeSymbolName(fileNode, isApp) }
+                                                                    MaterialSymbol(
+                                                                        name = fileSymbol,
+                                                                        active = true,
+                                                                        size = 22.dp,
+                                                                        tint = fileColor
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    headlineContent = {
+                                                        Text(
+                                                            text = fileNode.name,
+                                                            fontFamily = GoogleSansFlexFontFamily,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            maxLines = 1,
+                                                            softWrap = false,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    },
+                                                    supportingContent = {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = FileUtils.formatFileSize(fileNode.size),
+                                                                fontFamily = GoogleSansFlexFontFamily,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                modifier = Modifier.weight(1f, fill = false),
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = String.format(Locale.US, "%.1f%%", fileFraction * 100.0),
+                                                                fontFamily = GoogleSansFlexFontFamily,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    },
+                                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                                    modifier = Modifier.clickable {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        onNodeClick(fileNode, filePath)
+                                                    }
+                                                )
+                                                HorizontalDivider(
+                                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f),
+                                                    modifier = Modifier.padding(start = 72.dp)
+                                                )
+                                            }
+
+                                            // Load More for huge file collections
+                                            if (files.size > fileLimit) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(start = 44.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "Showing $fileLimit of ${if (stat.count > files.size) stat.count else files.size} files",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f, fill = false),
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        TextButton(
+                                                            onClick = {
+                                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                extFileLimits[stat.extension] = fileLimit + 30
+                                                            }
+                                                        ) {
+                                                            Text("+30 more", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                                        }
+                                                        TextButton(
+                                                            onClick = {
+                                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                extFileLimits[stat.extension] = files.size
+                                                            }
+                                                        ) {
+                                                            Text("Show All", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (category.stats.size > catLimit) {
+                                TextButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        catStatsLimits[category.id] = category.stats.size
+                                    },
+                                    modifier = Modifier.padding(start = 32.dp, top = 4.dp, bottom = 4.dp)
+                                ) {
+                                    Text("Show all ${category.stats.size} types", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+
+        item(key = "storage_trend_section") {
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val history = remember(overview.usedSpace, overview.totalCapacity) {
+                StorageTrendManager.getHistory(context, overview.usedSpace, overview.totalCapacity)
+            }
+            val recentChanges = remember(rootNode) {
+                StorageTrendManager.findRecentChanges(rootNode, limit = 5)
+            }
+            val lifetimeFreed = remember(overview.usedSpace) {
+                StorageTrendManager.getLifetimeFreedBytes(context)
+            }
+
+            StorageTrendCard(
+                history = history,
+                recentChanges = recentChanges,
+                lifetimeFreed = lifetimeFreed,
+                onItemClick = onNodeClick,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

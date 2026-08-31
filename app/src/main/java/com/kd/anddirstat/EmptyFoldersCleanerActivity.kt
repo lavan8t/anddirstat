@@ -189,20 +189,11 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "Empty Folders Cleaner",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!isScanning && emptyFolders.isNotEmpty()) {
-                            Text(
-                                text = "${selectedFolders.size} of ${emptyFolders.size} selected",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Text(
+                        text = if (selectedFolders.isNotEmpty()) "${selectedFolders.size} Selected" else "Empty Folders",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -396,18 +387,12 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                         }
 
                         // Bottom Action Bar: Thicc Fully Rounded Delete Button
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 6.dp,
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .navigationBarsPadding()
+                                .padding(16.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp)
-                            ) {
                                 Button(
                                     onClick = { handleDeleteSelected() },
                                     enabled = selectedFolders.isNotEmpty(),
@@ -433,10 +418,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                                             tint = if (selectedFolders.isNotEmpty()) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                         )
                                         Text(
-                                            text = if (selectedFolders.isNotEmpty())
-                                                "Delete ${selectedFolders.size} Empty Folders"
-                                            else
-                                                "Select Folders to Delete",
+                                            text = "Delete",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp
                                         )
@@ -446,7 +428,6 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                         }
                     }
                 }
-            }
 
             DeletionProgressDialog(
                 visible = isDeleting,

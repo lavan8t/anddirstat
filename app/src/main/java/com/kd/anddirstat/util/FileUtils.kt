@@ -1,6 +1,7 @@
 package com.kd.anddirstat.util
 
 import android.Manifest
+import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.content.ContentUris
 import android.content.Context
@@ -298,12 +299,24 @@ object FileUtils {
     object AppPackageRegistry {
         private val labelToPkg = java.util.concurrent.ConcurrentHashMap<String, String>()
         private val pkgToLabel = java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val systemPkgs = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        private val systemLabels = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-        fun register(label: String, pkg: String) {
+        fun register(label: String, pkg: String, isSystem: Boolean = false) {
             val cleanLabel = label.removeSuffix(" (System)").trim()
             labelToPkg[cleanLabel.lowercase()] = pkg
             labelToPkg[label.lowercase()] = pkg
             pkgToLabel[pkg] = cleanLabel
+            if (isSystem) {
+                systemPkgs.add(pkg)
+                systemLabels.add(cleanLabel.lowercase())
+            }
+        }
+
+        fun isSystemApp(labelOrPkg: String?): Boolean {
+            if (labelOrPkg.isNullOrBlank()) return false
+            val clean = labelOrPkg.removeSuffix(" (System)").trim().lowercase()
+            return systemLabels.contains(clean) || systemPkgs.contains(labelOrPkg) || (labelToPkg[clean]?.let { systemPkgs.contains(it) } == true)
         }
 
         fun getPackageName(label: String?): String? {
@@ -635,5 +648,41 @@ object FileUtils {
             .replace("System / Reserved", "System & OS")
             .replace("trashed", "Trashed Files")
             .trim()
+    }
+
+    enum class TreemapShadingMode {
+        SOLID,    // 4GB or less RAM -> solid fill only
+        LINEAR,   // 6GB or less RAM -> linear gradient only
+        CUSHION   // > 6GB RAM -> exact CTM parabolic cushion gradient
+    }
+
+    @Volatile
+    private var shadingModeCached: TreemapShadingMode? = null
+
+    fun getTreemapShadingMode(context: Context): TreemapShadingMode {
+        shadingModeCached?.let { return it }
+        val mode = try {
+            val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val memInfo = ActivityManager.MemoryInfo()
+            actManager?.getMemoryInfo(memInfo)
+            val totalBytes = memInfo.totalMem
+            when {
+                totalBytes <= 4_200_000_000L -> TreemapShadingMode.SOLID
+                totalBytes <= 6_400_000_000L -> TreemapShadingMode.LINEAR
+                else -> TreemapShadingMode.CUSHION
+            }
+        } catch (_: Exception) {
+            TreemapShadingMode.CUSHION
+        }
+        shadingModeCached = mode
+        return mode
+    }
+
+    fun isUnder4GbRam(context: Context): Boolean = getTreemapShadingMode(context) == TreemapShadingMode.SOLID
+
+    fun isUnder6GbRam(context: Context): Boolean = getTreemapShadingMode(context) != TreemapShadingMode.CUSHION
+
+    fun isLowRamOptimizationEnabled(context: Context): Boolean {
+        return getTreemapShadingMode(context) == TreemapShadingMode.SOLID
     }
 }

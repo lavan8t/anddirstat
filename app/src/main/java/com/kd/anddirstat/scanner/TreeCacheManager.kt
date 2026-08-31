@@ -20,12 +20,23 @@ object TreeCacheManager {
     // Default cache expiry: 2 hours
     const val DEFAULT_CACHE_EXPIRY_MS = 2 * 60 * 60 * 1000L
 
+    private val stringPool = Array<String?>(4096) { null }
+
+    private fun intern(s: String): String {
+        if (s.length > 64) return s
+        val idx = (s.hashCode() and 0x7FFFFFFF) % stringPool.size
+        val existing = stringPool[idx]
+        if (existing == s) return existing
+        stringPool[idx] = s
+        return s
+    }
+
     suspend fun saveTree(context: Context, rootNode: CompactNode) = withContext(Dispatchers.IO) {
         try {
             val file = File(context.filesDir, CACHE_FILE_NAME)
             val tempFile = File(context.filesDir, "$CACHE_FILE_NAME.tmp")
 
-            DataOutputStream(BufferedOutputStream(FileOutputStream(tempFile), 64 * 1024)).use { out ->
+            DataOutputStream(BufferedOutputStream(FileOutputStream(tempFile), 256 * 1024)).use { out ->
                 out.writeInt(MAGIC_HEADER)
                 out.writeInt(CACHE_VERSION)
                 out.writeLong(System.currentTimeMillis())
@@ -52,7 +63,7 @@ object TreeCacheManager {
         if (!file.exists() || !file.canRead() || file.length() < 16) return@withContext null
 
         try {
-            DataInputStream(BufferedInputStream(FileInputStream(file), 64 * 1024)).use { input ->
+            DataInputStream(BufferedInputStream(FileInputStream(file), 256 * 1024)).use { input ->
                 val magic = input.readInt()
                 if (magic != MAGIC_HEADER) {
                     file.delete()
@@ -77,6 +88,8 @@ object TreeCacheManager {
         } catch (_: Exception) {
             try { file.delete() } catch (_: Exception) {}
             null
+        } finally {
+            stringPool.fill(null)
         }
     }
 
@@ -96,7 +109,7 @@ object TreeCacheManager {
     }
 
     private fun readNode(input: DataInputStream): CompactNode {
-        val name = input.readUTF()
+        val name = intern(input.readUTF())
         val isDirectory = input.readBoolean()
         val size = input.readLong()
         val count = input.readInt()
