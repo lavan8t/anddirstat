@@ -22,6 +22,7 @@ object AppDestinations {
     const val CLEANER_SCREENSHOTS = "cleaner_screenshots"
     const val CLEANER_RECYCLE_BIN = "cleaner_recycle_bin"
     const val STARRED = "starred_files"
+    const val LARGEST_FILES = "largest_files"
 
     val TOP_LEVEL_DESTINATIONS = setOf(TREE, EXPLORER, TYPES, DISCOVER)
 

@@ -12,3 +12,5 @@ captures/
 *.keystore
 *.jks
 .kotlin/
+*.logcat
+app/release/

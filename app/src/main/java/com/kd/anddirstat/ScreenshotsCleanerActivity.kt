@@ -28,11 +28,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -48,6 +53,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -79,6 +85,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -205,6 +212,9 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isImageLoading by remember { mutableStateOf(false) }
 
+    val prefs = remember { context.getSharedPreferences("screenshots_cleaner_prefs", Context.MODE_PRIVATE) }
+    var reloadKey by remember { mutableIntStateOf(0) }
+
     var sortOrder by remember { mutableStateOf(ScreenshotSort.OLDEST) }
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -216,16 +226,17 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reloadKey) {
         isLoading = true
         val loaded = withContext(Dispatchers.IO) {
+            val keptSet = prefs.getStringSet("kept_screenshots", emptySet()) ?: emptySet()
             val items = mutableListOf<ScreenshotItem>()
             val root = TreeCacheManager.loadTree(context)
             if (root != null) {
                 val list = StorageFilterHelper.getScreenshots(root, limit = 500)
                 for (entry in list) {
                     val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
-                    if (f != null && f.exists() && f.canRead()) {
+                    if (f != null && f.exists() && f.canRead() && f.absolutePath !in keptSet) {
                         items.add(ScreenshotItem(file = f, name = entry.node.name, size = entry.node.size, path = entry.path))
                     }
                 }
@@ -240,7 +251,7 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
                     if (dir.exists() && dir.isDirectory) {
                         dir.listFiles()?.filter { !it.isDirectory && it.canRead() }?.forEach { f ->
                             val name = f.name.lowercase()
-                            if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") || name.endsWith(".heic")) {
+                            if ((name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") || name.endsWith(".heic")) && f.absolutePath !in keptSet) {
                                 items.add(ScreenshotItem(file = f, name = f.name, size = f.length(), path = f.absolutePath))
                             }
                         }
@@ -251,6 +262,7 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
         }
         screenshots = loaded
         totalInitialCount = loaded.size
+        currentIndex = 0
         isLoading = false
     }
 
@@ -372,12 +384,21 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
     }
 
     fun handleKeep() {
-        if (currentItem == null) return
+        val item = currentItem ?: return
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val currentKept = prefs.getStringSet("kept_screenshots", emptySet())?.toMutableSet() ?: mutableSetOf()
+        currentKept.add(item.file.absolutePath)
+        prefs.edit().putStringSet("kept_screenshots", currentKept).apply()
         proceedToNext()
     }
 
+    val layoutDirection = LocalLayoutDirection.current
+    val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
+
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = cutoutStart),
         snackbarHost = { androidx.compose.material3.SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -451,6 +472,7 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -496,6 +518,27 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
                                 .height(54.dp)
                         ) {
                             Text("Back to Discover", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+
+                        val hasKept = prefs.getStringSet("kept_screenshots", emptySet())?.isNotEmpty() == true
+                        if (hasKept) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    prefs.edit().remove("kept_screenshots").apply()
+                                    reloadKey++
+                                    com.kd.anddirstat.util.AppNotifier.notify("Reset kept screenshots")
+                                },
+                                shape = RoundedCornerShape(28.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                            ) {
+                                MaterialSymbol("restart_alt", active = true, size = 20.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Reset Kept Screenshots", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
                         }
                     }
                 }
@@ -737,7 +780,7 @@ fun ScreenshotsCleanerView(onBack: () -> Unit) {
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     MaterialSymbol("check", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                    Text("Don't Delete (Keep)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    Text("Keep", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 }
                             }
                         }

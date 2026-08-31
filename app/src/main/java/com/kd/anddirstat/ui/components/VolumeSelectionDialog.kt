@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.util.FileUtils
@@ -37,6 +38,10 @@ fun VolumeSelectionDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
+    val effectiveScanApps = scanAppsSelected && hasUsageAccess
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -119,13 +124,13 @@ fun VolumeSelectionDialog(
 
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = if (scanAppsSelected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                    color = if (effectiveScanApps) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                     else MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable {
-                            if (scanAppsSelected && selectedVolumeIds.isEmpty()) {
+                        .clickable(enabled = hasUsageAccess) {
+                            if (effectiveScanApps && selectedVolumeIds.isEmpty()) {
                                 // Prevent deselecting everything
                             } else {
                                 onToggleScanApps(!scanAppsSelected)
@@ -140,9 +145,9 @@ fun VolumeSelectionDialog(
                     ) {
                         MaterialSymbol(
                             name = "apps",
-                            active = true,
+                            active = hasUsageAccess,
                             size = 28.dp,
-                            tint = if (scanAppsSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (effectiveScanApps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -150,16 +155,17 @@ fun VolumeSelectionDialog(
                                 text = "Installed Apps & Packages",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = if (hasUsageAccess) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "Include apk sizes & app package breakdowns",
+                                text = if (hasUsageAccess) "Include apk sizes & app package breakdowns" else "Requires Usage Access to calculate app sizes",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Checkbox(
-                            checked = scanAppsSelected,
+                            checked = effectiveScanApps,
+                            enabled = hasUsageAccess,
                             onCheckedChange = null
                         )
                     }
@@ -167,12 +173,12 @@ fun VolumeSelectionDialog(
             }
         },
         confirmButton = {
-            val totalCount = selectedVolumeIds.size + if (scanAppsSelected) 1 else 0
+            val totalCount = selectedVolumeIds.size + if (effectiveScanApps) 1 else 0
             FilledTonalButton(
                 onClick = onConfirm,
-                enabled = selectedVolumeIds.isNotEmpty() || scanAppsSelected
+                enabled = selectedVolumeIds.isNotEmpty() || effectiveScanApps
             ) {
-                Text("Scan ($totalCount)", fontWeight = FontWeight.Bold)
+                Text("Scan", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

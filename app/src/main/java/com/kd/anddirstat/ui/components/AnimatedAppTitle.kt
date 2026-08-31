@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.R
@@ -48,7 +49,10 @@ private var hasPlayedTitleLaunchAnimation = false
 
 @OptIn(ExperimentalTextApi::class)
 @Composable
-fun AnimatedAppTitle(modifier: Modifier = Modifier) {
+fun AnimatedAppTitle(
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 19.sp
+) {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     var leadState by remember {
@@ -112,7 +116,7 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
                         painter = painterResource(R.drawable.ic_appbar),
                         contentDescription = "AndDirStat",
                         modifier = Modifier
-                            .height(22.dp)
+                            .height(fontSize.value.dp)
                             .padding(end = 4.dp)
                     )
                 }
@@ -121,7 +125,7 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
                         text = "And",
                         fontFamily = dynamicAndFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
+                        fontSize = fontSize,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -132,7 +136,7 @@ fun AnimatedAppTitle(modifier: Modifier = Modifier) {
             text = "DirStat",
             fontFamily = GoogleSansFlexFontFamily,
             fontWeight = FontWeight.Light,
-            fontSize = 22.sp,
+            fontSize = fontSize,
             color = MaterialTheme.colorScheme.onSurface
         )
     }

@@ -1,13 +1,11 @@
 package com.kd.anddirstat.ui.screens
 
 import android.content.Intent
-import android.os.Environment
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -18,15 +16,18 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,19 +45,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
-import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,15 +60,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -86,10 +79,12 @@ import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
+import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 data class SearchFilterCategory(
     val id: String,
@@ -137,13 +132,10 @@ fun DiscoverView(
         )
     }
     var selectedSearchFilter by remember { mutableStateOf("all") }
+    var selectedSortOrder by remember { mutableStateOf("largest") } // largest, smallest, oldest, newest
 
     var recentSearches by remember(searchQuery) {
         mutableStateOf(com.kd.anddirstat.util.FavoritesManager.getRecentSearches(context))
-    }
-
-    val displayedFiles = remember(topFiles) {
-        topFiles.take(10)
     }
 
     val appsContainer = rootNode.children?.firstOrNull { it.name == "Apps & System Packages" }
@@ -151,14 +143,42 @@ fun DiscoverView(
         appsContainer?.children?.sortedByDescending { it.size }?.take(15) ?: emptyList()
     }
 
-    val searchResults = remember(rootNode, searchQuery, selectedSearchFilter) {
+    val largestEntries = remember(topFiles, largeApps) {
+        val filesList = topFiles
+        val appsList = largeApps.map { appNode ->
+            TopFileEntry(
+                node = appNode,
+                path = "Apps & System Packages/${appNode.name}"
+            )
+        }
+        (filesList + appsList).sortedByDescending { it.node.size }
+    }
+    val displayedTop5 = remember(largestEntries) {
+        largestEntries.take(5)
+    }
+
+
+    // System/OS node names to exclude from search (also strip brackets for display)
+    val systemNodeNames = remember {
+        setOf("system & os", "free space", "recycle bin", "trashed", "android", "data/data", ".android_secure")
+    }
+
+    val searchResults = remember(rootNode, searchQuery, selectedSearchFilter, selectedSortOrder) {
+        fun isSystemEntry(entry: TopFileEntry): Boolean {
+            val name = entry.node.name.trim().lowercase().removeSurrounding("[", "]")
+            return name in setOf("system & os", "free space", "recycle bin", "trashed") ||
+                   entry.path.contains("[system", ignoreCase = true) ||
+                   entry.path.contains("[free space", ignoreCase = true) ||
+                   entry.path.contains("[recycle bin", ignoreCase = true)
+        }
+
         val baseList = if (searchQuery.isNotBlank()) {
-            StorageFilterHelper.searchTree(rootNode, searchQuery)
+            StorageFilterHelper.searchTree(rootNode, searchQuery).filterNot { isSystemEntry(it) }
         } else if (selectedSearchFilter != "all") {
             when (selectedSearchFilter) {
-                "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB", context)
-                "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads", context)
-                "apk" -> StorageFilterHelper.filterByPreset(rootNode, "APKs", context)
+                "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB", context).filterNot { isSystemEntry(it) }
+                "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads", context).filterNot { isSystemEntry(it) }
+                "apk" -> StorageFilterHelper.filterByPreset(rootNode, "APKs", context).filterNot { isSystemEntry(it) }
                 else -> {
                     val results = mutableListOf<TopFileEntry>()
                     val videoExts = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v", "mpg", "mpeg", "vob")
@@ -186,7 +206,7 @@ fun DiscoverView(
                         node.children?.forEach { collect(it, fullPath) }
                     }
                     collect(rootNode, "")
-                    results.sortedByDescending { it.node.size }
+                    results.filterNot { isSystemEntry(it) }.sortedByDescending { it.node.size }
                 }
             }
         } else {
@@ -217,6 +237,14 @@ fun DiscoverView(
             }
         } else {
             baseList
+        }.let { list ->
+            when (selectedSortOrder) {
+                "largest" -> list.sortedByDescending { it.node.size }
+                "smallest" -> list.sortedBy { it.node.size }
+                "oldest" -> list.sortedBy { java.io.File(it.path).lastModified() }
+                "newest" -> list.sortedByDescending { java.io.File(it.path).lastModified() }
+                else -> list
+            }
         }
     }
 
@@ -225,7 +253,7 @@ fun DiscoverView(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface),
-            contentPadding = PaddingValues(bottom = 16.dp)
+            contentPadding = PaddingValues(bottom = 116.dp)
         ) {
             if (isSearchActive || searchQuery.isNotBlank()) {
                 // Filter chips row in Search mode
@@ -275,6 +303,48 @@ fun DiscoverView(
                 }
 
                 if (searchQuery.isNotBlank() || selectedSearchFilter != "all") {
+                    // Sort chips row
+                    item {
+                        val sortOptions = listOf(
+                            "largest" to "Largest",
+                            "smallest" to "Smallest",
+                            "newest" to "Newest",
+                            "oldest" to "Oldest"
+                        )
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(sortOptions) { (id, label) ->
+                                val isSelected = selectedSortOrder == id
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectedSortOrder = id
+                                    },
+                                    label = {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    },
+                                    shape = CircleShape,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        labelColor = MaterialTheme.colorScheme.onSurface,
+                                        selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                    ),
+                                    border = null,
+                                    modifier = Modifier.height(34.dp)
+                                )
+                            }
+                        }
+                    }
+
                     item {
                         Text(
                             text = "${searchResults.size} results found",
@@ -325,6 +395,7 @@ fun DiscoverView(
                                 shape = shape,
                                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier
+                                    .animateItem()
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp)
                                     .clip(shape)
@@ -404,7 +475,7 @@ fun DiscoverView(
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
                                                 Text(
-                                                    text = entry.node.name,
+                                                    text = entry.node.name.removeSurrounding("[", "]"),
                                                     style = MaterialTheme.typography.bodyLarge,
                                                     fontWeight = FontWeight.SemiBold,
                                                     maxLines = 1,
@@ -430,8 +501,12 @@ fun DiscoverView(
                                                     fontWeight = FontWeight.Bold,
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
+                                                val folderName = remember(entry.path) {
+                                                    val parts = entry.path.trimEnd('/').split('/')
+                                                    if (parts.size > 1) parts[parts.size - 2] else parts.firstOrNull() ?: ""
+                                                }
                                                 Text(
-                                                    text = entry.path,
+                                                    text = folderName,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     maxLines = 1,
@@ -529,268 +604,252 @@ fun DiscoverView(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // Largest Files Material 3 Expressive Carousel
-                if (displayedFiles.isNotEmpty()) {
+                // Large Items List (Top 5 ranked by size with M3 swipe-revealed actions)
+                if (displayedTop5.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Largest Files",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    item {
-                    val carouselState = rememberCarouselState { displayedFiles.size }
-                    val textDropShadow = remember {
-                        Shadow(
-                            color = Color.Black.copy(alpha = 0.95f),
-                            offset = Offset(0f, 2f),
-                            blurRadius = 6f
-                        )
-                    }
-
-                    HorizontalMultiBrowseCarousel(
-                        state = carouselState,
-                        preferredItemWidth = 186.dp,
-                        itemSpacing = 8.dp,
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                    ) { index ->
-                            val entry = displayedFiles[index]
-                            val isApk = entry.node.name.endsWith(".apk", ignoreCase = true) || entry.node.name.startsWith("App Code")
-                            val isBinary = !entry.node.isDirectory && (entry.node.name.endsWith(".iso", ignoreCase = true) || entry.node.name.endsWith(".bin", ignoreCase = true) || entry.node.name.endsWith(".zip", ignoreCase = true))
-                            val iconColor = if (isApk) {
-                                MaterialTheme.colorScheme.error
-                            } else if (isBinary) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.tertiary
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .maskClip(MaterialTheme.shapes.extraLarge)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .clickable { onNodeClick(entry.node, entry.path) }
-                            ) {
-                                if (isApk) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(16.dp),
-                                        verticalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(56.dp)
-                                                .clip(RoundedCornerShape(16.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            MediaThumbnailView(
-                                                node = entry.node,
-                                                path = entry.path,
-                                                fallbackTint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-
-                                        Column(modifier = Modifier.fillMaxWidth()) {
-                                            Text(
-                                                text = FileUtils.middleEllipsis(entry.node.name, 22),
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = FileUtils.formatFileSize(entry.node.size, context),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    MediaThumbnailView(
-                                        node = entry.node,
-                                        path = entry.path,
-                                        fallbackTint = iconColor,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-
-                                    // Gradient Scrim Overlay for crisp text legibility
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    colors = listOf(
-                                                        Color.Transparent,
-                                                        Color.Transparent,
-                                                        Color.Black.copy(alpha = 0.55f),
-                                                        Color.Black.copy(alpha = 0.88f)
-                                                    )
-                                                )
-                                            )
-                                    )
-
-                                    // Name and Size Inside Cover
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .align(Alignment.BottomStart)
-                                            .padding(horizontal = 14.dp, vertical = 12.dp)
-                                    ) {
-                                        Text(
-                                            text = FileUtils.middleEllipsis(entry.node.name, 22),
-                                            style = MaterialTheme.typography.titleSmall.copy(shadow = textDropShadow),
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            maxLines = 1
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = FileUtils.formatFileSize(entry.node.size, context),
-                                            style = MaterialTheme.typography.bodySmall.copy(shadow = textDropShadow),
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.White.copy(alpha = 0.9f)
-                                        )
-                                    }
-                                }
-                            }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Large Items",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
-                }
 
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
-            }
-
-            // 3. Large Apps Vertical List with Settings-like Grouped Cards
-            item {
-                Text(
-                    text = "Large Apps",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            itemsIndexed(
-                items = largeApps,
-                key = { index, app -> "${app.name}_$index" }
-            ) { index, app ->
-                val pkgName = remember(app) { FileUtils.extractPackageName(app, null, context) }
-                val appChildren = app.children
-                val cacheSize = appChildren?.firstOrNull { it.name == "Cache" }?.size ?: 0L
-                val appEntry = remember(app, pkgName) { TopFileEntry(app, "package:${pkgName ?: app.name}") }
-                val isSelected = selectedEntries.contains(appEntry)
-
-                val shape = when {
-                    largeApps.size == 1 -> RoundedCornerShape(24.dp)
-                    index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-                    index == largeApps.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                    else -> RoundedCornerShape(4.dp)
-                }
-
-                Surface(
-                    shape = shape,
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clip(shape)
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            if (selectedEntries.isNotEmpty()) {
-                                selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
-                            } else if (pkgName != null) {
-                                try {
-                                    context.startActivity(
-                                        Intent(
-                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                            "package:$pkgName".toUri()
-                                        )
-                                    )
-                                } catch (_: Exception) {}
-                            }
+                    itemsIndexed(
+                        items = displayedTop5,
+                        key = { index, entry -> "top5_${entry.path}_${entry.node.name}_$index" }
+                    ) { index, entry ->
+                        val pkgName = remember(entry.node, entry.path) {
+                            FileUtils.extractPackageName(entry.node, entry.path, context)
+                                ?: FileUtils.AppPackageRegistry.getPackageName(entry.node.name)
                         }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                        val isApp = pkgName != null ||
+                                entry.path.startsWith("Apps & System Packages") ||
+                                entry.node.children?.any { it.name.startsWith("App Code") } == true
+                        val isSelected = selectedEntries.contains(entry)
+
+                        val shape = when {
+                            displayedTop5.size == 1 -> RoundedCornerShape(20.dp)
+                            index == 0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+                            index == displayedTop5.lastIndex -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
+                            else -> RoundedCornerShape(4.dp)
+                        }
+
+                        val density = LocalDensity.current
+                        val revealWidth = 58.dp
+                        val revealWidthPx = with(density) { revealWidth.toPx() }
+                        val offsetX = remember(entry) { Animatable(0f) }
+
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    selectedEntries = if (isSelected) selectedEntries - appEntry else selectedEntries + appEntry
-                                },
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clip(shape)
+                                .animateItem()
                         ) {
-                            AppIconView(
-                                packageName = pkgName,
-                                contentDescription = app.name,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            if (isSelected) {
+                            // Revealed Action Button beside the card (Material 3 swipe action)
+                            Row(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .padding(end = 4.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
+                                        .width(revealWidth)
+                                        .fillMaxHeight()
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.errorContainer)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            scope.launch { offsetX.animateTo(0f) }
+                                            if (isApp) {
+                                                val targetPkg = pkgName ?: entry.node.name
+                                                FileUtils.uninstallApp(context, targetPkg)
+                                            } else {
+                                                if (com.kd.anddirstat.util.FavoritesManager.isStarred(context, entry.path)) {
+                                                    com.kd.anddirstat.util.AppNotifier.notify("Cannot delete starred file. Unstar manually first.")
+                                                } else {
+                                                    scope.launch {
+                                                        withContext(Dispatchers.IO) {
+                                                            try {
+                                                                val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
+                                                                if (f != null && f.exists()) {
+                                                                    FileUtils.deleteOrTrashFile(f, context)
+                                                                }
+                                                            } catch (_: Exception) {}
+                                                        }
+                                                        onNodesDeleted(setOf(entry.node))
+                                                        onRefresh()
+                                                    }
+                                                }
+                                            }
+                                        },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     MaterialSymbol(
-                                        name = "check",
+                                        name = if (isApp) "delete_forever" else "delete",
                                         active = true,
-                                        size = 24.dp,
-                                        tint = MaterialTheme.colorScheme.onPrimary
+                                        size = 22.dp,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+
+                        // Foreground Surface Card
+                        Surface(
+                            shape = shape,
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                                .pointerInput(entry) {
+                                    var lastHapticZone = 0
+                                    detectHorizontalDragGestures(
+                                        onDragEnd = {
+                                            lastHapticZone = 0
+                                            scope.launch {
+                                                val curr = offsetX.value
+                                                if (curr <= -revealWidthPx * 0.4f) {
+                                                    // Snap to revealed position (never auto-delete on full swipe)
+                                                    offsetX.animateTo(-revealWidthPx, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
+                                                } else {
+                                                    // Snap back
+                                                    offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
+                                                }
+                                            }
+                                        },
+                                        onHorizontalDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val nextX = (offsetX.value + dragAmount).coerceIn(-revealWidthPx * 1.35f, 0f)
+                                            val zone = if (-nextX >= revealWidthPx) 1 else 0
+                                            if (zone != lastHapticZone) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                lastHapticZone = zone
+                                            }
+                                            scope.launch { offsetX.snapTo(nextX) }
+                                        }
+                                    )
+                                }
+                                    .clickable {
+                                        if (offsetX.value < -10f) {
+                                            scope.launch { offsetX.animateTo(0f) }
+                                        } else {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (selectedEntries.isNotEmpty()) {
+                                                selectedEntries = if (isSelected) selectedEntries - entry else selectedEntries + entry
+                                            } else if (isApp && pkgName != null) {
+                                                try {
+                                                    context.startActivity(
+                                                        Intent(
+                                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                            "package:$pkgName".toUri()
+                                                        ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                                                    )
+                                                } catch (_: Exception) {}
+                                            } else {
+                                                onNodeClick(entry.node, entry.path)
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(44.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isApp && pkgName != null) {
+                                            AppIconView(
+                                                packageName = pkgName,
+                                                contentDescription = entry.node.name,
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                            )
+                                        } else {
+                                            val iconColor = when {
+                                                entry.node.name.endsWith(".apk", true) -> MaterialTheme.colorScheme.error
+                                                entry.node.name.endsWith(".zip", true) || entry.node.name.endsWith(".iso", true) -> MaterialTheme.colorScheme.primary
+                                                else -> MaterialTheme.colorScheme.tertiary
+                                            }
+                                            MediaThumbnailView(
+                                                node = entry.node,
+                                                path = entry.path,
+                                                fallbackTint = iconColor,
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Text(
+                                        text = entry.node.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    Text(
+                                        text = FileUtils.formatFileSize(entry.node.size, context),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isApp) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
                         }
+                        if (index < displayedTop5.lastIndex) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                        }
+                    }
 
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Text(
-                            text = app.name,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = FileUtils.formatFileSize(app.size, context),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.LARGEST_FILES)
+                                }
+                            ) {
+                                Text(
+                                    text = "More",
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
                         }
                     }
                 }
-
-                if (index < largeApps.lastIndex) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
-            }
 
             // 4. Utility Tools Section at End
             item {
@@ -887,42 +946,7 @@ fun DiscoverView(
                                 }
                             }
 
-                            // Tool 3: Recycle Bin
-                            Card(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(108.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    MaterialSymbol(
-                                        name = "delete_sweep",
-                                        active = true,
-                                        size = 28.dp,
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                    Text(
-                                        text = "Recycle Bin",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-
-                            // Tool 4: Duplicates Cleaner
+                            // Tool 3: Duplicates Cleaner
                             Card(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -1036,78 +1060,54 @@ fun DiscoverView(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            // Tool 3: Duplicates Cleaner
+                            Card(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_DUPLICATES)
+                                },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(72.dp)
                             ) {
-                                // Tool 3: Recycle Bin
-                                Card(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_RECYCLE_BIN)
-                                    },
-                                    shape = RoundedCornerShape(20.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                Row(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .height(108.dp)
+                                        .fillMaxSize()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "delete_sweep",
-                                            active = true,
-                                            size = 28.dp,
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
+                                    MaterialSymbol(
+                                        name = "content_copy",
+                                        active = true,
+                                        size = 28.dp,
+                                        tint = MaterialTheme.colorScheme.tertiary
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "Recycle Bin",
+                                            text = "Duplicates Cleaner",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 2,
+                                            maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-
-                                // Tool 4: Duplicates Cleaner
-                                Card(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onNavigateTo?.invoke(com.kd.anddirstat.model.AppDestinations.CLEANER_DUPLICATES)
-                                    },
-                                    shape = RoundedCornerShape(20.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(108.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "content_copy",
-                                            active = true,
-                                            size = 28.dp,
-                                            tint = MaterialTheme.colorScheme.tertiary
                                         )
                                         Text(
-                                            text = "Duplicates",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 2,
+                                            text = "Find and remove duplicate files",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
+                                    MaterialSymbol(
+                                        name = "chevron_right",
+                                        active = true,
+                                        size = 20.dp,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -1287,7 +1287,7 @@ fun DiscoverView(
                                     unstarredItems.forEachIndexed { index, entry ->
                                         deleteCurrentCount = index + 1
                                         deleteCurrentFileName = entry.node.name
-                                        com.kd.anddirstat.util.AppNotifier.updateProgress(
+                                        AppNotifier.updateProgress(
                                             context = context,
                                             title = if (allAlreadyTrashed) "Deleting permanently..." else "Moving to Recycle Bin...",
                                             detail = "${index + 1} / ${unstarredItems.size}: ${entry.node.name}",

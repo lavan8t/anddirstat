@@ -266,7 +266,7 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Recycle Bin",
+                        text = if (selectedFiles.isNotEmpty()) "${selectedFiles.size} Selected" else "Recycle Bin",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -678,10 +678,10 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                         ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surface,
-                                tonalElevation = 6.dp,
-                                modifier = Modifier.fillMaxWidth()
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -712,7 +712,7 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                                                 tint = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = "Restore (${selectedFiles.size})",
+                                                text = "Restore",
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 15.sp,
                                                 maxLines = 1
@@ -742,7 +742,7 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
                                                 tint = MaterialTheme.colorScheme.onError
                                             )
                                             Text(
-                                                text = "Delete (${selectedFiles.size})",
+                                                text = "Delete",
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 15.sp,
                                                 maxLines = 1

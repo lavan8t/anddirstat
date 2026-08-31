@@ -4,6 +4,7 @@ import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.ExtensionStat
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.treemap.getNodeColor
+import com.kd.anddirstat.util.FileUtils
 
 object StorageFilterHelper {
 
@@ -29,9 +30,27 @@ object StorageFilterHelper {
             if (!showHiddenFiles && name.startsWith(".")) {
                 return null
             }
-            if (!node.isDirectory || node.children == null) return node
-            val filteredKids = node.children!!.mapNotNull { processNode(it) }
-            val newSize = filteredKids.sumOf { it.size }
+            val children = node.children ?: return node
+            if (!node.isDirectory || children.isEmpty()) return node
+
+            var anyChanged = false
+            val filteredKids = ArrayList<CompactNode>(children.size)
+            var newSize = 0L
+            for (child in children) {
+                val processed = processNode(child)
+                if (processed == null) {
+                    anyChanged = true
+                } else {
+                    if (processed !== child) anyChanged = true
+                    filteredKids.add(processed)
+                    newSize += processed.size
+                }
+            }
+
+            if (!anyChanged && filteredKids.size == children.size) {
+                return node
+            }
+
             return CompactNode(
                 name = node.name,
                 isDirectory = true,
@@ -61,7 +80,7 @@ object StorageFilterHelper {
                 child.name == "Apps & System Packages" -> {
                     val appChildren = child.children
                     val filteredApps = if (!showSystemApps && appChildren != null) {
-                        appChildren.filter { !it.name.endsWith(" (System)") }.toTypedArray()
+                        appChildren.filter { !FileUtils.AppPackageRegistry.isSystemApp(it.name) }.toTypedArray()
                     } else {
                         appChildren
                     }
@@ -158,7 +177,7 @@ object StorageFilterHelper {
     }
 
     fun aggregateTopFiles(rootNode: CompactNode, limit: Int = 30): List<TopFileEntry> {
-        val list = mutableListOf<TopFileEntry>()
+        val minHeap = java.util.PriorityQueue<TopFileEntry>(limit + 1, compareBy { it.node.size })
         fun collect(node: CompactNode, currentPath: String) {
             val name = node.name
             val lowerName = name.lowercase()
@@ -194,7 +213,12 @@ object StorageFilterHelper {
             ) return
 
             if (!node.isDirectory) {
-                list.add(TopFileEntry(node, currentPath))
+                if (minHeap.size < limit) {
+                    minHeap.offer(TopFileEntry(node, currentPath))
+                } else if (node.size > minHeap.peek()!!.node.size) {
+                    minHeap.poll()
+                    minHeap.offer(TopFileEntry(node, currentPath))
+                }
             } else {
                 node.children?.forEach { child ->
                     val childPath = if (currentPath == "Device Storage") child.name else "$currentPath/${child.name}"
@@ -203,7 +227,12 @@ object StorageFilterHelper {
             }
         }
         collect(rootNode, rootNode.name)
-        return list.sortedByDescending { it.node.size }.take(limit)
+        val result = ArrayList<TopFileEntry>(minHeap.size)
+        while (minHeap.isNotEmpty()) {
+            result.add(minHeap.poll()!!)
+        }
+        result.reverse()
+        return result
     }
 
 

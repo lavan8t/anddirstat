@@ -26,8 +26,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.material3.TextButton
+
 @Composable
-fun PermissionScreen(onGrant: () -> Unit) {
+fun PermissionScreen(
+    title: String = "Storage Access Required",
+    description: String = "AndDirStat needs storage management access to inspect disk usage, calculate partition sizes, and render your interactive treemap.",
+    icon: String = "storage",
+    grantButtonText: String = "Grant Permission",
+    onGrant: () -> Unit,
+    onDismiss: (() -> Unit)? = null
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -51,7 +60,7 @@ fun PermissionScreen(onGrant: () -> Unit) {
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         MaterialSymbol(
-                            name = "storage",
+                            name = icon,
                             active = true,
                             size = 36.dp,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
@@ -60,7 +69,7 @@ fun PermissionScreen(onGrant: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
-                    text = "Storage Access Required",
+                    text = title,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -68,7 +77,7 @@ fun PermissionScreen(onGrant: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "AndDirStat needs storage management access to inspect disk usage, calculate partition sizes, and render your interactive treemap.",
+                    text = description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -79,7 +88,21 @@ fun PermissionScreen(onGrant: () -> Unit) {
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Grant Permission", style = MaterialTheme.typography.labelLarge)
+                    Text(grantButtonText, style = MaterialTheme.typography.labelLarge)
+                }
+                if (onDismiss != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Maybe Later",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

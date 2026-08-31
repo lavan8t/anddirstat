@@ -1,18 +1,22 @@
 package com.kd.anddirstat.ui.screens
 
+import android.content.Context
 import android.os.Environment
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -34,6 +38,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -56,6 +63,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -73,6 +82,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kd.anddirstat.GoogleSansFlexFontFamily
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.ui.components.AppIconView
@@ -80,22 +90,48 @@ import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
+import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
-data class ExplorerTreeRow(
-    val node: CompactNode,
-    val path: String,
-    val depth: Int,
-    val isExpanded: Boolean,
-    val hasChildren: Boolean,
-    val parentSize: Long
-)
+private fun findAncestorNodes(root: CompactNode, target: String): Set<CompactNode> {
+    val ancestors = mutableSetOf<CompactNode>()
+    val cleanTarget = target.trimEnd('/')
+    fun dfs(current: CompactNode, path: String): Boolean {
+        val curPath = if (path.isEmpty()) current.name else "$path/${current.name}"
+        val cleanCur = curPath.trimEnd('/')
+        if (cleanCur == cleanTarget || cleanTarget.endsWith("/$cleanCur") || cleanCur.endsWith("/$cleanTarget")) {
+            ancestors.add(current)
+            return true
+        }
+        val couldContain = cleanTarget.startsWith("$cleanCur/") ||
+                           cleanTarget.contains("/${current.name}/") ||
+                           cleanTarget.endsWith("/${current.name}") ||
+                           current == root
+        if (couldContain) {
+            var found = false
+            current.children?.forEach { child ->
+                val nextPath = if (current == root && root.name == "Device Storage") "" else cleanCur
+                if (dfs(child, nextPath)) {
+                    found = true
+                }
+            }
+            if (found) {
+                ancestors.add(current)
+                return true
+            }
+        }
+        return false
+    }
+    dfs(root, "")
+    return ancestors
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -105,13 +141,38 @@ fun ExplorerView(
     onNodesDeleted: (Set<CompactNode>) -> Unit = {},
     onRefresh: () -> Unit = {},
     onNavigateTo: ((String) -> Unit)? = null,
+    onDismissPopup: () -> Unit = {},
+    targetPath: String? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val isDark = isSystemInDarkTheme()
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) onDismissPopup()
+    }
+    val topLevelChildren = remember(rootNode) {
+        rootNode.children?.filter { it.size > 0L && !it.name.startsWith(".trashed") && it.name != "[Recycle Bin]" }?.sortedByDescending { it.size } ?: emptyList()
+    }
     var expandedNodes by remember(rootNode) { mutableStateOf(setOf(rootNode)) }
+
+    LaunchedEffect(targetPath, rootNode) {
+        if (!targetPath.isNullOrBlank()) {
+            val ancestors = findAncestorNodes(rootNode, targetPath)
+            if (ancestors.isNotEmpty()) {
+                expandedNodes = expandedNodes + ancestors
+                val topLevelIdx = topLevelChildren.indexOfFirst { ancestors.contains(it) }
+                if (topLevelIdx >= 0) {
+                    listState.animateScrollToItem((topLevelIdx + 2).coerceAtLeast(0))
+                }
+            }
+        }
+    }
+
+    val folderLimits = remember(rootNode) { mutableStateMapOf<String, Int>() }
     var selectedRows by remember(rootNode) { mutableStateOf(mapOf<CompactNode, String>()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -167,34 +228,6 @@ fun ExplorerView(
     var deleteCurrentFileName by remember { mutableStateOf("") }
     var deleteIsTrash by remember { mutableStateOf(true) }
 
-    fun flattenTree(
-        parent: CompactNode,
-        parentPath: String,
-        depth: Int,
-        outList: ArrayList<ExplorerTreeRow>
-    ) {
-        val children = parent.children ?: return
-        val valid = children.filter { it.size > 0L && !it.name.startsWith(".trashed") && it.name != "[Recycle Bin]" }.sortedByDescending { it.size }
-        for (child in valid) {
-            val childPath = if (parentPath == "Device Storage") child.name
-                else if (parentPath.endsWith("/")) "$parentPath${child.name}"
-                else "$parentPath/${child.name}"
-            val isApp = child.children?.any { it.name.startsWith("App Code") } == true
-            val isDirWithChildren = child.isDirectory && !isApp && child.children?.any { it.size > 0L } == true
-            val isExpanded = expandedNodes.contains(child)
-            outList.add(ExplorerTreeRow(child, childPath, depth, isExpanded, isDirWithChildren, parent.size))
-            if (isDirWithChildren && isExpanded) {
-                flattenTree(child, childPath, depth + 1, outList)
-            }
-        }
-    }
-
-    val visibleRows = remember(rootNode, expandedNodes) {
-        val list = ArrayList<ExplorerTreeRow>(128)
-        flattenTree(rootNode, rootNode.name, 0, list)
-        list
-    }
-
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
     var isPredictiveBackActive by remember { mutableStateOf(false) }
     var predictiveBackSwipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
@@ -228,7 +261,8 @@ fun ExplorerView(
             }
     ) {
         LazyColumn(
-            contentPadding = PaddingValues(bottom = 16.dp),
+            state = listState,
+            contentPadding = PaddingValues(bottom = 116.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
@@ -335,179 +369,36 @@ fun ExplorerView(
             }
 
             itemsIndexed(
-                items = visibleRows,
-                key = { index, row -> "${row.path}_${row.node.name}_${row.depth}_$index" }
-            ) { _, row ->
-                val child = row.node
-                val fraction = if (row.parentSize > 0L) (child.size.toDouble() / row.parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
-                val childColor = remember(child, isDark) { FileUtils.getNodeIconColor(child, isDark) }
-                val isApp = remember(child) { child.children?.any { it.name.startsWith("App Code") } == true }
-                val appPkg = remember(child, isApp, row.path) { if (isApp) FileUtils.extractPackageName(child, row.path, context) else null }
-                val isMedia = remember(child.name, child.isDirectory) {
-                    if (child.isDirectory) false
-                    else {
-                        val l = child.name.lowercase()
-                        l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
-                        l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
-                        l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") ||
-                        l.endsWith(".apk")
-                    }
-                }
-                val isSelectable = remember(child) {
-                    !child.isDirectory
-                }
-                val isSelected = isSelectable && selectedRows.containsKey(child)
-
-                ListItem(
-                    leadingContent = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (row.depth > 0) {
-                                Spacer(modifier = Modifier.width((row.depth * 18).dp))
-                            }
-
-                            if (row.hasChildren) {
-                                val arrowRotation by animateFloatAsState(
-                                    targetValue = if (row.isExpanded) 90f else 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    ),
-                                    label = "explorerChevronRotation"
-                                )
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
-                                        }
-                                ) {
-                                    MaterialSymbol(
-                                        name = "chevron_right",
-                                        active = true,
-                                        size = 22.dp,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.graphicsLayer { rotationZ = arrowRotation }
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(2.dp))
-                            }
-
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .then(
-                                        if (isSelectable) {
-                                            Modifier.clickable {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to row.path)
-                                            }
-                                        } else Modifier
-                                    )
-                            ) {
-                                if (isMedia) {
-                                    MediaThumbnailView(
-                                        node = child,
-                                        path = row.path,
-                                        fallbackTint = childColor,
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                    )
-                                } else if (appPkg != null) {
-                                    AppIconView(
-                                        packageName = appPkg,
-                                        contentDescription = child.name,
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                    )
-                                } else {
-                                    val symbolName = remember(child, isApp) { FileUtils.getNodeSymbolName(child, isApp) }
-                                    MaterialSymbol(
-                                        name = symbolName,
-                                        active = true,
-                                        size = 26.dp,
-                                        tint = childColor
-                                    )
-                                }
-                            }
+                items = topLevelChildren,
+                key = { index, item -> item.name }
+            ) { index, child ->
+                val childPath = if (rootNode.name == "Device Storage") child.name else "${rootNode.name}/${child.name}"
+                ExplorerNodeItem(
+                    node = child,
+                    parentPath = childPath,
+                    parentSize = rootNode.size,
+                    depth = 0,
+                    itemIndex = index,
+                    isDark = isDark,
+                    context = context,
+                    haptic = haptic,
+                    expandedNodes = expandedNodes,
+                    selectedRows = selectedRows,
+                    folderLimits = folderLimits,
+                    highlightPath = targetPath,
+                    onToggleExpand = { node ->
+                        expandedNodes = if (expandedNodes.contains(node)) {
+                            folderLimits.remove(childPath)
+                            expandedNodes - node
+                        } else {
+                            expandedNodes + node
                         }
                     },
-                    headlineContent = {
-                        val cleanTitle = remember(child.name) { FileUtils.cleanDisplayName(child.name) }
-                        Text(
-                            text = cleanTitle,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (child.isDirectory) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    onToggleSelect = { node, path ->
+                        selectedRows = if (selectedRows.containsKey(node)) selectedRows - node else selectedRows + (node to path)
                     },
-                    supportingContent = {
-                        Column(modifier = Modifier.padding(top = 4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = FileUtils.formatFileSize(child.size),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = String.format(Locale.US, "%.1f%%", fraction * 100.0),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { fraction.toFloat() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(CircleShape),
-                                color = childColor,
-                                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                strokeCap = StrokeCap.Round
-                            )
-                        }
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent
-                    ),
-                    modifier = Modifier.combinedClickable(
-                        onClick = {
-                            if (selectedRows.isNotEmpty() && isSelectable) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to row.path)
-                            } else {
-                                if (row.hasChildren) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    expandedNodes = if (row.isExpanded) expandedNodes - child else expandedNodes + child
-                                } else {
-                                    onNodeClick(child, row.path)
-                                }
-                            }
-                        },
-                        onLongClick = {
-                            if (row.hasChildren) {
-                                onNodeClick(child, row.path)
-                            } else if (isSelectable) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedRows = if (isSelected) selectedRows - child else selectedRows + (child to row.path)
-                            }
-                        }
-                    )
+                    onNodeClick = onNodeClick
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
             }
         }
 
@@ -679,7 +570,7 @@ fun ExplorerView(
                                     unstarredItems.forEachIndexed { index, (node, path) ->
                                         deleteCurrentCount = index + 1
                                         deleteCurrentFileName = node.name
-                                        com.kd.anddirstat.util.AppNotifier.updateProgress(
+                                        AppNotifier.updateProgress(
                                             context = context,
                                             title = if (allAlreadyTrashed) "Deleting permanently..." else "Moving to Recycle Bin...",
                                             detail = "${index + 1} / ${unstarredItems.size}: ${node.name}",
@@ -740,5 +631,310 @@ fun ExplorerView(
             currentFileName = deleteCurrentFileName,
             isTrash = deleteIsTrash
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ExplorerNodeItem(
+    node: CompactNode,
+    parentPath: String,
+    parentSize: Long,
+    depth: Int,
+    itemIndex: Int = 0,
+    isDark: Boolean,
+    context: Context,
+    haptic: HapticFeedback,
+    expandedNodes: Set<CompactNode>,
+    selectedRows: Map<CompactNode, String>,
+    folderLimits: MutableMap<String, Int>,
+    highlightPath: String? = null,
+    onToggleExpand: (CompactNode) -> Unit,
+    onToggleSelect: (CompactNode, String) -> Unit,
+    onNodeClick: (CompactNode, String) -> Unit
+) {
+    val isApp = remember(node) { node.children?.any { it.name.startsWith("App Code") } == true }
+    val isDirWithChildren = node.isDirectory && !isApp && node.children?.any { it.size > 0L } == true
+    val isExpanded = isDirWithChildren && expandedNodes.contains(node)
+    val fraction = if (parentSize > 0L) (node.size.toDouble() / parentSize.toDouble()).coerceIn(0.0, 1.0) else 0.0
+    val childColor = remember(node, isDark) { FileUtils.getNodeIconColor(node, isDark) }
+    val appPkg = remember(node, isApp, parentPath) { if (isApp) FileUtils.extractPackageName(node, parentPath, context) else null }
+    val isMedia = remember(node.name, node.isDirectory) {
+        if (node.isDirectory) false
+        else {
+            val l = node.name.lowercase()
+            l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".png") || l.endsWith(".webp") ||
+            l.endsWith(".heic") || l.endsWith(".gif") || l.endsWith(".mp4") || l.endsWith(".mkv") ||
+            l.endsWith(".avi") || l.endsWith(".mov") || l.endsWith(".webm") || l.endsWith(".3gp") ||
+            l.endsWith(".apk")
+        }
+    }
+    val fullFilePath = remember(parentPath, node.name) {
+        if (parentPath.endsWith("/")) "$parentPath${node.name}" else "$parentPath/${node.name}"
+    }
+    val isHighlighted = remember(highlightPath, parentPath, fullFilePath) {
+        highlightPath != null && (
+            parentPath == highlightPath ||
+            fullFilePath == highlightPath ||
+            parentPath.endsWith("/${highlightPath.substringAfterLast('/')}") ||
+            fullFilePath.endsWith("/${highlightPath.substringAfterLast('/')}")
+        )
+    }
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(isHighlighted) {
+        if (isHighlighted) {
+            delay(300)
+            bringIntoViewRequester.bringIntoView()
+        }
+    }
+    val isSelectable = remember(node) { !node.isDirectory }
+    val isSelected = isSelectable && selectedRows.containsKey(node)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            leadingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (depth > 0) {
+                        Spacer(modifier = Modifier.width((minOf(depth, 4) * 8).dp))
+                    }
+
+                    if (isDirWithChildren) {
+                        val arrowRotation by animateFloatAsState(
+                            targetValue = if (isExpanded) 90f else 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            ),
+                            label = "explorerChevronRotation"
+                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onToggleExpand(node)
+                                }
+                        ) {
+                            MaterialSymbol(
+                                name = "chevron_right",
+                                active = true,
+                                size = 16.dp,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.graphicsLayer { rotationZ = arrowRotation }
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(22.dp))
+                    }
+
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .then(
+                                if (isSelectable) {
+                                    Modifier.clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onToggleSelect(node, parentPath)
+                                    }
+                                } else Modifier
+                            )
+                    ) {
+                        if (isMedia) {
+                            MediaThumbnailView(
+                                node = node,
+                                path = fullFilePath,
+                                fallbackTint = childColor,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else if (appPkg != null) {
+                            AppIconView(
+                                packageName = appPkg,
+                                contentDescription = node.name,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            val symbolName = remember(node, isApp) { FileUtils.getNodeSymbolName(node, isApp) }
+                            MaterialSymbol(
+                                name = symbolName,
+                                active = true,
+                                size = 26.dp,
+                                tint = childColor
+                            )
+                        }
+
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol(
+                                    name = "check",
+                                    active = true,
+                                    size = 20.dp,
+                                    tint = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            headlineContent = {
+                val cleanTitle = remember(node.name) { FileUtils.cleanDisplayName(node.name) }
+                Text(
+                    text = cleanTitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (node.isDirectory) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            supportingContent = {
+                Column(modifier = Modifier.padding(top = 4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = FileUtils.formatFileSize(node.size),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        val displayPercent = fraction * 100.0
+                        Text(
+                            text = String.format(Locale.US, "%.1f%%", displayPercent),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { fraction.toFloat().coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(CircleShape),
+                        color = childColor,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        strokeCap = StrokeCap.Round
+                    )
+                }
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = when {
+                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                    isHighlighted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                    else -> Color.Transparent
+                }
+            ),
+            modifier = Modifier
+                .bringIntoViewRequester(bringIntoViewRequester)
+                .combinedClickable(
+                onClick = {
+                    if (selectedRows.isNotEmpty() && isSelectable) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleSelect(node, parentPath)
+                    } else {
+                        if (isDirWithChildren) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onToggleExpand(node)
+                        } else {
+                            onNodeClick(node, parentPath)
+                        }
+                    }
+                },
+                onLongClick = {
+                    if (isDirWithChildren) {
+                        onNodeClick(node, parentPath)
+                    } else if (isSelectable) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleSelect(node, parentPath)
+                    }
+                }
+            )
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+        // Sliding down accordion animation
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val rawChildren = node.children
+                val validChildren = remember(node) {
+                    rawChildren?.filter { it.size > 0L && !it.name.startsWith(".trashed") && it.name != "[Recycle Bin]" }?.sortedByDescending { it.size } ?: emptyList()
+                }
+                val limit = folderLimits[parentPath] ?: 30
+                val displayChildren = if (validChildren.size > limit) validChildren.take(limit) else validChildren
+
+                displayChildren.forEachIndexed { childIndex, childNode ->
+                    val childPath = if (parentPath.endsWith("/")) "$parentPath${childNode.name}" else "$parentPath/${childNode.name}"
+                    ExplorerNodeItem(
+                        node = childNode,
+                        parentPath = childPath,
+                        parentSize = node.size,
+                        depth = depth + 1,
+                        itemIndex = childIndex,
+                        isDark = isDark,
+                        context = context,
+                        haptic = haptic,
+                        expandedNodes = expandedNodes,
+                        selectedRows = selectedRows,
+                        folderLimits = folderLimits,
+                        highlightPath = highlightPath,
+                        onToggleExpand = onToggleExpand,
+                        onToggleSelect = onToggleSelect,
+                        onNodeClick = onNodeClick
+                    )
+                }
+
+                if (validChildren.size > limit) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = (16 + (depth + 1) * 14 + 24).dp, end = 16.dp, top = 4.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Showing $limit of ${validChildren.size} items",
+                            fontFamily = GoogleSansFlexFontFamily,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    folderLimits[parentPath] = limit + 30
+                                }
+                            ) {
+                                Text("+30 more", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    folderLimits[parentPath] = validChildren.size
+                                }
+                            ) {
+                                Text("Show All", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+                }
+            }
+        }
     }
 }
