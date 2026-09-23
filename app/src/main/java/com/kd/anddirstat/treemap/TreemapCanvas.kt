@@ -579,6 +579,8 @@ fun TreemapCanvas(
                                     if (initialTile != null) {
                                         triggerCrispHaptic(context)
                                         onNodeSelected(initialTile.node, initialTile.path, downPos)
+                                    } else {
+                                        onDismissPopup()
                                     }
                                 }
                                 break

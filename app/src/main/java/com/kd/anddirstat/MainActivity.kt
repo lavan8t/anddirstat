@@ -34,6 +34,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -121,7 +122,7 @@ import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.ui.components.StackedSnackbarHost
 import com.kd.anddirstat.ui.components.TreeDeleteDialog
 import com.kd.anddirstat.ui.components.TreemapNavPill
-import com.kd.anddirstat.ui.components.VolumeSelectionDialog
+import com.kd.anddirstat.ui.components.VolumeSelectionBottomSheet
 import com.kd.anddirstat.ui.screens.DiscoverView
 import com.kd.anddirstat.ui.screens.ExplorerView
 import com.kd.anddirstat.ui.screens.FileTypesView
@@ -130,6 +131,7 @@ import com.kd.anddirstat.ui.screens.LoadingScreen
 import com.kd.anddirstat.ui.screens.PermissionScreen
 import com.kd.anddirstat.ui.screens.SettingsScreen
 import com.kd.anddirstat.ui.screens.TreemapScreen
+import com.kd.anddirstat.ui.screens.cleaners.*
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
 import com.kd.anddirstat.util.FileUtils
@@ -422,23 +424,37 @@ fun MainApp() {
                 }
         ) {
             when {
-                !hasStoragePermission -> PermissionScreen(onGrant = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) manageStorageLauncher.launch(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                    else permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-                })
-                !hasUsageAccess && !usageAccessDismissed -> PermissionScreen(
-                    title = "Usage Access Required",
-                    description = "Grant Usage Access to let AndDirStat inspect installed app cache, sizes, and package storage usage.",
-                    icon = "apps",
-                    grantButtonText = "Grant Permission",
-                    onGrant = {
-                        manageStorageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    },
-                    onDismiss = {
-                        usageAccessDismissed = true
-                        prefs.edit().putBoolean("usage_access_dismissed", true).apply()
-                    }
-                )
+                !hasStoragePermission || (!hasUsageAccess && !usageAccessDismissed) -> {
+                    PermissionScreen(
+                        hasStoragePermission = hasStoragePermission,
+                        hasUsageAccess = hasUsageAccess,
+                        onGrantStorage = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                manageStorageLauncher.launch(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                            }
+                        },
+                        onGrantUsageAccess = {
+                            try {
+                                manageStorageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", context.packageName, null)
+                                })
+                            } catch (_: Exception) {
+                                manageStorageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            }
+                        },
+                        onContinue = { skipUsageAccess ->
+                            if (skipUsageAccess) {
+                                usageAccessDismissed = true
+                                prefs.edit().putBoolean("usage_access_dismissed", true).apply()
+                            }
+                            if (hasStoragePermission) {
+                                requestScan()
+                            }
+                        }
+                    )
+                }
                 isLoading -> LoadingScreen(phase = scanPhase, detail = scanDetail)
                 rootNode != null -> {
                     val showNavPill = currentRoute == AppDestinations.TREE ||
@@ -707,7 +723,7 @@ fun MainApp() {
             )
 
             if (showVolumeSelectionDialog && detectedVolumes.isNotEmpty()) {
-                VolumeSelectionDialog(
+                VolumeSelectionBottomSheet(
                     detectedVolumes = detectedVolumes,
                     selectedVolumeIds = selectedVolumeIds,
                     onToggleVolume = { volId ->
@@ -771,14 +787,42 @@ fun MainApp() {
                     } else null
                 }
 
+                val nameLower = remember(node.name) { node.name.lowercase() }
+                val isMedia = remember(nameLower) {
+                    nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") ||
+                    nameLower.endsWith(".mov") || nameLower.endsWith(".webm") || nameLower.endsWith(".3gp") ||
+                    nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") ||
+                    nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif") ||
+                    nameLower.endsWith(".apk")
+                }
+                val folderName = remember(path) {
+                    val trimmed = path.trimEnd('/')
+                    val parts = trimmed.split('/')
+                    if (parts.size > 1) parts[parts.size - 2] else "Storage"
+                }
+                val accentColor = remember(node, pkgName, isApp, nameLower) {
+                    when {
+                        isApp && pkgName != null -> AppIconCache.getDominantColor(pkgName) ?: Color(0xFF6750A4)
+                        nameLower.endsWith(".apk") -> Color(0xFFE53935)
+                        nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".mov") || nameLower.endsWith(".avi") -> Color(0xFF3B82F6)
+                        nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") || nameLower.endsWith(".webp") || nameLower.endsWith(".gif") -> Color(0xFF10B981)
+                        nameLower.endsWith(".mp3") || nameLower.endsWith(".flac") || nameLower.endsWith(".wav") || nameLower.endsWith(".m4a") -> Color(0xFFF59E0B)
+                        nameLower.endsWith(".pdf") || nameLower.endsWith(".doc") || nameLower.endsWith(".docx") || nameLower.endsWith(".txt") -> Color(0xFFEC4899)
+                        nameLower.endsWith(".zip") || nameLower.endsWith(".tar") || nameLower.endsWith(".gz") || nameLower.endsWith(".rar") || nameLower.endsWith(".7z") -> Color(0xFF8B5CF6)
+                        node.isDirectory -> Color(0xFF38BDF8)
+                        else -> Color(0xFF6366F1)
+                    }
+                }
+                val symbolName = remember(node, isApp) { FileUtils.getNodeSymbolName(node, isApp) }
+
                 val density = LocalDensity.current
                 val displayMetrics = remember { context.resources.displayMetrics }
                 val screenWidth = displayMetrics.widthPixels
                 val screenHeight = displayMetrics.heightPixels
 
-                val menuWidthPx = with(density) { 260.dp.roundToPx() }
-                val menuHeightPx = with(density) { if (isApp) 230.dp.roundToPx() else 270.dp.roundToPx() }
-                val safeMargin = with(density) { 8.dp.roundToPx() }
+                val menuWidthPx = with(density) { 276.dp.roundToPx() }
+                val menuHeightPx = with(density) { (if (isApp) 210.dp else 190.dp).roundToPx() }
+                val safeMargin = with(density) { 10.dp.roundToPx() }
 
                 val clickPos = selectedTouchOffset ?: lastTouchDown
                 val targetX = (clickPos.x.roundToInt() - menuWidthPx / 2)
@@ -825,379 +869,350 @@ fun MainApp() {
                         exit = fadeOut() + scaleOut(targetScale = 0.90f)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            tonalElevation = 4.dp,
-                            shadowElevation = 8.dp,
-                            modifier = Modifier.widthIn(min = 230.dp, max = 264.dp)
+                            shape = RoundedCornerShape(22.dp),
+                            color = Color(0xFF14161F),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                            shadowElevation = 10.dp,
+                            modifier = Modifier.widthIn(min = 250.dp, max = 280.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth()
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(22.dp))
                             ) {
-                                if (isApp && pkgName != null && appBreakdown != null) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
+                                // Full-cover preview background
+                                if (isMedia && realFile != null) {
+                                    MediaThumbnailView(
+                                        node = node,
+                                        path = path,
+                                        fallbackTint = accentColor,
+                                        modifier = Modifier.matchParentSize()
+                                    )
+                                } else if (isApp && pkgName != null) {
+                                    Box(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp)
-                                    ) {
-                                        AppIconView(
-                                            packageName = pkgName,
-                                            contentDescription = node.name,
-                                            modifier = Modifier
-                                                .size(54.dp)
-                                                .clip(RoundedCornerShape(14.dp))
-                                        )
-
-                                        Spacer(modifier = Modifier.width(12.dp))
-
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = FileUtils.cleanDisplayName(node.name),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight(500),
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                            .matchParentSize()
+                                            .background(
+                                                Brush.radialGradient(
+                                                    colors = listOf(
+                                                        accentColor.copy(alpha = 0.45f),
+                                                        Color(0xFF0F1118)
+                                                    ),
+                                                    radius = 400f
+                                                )
                                             )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "App",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = FileUtils.formatFileSize(appBreakdown.first),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    fontWeight = FontWeight(500),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "Data",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = FileUtils.formatFileSize(appBreakdown.second),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    fontWeight = FontWeight(500),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "Cache",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = FileUtils.formatFileSize(appBreakdown.third),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    fontWeight = FontWeight(500),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                        }
-                                    }
+                                    )
+                                    MaterialSymbol(
+                                        name = "apps",
+                                        active = true,
+                                        size = 110.dp,
+                                        tint = accentColor.copy(alpha = 0.12f),
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .padding(end = 8.dp)
+                                    )
                                 } else {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        val nameLower = remember(node.name) { node.name.lowercase() }
-                                        val isMedia = remember(nameLower) {
-                                            nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") ||
-                                            nameLower.endsWith(".mov") || nameLower.endsWith(".webm") || nameLower.endsWith(".3gp") ||
-                                            nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") ||
-                                            nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif") ||
-                                            nameLower.endsWith(".apk")
-                                        }
-                                        val folderName = remember(path) {
-                                            val trimmed = path.trimEnd('/')
-                                            val parts = trimmed.split('/')
-                                            if (parts.size > 1) parts[parts.size - 2] else "Storage"
-                                        }
-
-                                        if (realFile != null && isMedia) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(144.dp)
-                                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                            ) {
-                                                MediaThumbnailView(
-                                                    node = node,
-                                                    path = path,
-                                                    fallbackTint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .height(58.dp)
-                                                        .align(Alignment.BottomCenter)
-                                                        .background(
-                                                            Brush.verticalGradient(
-                                                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                                                            )
-                                                        )
-                                                )
-                                                Column(
-                                                    modifier = Modifier
-                                                        .align(Alignment.BottomStart)
-                                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                                ) {
-                                                    Text(
-                                                        text = FileUtils.cleanDisplayName(node.name),
-                                                        style = MaterialTheme.typography.labelMedium,
-                                                        fontWeight = FontWeight(500),
-                                                        color = Color.White,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .background(
+                                                Brush.linearGradient(
+                                                    colors = listOf(
+                                                        accentColor.copy(alpha = 0.35f),
+                                                        Color(0xFF0F1118)
                                                     )
-                                                    Text(
-                                                        text = "${FileUtils.formatFileSize(node.size)} • $folderName",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = Color.White.copy(alpha = 0.85f),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                        } else {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(84.dp)
-                                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                            ) {
-                                                val symbolName = remember(node, isApp) { FileUtils.getNodeSymbolName(node, isApp) }
-                                                MaterialSymbol(
-                                                    name = symbolName,
-                                                    active = true,
-                                                    size = 40.dp,
-                                                    tint = MaterialTheme.colorScheme.primary
                                                 )
-                                            }
-
-                                            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                                                Text(
-                                                    text = FileUtils.cleanDisplayName(node.name),
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight(500),
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-
-                                                Spacer(modifier = Modifier.height(2.dp))
-
-                                                Text(
-                                                    text = "${FileUtils.formatFileSize(node.size)} • $folderName",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                        }
-                                    }
+                                            )
+                                    )
+                                    MaterialSymbol(
+                                        name = symbolName,
+                                        active = true,
+                                        size = 110.dp,
+                                        tint = accentColor.copy(alpha = 0.12f),
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .padding(end = 8.dp)
+                                    )
                                 }
 
+                                // Accent color vertical gradient overlay
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    accentColor.copy(alpha = 0.25f),
+                                                    Color.Black.copy(alpha = 0.60f),
+                                                    Color.Black.copy(alpha = 0.92f)
+                                                )
+                                            )
+                                        )
+                                )
+
+                                // Foreground details and action buttons directly over gradient (no solid background)
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        .padding(horizontal = 14.dp, vertical = 12.dp)
                                 ) {
-
-                            // Above row with text: Select & Total size / Show in folder
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Left: Select / Deselect
-                                if (currentRoute == AppDestinations.TREE && !isSpecial) {
+                                    // Top Row: App Icon / File Type Badge on left + Close Button on right
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable {
-                                                selectedTreeNodes = if (selectedTreeNodes.containsKey(node)) {
-                                                    selectedTreeNodes - node
-                                                } else {
-                                                    selectedTreeNodes + (node to path)
-                                                }
-                                                selectedNode = null
-                                                selectedPath = null
-                                                selectedTouchOffset = null
-                                            }
-                                            .padding(horizontal = 6.dp, vertical = 6.dp)
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        MaterialSymbol(
-                                            name = "check_circle",
-                                            active = isSelected,
-                                            size = 20.dp,
-                                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = if (isSelected) "Deselect" else "Select",
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                } else {
-                                    Spacer(modifier = Modifier.width(1.dp))
-                                }
-
-                                // Right: Total size (for apps) or Show in folder (for regular files)
-                                if (isApp) {
-                                    Text(
-                                        text = "Total: ${FileUtils.formatFileSize(node.size)}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
-                                    )
-                                } else if (!isSpecial) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable {
-                                                val targetP = path
-                                                selectedNode = null
-                                                selectedPath = null
-                                                selectedTouchOffset = null
-                                                explorerTargetPath = targetP
-                                                navController.navigate(AppDestinations.EXPLORER)
+                                        if (isApp && pkgName != null) {
+                                            AppIconView(
+                                                packageName = pkgName,
+                                                contentDescription = node.name,
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                            )
+                                        } else {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier
+                                                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = symbolName,
+                                                    active = true,
+                                                    size = 16.dp,
+                                                    tint = accentColor
+                                                )
+                                                val ext = if (node.isDirectory) "Folder" else node.name.substringAfterLast('.', "").uppercase().take(5).ifEmpty { "File" }
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = ext,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
                                             }
-                                            .padding(horizontal = 6.dp, vertical = 6.dp)
-                                    ) {
-                                        MaterialSymbol(
-                                            name = "folder_open",
-                                            active = true,
-                                            size = 20.dp,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "Show in Folder",
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
+                                        }
 
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            // Bottom action icons (Open, Info, Star, Delete) without any background fill
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Open or Open App
-                                if (isApp && pkgName != null) {
-                                    val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
-                                    if (launchIntent != null) {
                                         IconButton(
                                             onClick = {
-                                                try { context.startActivity(launchIntent) } catch (_: Exception) {}
-                                                selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                            }
+                                                selectedNode = null
+                                                selectedPath = null
+                                                selectedTouchOffset = null
+                                            },
+                                            modifier = Modifier.size(32.dp)
                                         ) {
-                                            MaterialSymbol("open_in_new", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                            MaterialSymbol(
+                                                name = "close",
+                                                active = true,
+                                                size = 18.dp,
+                                                tint = Color.White.copy(alpha = 0.85f)
+                                            )
                                         }
                                     }
-                                    IconButton(
-                                        onClick = {
-                                            try {
-                                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName")))
-                                            } catch (_: Exception) {}
-                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                        }
-                                    ) {
-                                        MaterialSymbol("info", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                } else if (!isApp && !isSpecial && !node.isDirectory) {
-                                    IconButton(
-                                        onClick = {
-                                            val targetFile = realFile ?: File(path)
-                                            FileUtils.openFile(context, targetFile)
-                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                        }
-                                    ) {
-                                        MaterialSymbol("open_in_new", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                }
 
-                                // Star / Favorite
-                                if (!isApp && !isSpecial) {
-                                    IconButton(
-                                        onClick = {
-                                            isStarred = FavoritesManager.toggleStar(context, path)
-                                            AppNotifier.notify(if (isStarred) "Starred & protected" else "Unstarred")
-                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                        }
-                                    ) {
-                                        MaterialSymbol(
-                                            name = if (isStarred) "star" else "star_outline",
-                                            active = isStarred,
-                                            size = 22.dp,
-                                            tint = if (isStarred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // File / App Name
+                                    Text(
+                                        text = FileUtils.cleanDisplayName(node.name),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    Spacer(modifier = Modifier.height(3.dp))
+
+                                    // Subtitle / Breakdown
+                                    if (isApp && appBreakdown != null) {
+                                        Text(
+                                            text = "App ${FileUtils.formatFileSize(appBreakdown.first)} • Data ${FileUtils.formatFileSize(appBreakdown.second)} • Cache ${FileUtils.formatFileSize(appBreakdown.third)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.80f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "${FileUtils.formatFileSize(node.size)} • $folderName",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.80f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
-                                }
 
-                                // Delete / Uninstall
-                                if (isApp && pkgName != null) {
-                                    IconButton(
-                                        onClick = {
-                                            FileUtils.uninstallApp(context, pkgName)
-                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                        }
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Bottom Actions Row (Directly over gradient, no solid background)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        MaterialSymbol("delete", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.error)
-                                    }
-                                } else if (!isSpecial) {
-                                    IconButton(
-                                        onClick = {
-                                            val targetN = node
-                                            val targetP = path
-                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                            nodeToDelete = targetN to targetP
+                                        // Left: Select / Deselect or Total or Show in Folder
+                                        if (currentRoute == AppDestinations.TREE && !isSpecial) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        selectedTreeNodes = if (selectedTreeNodes.containsKey(node)) {
+                                                            selectedTreeNodes - node
+                                                        } else {
+                                                            selectedTreeNodes + (node to path)
+                                                        }
+                                                        selectedNode = null
+                                                        selectedPath = null
+                                                        selectedTouchOffset = null
+                                                    }
+                                                    .padding(horizontal = 4.dp, vertical = 4.dp)
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = "check_circle",
+                                                    active = isSelected,
+                                                    size = 18.dp,
+                                                    tint = if (isSelected) accentColor else Color.White.copy(alpha = 0.75f)
+                                                )
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = if (isSelected) "Deselect" else "Select",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (isSelected) accentColor else Color.White
+                                                )
+                                            }
+                                        } else if (isApp) {
+                                            Text(
+                                                text = "Total: ${FileUtils.formatFileSize(node.size)}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = accentColor,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                                            )
+                                        } else if (!isSpecial) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        val targetP = path
+                                                        selectedNode = null
+                                                        selectedPath = null
+                                                        selectedTouchOffset = null
+                                                        explorerTargetPath = targetP
+                                                        navController.navigate(AppDestinations.EXPLORER)
+                                                    }
+                                                    .padding(horizontal = 4.dp, vertical = 4.dp)
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = "folder_open",
+                                                    active = true,
+                                                    size = 18.dp,
+                                                    tint = accentColor
+                                                )
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = "Folder",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = Color.White
+                                                )
+                                            }
+                                        } else {
+                                            Spacer(modifier = Modifier.width(1.dp))
                                         }
-                                    ) {
-                                        MaterialSymbol("delete", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.error)
+
+                                        // Right: Action Icons (Open, Info, Star, Delete)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            if (isApp && pkgName != null) {
+                                                val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
+                                                if (launchIntent != null) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            try { context.startActivity(launchIntent) } catch (_: Exception) {}
+                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        MaterialSymbol("open_in_new", active = true, size = 19.dp, tint = Color.White)
+                                                    }
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        try {
+                                                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName")))
+                                                        } catch (_: Exception) {}
+                                                        selectedNode = null; selectedPath = null; selectedTouchOffset = null
+                                                    },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    MaterialSymbol("info", active = true, size = 19.dp, tint = Color.White)
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        FileUtils.uninstallApp(context, pkgName)
+                                                        selectedNode = null; selectedPath = null; selectedTouchOffset = null
+                                                    },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    MaterialSymbol("delete", active = true, size = 19.dp, tint = Color(0xFFFF6B6B))
+                                                }
+                                            } else {
+                                                if (!isSpecial && !node.isDirectory) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            val targetFile = realFile ?: File(path)
+                                                            FileUtils.openFile(context, targetFile)
+                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        MaterialSymbol("open_in_new", active = true, size = 19.dp, tint = Color.White)
+                                                    }
+                                                }
+                                                if (!isSpecial) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            isStarred = FavoritesManager.toggleStar(context, path)
+                                                            AppNotifier.notify(if (isStarred) "Starred & protected" else "Unstarred")
+                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        MaterialSymbol(
+                                                            name = if (isStarred) "star" else "star_outline",
+                                                            active = isStarred,
+                                                            size = 19.dp,
+                                                            tint = if (isStarred) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.85f)
+                                                        )
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            val targetN = node
+                                                            val targetP = path
+                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
+                                                            nodeToDelete = targetN to targetP
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        MaterialSymbol("delete", active = true, size = 19.dp, tint = Color(0xFFFF6B6B))
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-    }
 
             if (nodeToDelete != null) {
                 val (delNode, delPath) = nodeToDelete!!
@@ -1242,5 +1257,4 @@ fun MainApp() {
             )
         }
     }
-}
 }
