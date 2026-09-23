@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.4] - 2026-09-23
+
+### Added
+- **Landscape Nameless Navigation Rail**: Docked navigation rail with branded logo header, nameless icon buttons, and animated active indicator pills in landscape orientation.
+- **Spring-Animated Tile Preview Popup**: Full-cover preview popup with pure spring physics for entry, tile-to-tile glides, and exit animations upon dismissal.
+- **Pass-through Tap Tile Triggering**: Dismissal by tapping any canvas tile immediately selects and shifts the popup to that tile.
+- **Shape-Based Scanning Animation & Scanned Files Stream**: Real-time streaming log display during filesystem scans.
+
+### Changed
+- **Cleaner List Grouping**: Grouped list items with dynamic corner rounding in duplicates, empty folders, and recycle bin cleaner views.
+- **Swipe-to-Action Gestures**: Restored left/right swipe gestures on screenshot cleaner items.
+- **Storage Trend Graph Performance**: Optimized rendering and fluid entrance transitions on storage trend screens.
+
+---
+
 ## [1.0.3] - 2026-08-31
 
 ### Added
