@@ -143,9 +143,45 @@ object StorageTrendManager {
     }
 
     fun findRecentChanges(rootNode: CompactNode, limit: Int = 5): List<StorageChangeItem> {
-        val result = mutableListOf<StorageChangeItem>()
+        val candidates = mutableListOf<Pair<CompactNode, String>>()
         val now = System.currentTimeMillis()
         val sevenDaysMs = 7L * 86400000L
+
+        val stack = ArrayDeque<Pair<CompactNode, String>>()
+        stack.add(rootNode to "")
+
+        while (stack.isNotEmpty()) {
+            val (node, path) = stack.removeLast()
+            val name = node.name
+            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+                name == "Apps & System Packages" || name.startsWith(".trashed")) continue
+
+            val curPath = if (path.isEmpty()) name else "$path/$name"
+
+            if (!node.isDirectory) {
+                if (node.size >= 10 * 1024 * 1024L) {
+                    candidates.add(node to curPath)
+                }
+            } else {
+                val isStorageRoot = name.equals("Internal Storage", ignoreCase = true) ||
+                        name.equals("Device Storage", ignoreCase = true) ||
+                        name.equals("Storage", ignoreCase = true) ||
+                        name.equals("SD Card", ignoreCase = true) ||
+                        name.startsWith("emulated", ignoreCase = true)
+
+                if (!isStorageRoot && path.isNotEmpty() && node.size >= 50 * 1024 * 1024L) {
+                    candidates.add(node to curPath)
+                }
+                node.children?.forEach { stack.add(it to curPath) }
+            }
+        }
+
+        // Limit disk stat inspections to the top 40 largest candidates for instant response
+        val topCandidates = candidates.sortedByDescending { it.first.size }.take(40)
+
+        val result = mutableListOf<StorageChangeItem>()
+        val dateFormatToday = SimpleDateFormat("EEEE", Locale.getDefault())
+        val dateFormatOlder = SimpleDateFormat("MMM d", Locale.getDefault())
 
         fun getDayLabel(timestamp: Long): String {
             if (timestamp <= 0L) return "Recently"
@@ -153,66 +189,27 @@ object StorageTrendManager {
             return when (diffDays) {
                 0 -> "Today"
                 1 -> "Yesterday"
-                in 2..6 -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(timestamp))
-                else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
+                in 2..6 -> dateFormatToday.format(Date(timestamp))
+                else -> dateFormatOlder.format(Date(timestamp))
             }
         }
 
-        fun scan(node: CompactNode, path: String) {
-            val name = node.name
-            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
-                name == "Apps & System Packages" || name.startsWith(".trashed")) return
-
-            val isStorageRoot = name.equals("Internal Storage", ignoreCase = true) ||
-                    name.equals("Device Storage", ignoreCase = true) ||
-                    name.equals("Storage", ignoreCase = true) ||
-                    name.equals("SD Card", ignoreCase = true) ||
-                    name.startsWith("emulated", ignoreCase = true)
-
-            val curPath = if (path.isEmpty()) name else "$path/$name"
-
-            if (!node.isDirectory) {
-                if (node.size >= 15 * 1024 * 1024L) {
-                    val actualFile = FileUtils.resolveActualFile(curPath)
-                    val modTime = actualFile?.lastModified() ?: 0L
-                    val isRecent = modTime > 0L && (now - modTime <= sevenDaysMs)
-                    val label = getDayLabel(modTime)
-                    result.add(
-                        StorageChangeItem(
-                            node = node,
-                            name = name,
-                            parentFolder = path.ifEmpty { "Root" },
-                            fullPath = curPath,
-                            size = node.size,
-                            dayLabel = label,
-                            lastModified = modTime
-                        )
-                    )
-                }
-            } else {
-                // Only evaluate real content folders, NEVER entire storage root volumes
-                if (!isStorageRoot && path.isNotEmpty() && node.size >= 100 * 1024 * 1024L) {
-                    val actualDir = FileUtils.resolveActualFile(curPath)
-                    val modTime = actualDir?.lastModified() ?: 0L
-                    if (modTime > 0L && (now - modTime <= sevenDaysMs)) {
-                        result.add(
-                            StorageChangeItem(
-                                node = node,
-                                name = name,
-                                parentFolder = path.ifEmpty { "Storage" },
-                                fullPath = curPath,
-                                size = node.size,
-                                dayLabel = getDayLabel(modTime),
-                                lastModified = modTime
-                            )
-                        )
-                    }
-                }
-                node.children?.forEach { scan(it, curPath) }
-            }
+        for ((node, fullPath) in topCandidates) {
+            val actualFile = FileUtils.resolveActualFile(fullPath)
+            val modTime = actualFile?.lastModified() ?: 0L
+            val parentFolder = if (fullPath.contains('/')) fullPath.substringBeforeLast('/').substringAfterLast('/') else "Storage"
+            result.add(
+                StorageChangeItem(
+                    node = node,
+                    name = node.name,
+                    parentFolder = parentFolder.ifEmpty { "Storage" },
+                    fullPath = fullPath,
+                    size = node.size,
+                    dayLabel = getDayLabel(modTime),
+                    lastModified = modTime
+                )
+            )
         }
-
-        scan(rootNode, "")
 
         val sorted = result.sortedWith(
             compareByDescending<StorageChangeItem> { it.lastModified > 0L && (now - it.lastModified <= sevenDaysMs) }

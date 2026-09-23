@@ -45,9 +45,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -119,10 +122,7 @@ private fun renderTreemapToBitmap(
         val sH = maxOf(1f, tile.height)
 
         val appIcon = if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
-            AppIconCache.get(context, tile.pkgName)
-        } else if (tile.pkgName != null) {
-            AppIconCache.get(context, tile.pkgName)
-            null
+            AppIconCache.peek(tile.pkgName)
         } else null
 
         val tileBaseColor = if (tile.pkgName != null) {
@@ -328,7 +328,15 @@ fun computeTreemapTiles(
             return
         }
 
-        val validChildren = children.filter { it.size > 0L }.sortedByDescending { it.size }
+        val validChildren = if (children.size <= 32) {
+            children.filter { it.size > 0L }
+        } else {
+            val list = ArrayList<CompactNode>(children.size)
+            for (c in children) {
+                if (c.size > 0L) list.add(c)
+            }
+            list
+        }
         if (validChildren.isEmpty()) return
 
         layoutSquarified(validChildren, l, t, w, h) { child, cLeft, cTop, cWidth, cHeight ->
@@ -430,27 +438,34 @@ fun TreemapCanvas(
         if (selectedNode == null) null else nodeToTileMap[selectedNode]
     }
 
-    val staticBitmap = remember(cacheKey, pureBlack, precalculatedTiles) {
+    val staticBitmap by produceState<ImageBitmap?>(
+        initialValue = TreemapBitmapCache.get("${cacheKey}_$pureBlack"),
+        key1 = cacheKey,
+        key2 = pureBlack,
+        key3 = precalculatedTiles
+    ) {
         if (canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.isNotEmpty()) {
             val bmpKey = "${cacheKey}_$pureBlack"
             val cachedBmp = TreemapBitmapCache.get(bmpKey)
             if (cachedBmp != null) {
-                cachedBmp
+                value = cachedBmp
             } else {
                 val usableH = (canvasSize.height.toFloat() - bottomSpacePx).toInt().coerceAtLeast(100)
-                val bmp = renderTreemapToBitmap(
-                    tiles = precalculatedTiles,
-                    width = canvasSize.width,
-                    height = usableH,
-                    isDark = isDark,
-                    pureBlack = pureBlack,
-                    context = context
-                )
+                val bmp = withContext(Dispatchers.Default) {
+                    renderTreemapToBitmap(
+                        tiles = precalculatedTiles,
+                        width = canvasSize.width,
+                        height = usableH,
+                        isDark = isDark,
+                        pureBlack = pureBlack,
+                        context = context
+                    )
+                }
                 TreemapBitmapCache.put(bmpKey, bmp)
-                bmp
+                value = bmp
             }
         } else {
-            null
+            value = null
         }
     }
 
@@ -619,10 +634,11 @@ fun TreemapCanvas(
                 val currentScale = scale
                 val currentOffset = offset
                 val isAmoled = pureBlack && isDark
-                val isFrozenStatic = currentScale <= 1.001f && currentOffset == Offset.Zero && staticBitmap != null
+                val currentStaticBitmap = staticBitmap
+                val isFrozenStatic = currentScale <= 1.001f && currentOffset == Offset.Zero && currentStaticBitmap != null
 
-                if (isFrozenStatic) {
-                    drawImage(staticBitmap)
+                if (isFrozenStatic && currentStaticBitmap != null) {
+                    drawImage(currentStaticBitmap)
 
                     // Draw marked selection highlights over cached snapshot
                     for (node in selectedNodes) {

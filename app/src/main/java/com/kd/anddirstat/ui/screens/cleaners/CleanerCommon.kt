@@ -49,11 +49,39 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.AppNotifier
+
+fun getGroupedItemShape(
+    index: Int,
+    totalCount: Int,
+    outerRadius: Dp = 20.dp,
+    innerRadius: Dp = 4.dp
+): RoundedCornerShape {
+    return if (totalCount <= 1) {
+        RoundedCornerShape(outerRadius)
+    } else if (index == 0) {
+        RoundedCornerShape(
+            topStart = outerRadius,
+            topEnd = outerRadius,
+            bottomStart = innerRadius,
+            bottomEnd = innerRadius
+        )
+    } else if (index == totalCount - 1) {
+        RoundedCornerShape(
+            topStart = innerRadius,
+            topEnd = innerRadius,
+            bottomStart = outerRadius,
+            bottomEnd = outerRadius
+        )
+    } else {
+        RoundedCornerShape(innerRadius)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,16 +100,8 @@ fun CleanerScaffold(
     content: @Composable (PaddingValues) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(Unit) {
-        AppNotifier.messages.collect { message ->
-            snackbarHostState.showSnackbar(message)
-        }
-    }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {

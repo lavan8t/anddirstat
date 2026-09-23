@@ -11,9 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -170,25 +169,24 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
             )
             else -> {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(340.dp),
+                    LazyColumn(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        items(emptyFolders, key = { it.absolutePath }) { file ->
+                        itemsIndexed(emptyFolders, key = { _, file -> file.absolutePath }) { index, file ->
                             val isSelected = selectedFolders.contains(file.absolutePath)
                             val isStarred = FavoritesManager.isStarred(context, file.absolutePath)
+                            val itemShape = getGroupedItemShape(index, emptyFolders.size, outerRadius = 20.dp, innerRadius = 4.dp)
 
                             Card(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     selectedFolders = if (isSelected) selectedFolders - file.absolutePath else selectedFolders + file.absolutePath
                                 },
-                                shape = RoundedCornerShape(16.dp),
+                                shape = itemShape,
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isSelected)
                                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
