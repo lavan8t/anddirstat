@@ -20,12 +20,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -89,6 +92,12 @@ data class StorageOverviewData(
     val freeSpace: Long,
     val usedSpace: Long,
     val categories: List<StorageCategorySummary>
+)
+
+data class StorageTrendState(
+    val history: List<com.kd.anddirstat.util.StorageDayPoint> = emptyList(),
+    val recentChanges: List<com.kd.anddirstat.util.StorageChangeItem> = emptyList(),
+    val lifetimeFreed: Long = 0L
 )
 
 fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): StorageOverviewData {
@@ -485,10 +494,28 @@ fun FileTypesView(
         if (listState.isScrollInProgress) onDismissPopup()
     }
 
-    val heroBarProgress = remember { Animatable(1f) }
+    val heroBarProgress = remember { Animatable(0f) }
     LaunchedEffect(overview.usedSpace, overview.totalCapacity) {
         if (overview.usedSpace > 0L) {
             StorageTrendManager.recordSnapshot(context, overview.usedSpace, overview.totalCapacity)
+            heroBarProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing)
+            )
+        }
+    }
+
+    val trendState by produceState(
+        initialValue = StorageTrendState(),
+        key1 = rootNode,
+        key2 = overview.usedSpace,
+        key3 = overview.totalCapacity
+    ) {
+        value = withContext(Dispatchers.IO) {
+            val hist = StorageTrendManager.getHistory(context, overview.usedSpace, overview.totalCapacity)
+            val changes = StorageTrendManager.findRecentChanges(rootNode, limit = 5)
+            val freed = StorageTrendManager.getLifetimeFreedBytes(context)
+            StorageTrendState(hist, changes, freed)
         }
     }
 
@@ -497,7 +524,7 @@ fun FileTypesView(
         contentPadding = PaddingValues(top = 16.dp, bottom = 116.dp),
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.surface)
     ) {
         // Merged Header: Big "X of Y used" + Free space + Proportional bar
         item {
@@ -1105,29 +1132,21 @@ fun FileTypesView(
         }
 
         item(key = "storage_trend_section") {
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-            Spacer(modifier = Modifier.height(16.dp))
+            if (trendState.history.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            val history = remember(overview.usedSpace, overview.totalCapacity) {
-                StorageTrendManager.getHistory(context, overview.usedSpace, overview.totalCapacity)
-            }
-            val recentChanges = remember(rootNode) {
-                StorageTrendManager.findRecentChanges(rootNode, limit = 5)
-            }
-            val lifetimeFreed = remember(overview.usedSpace) {
-                StorageTrendManager.getLifetimeFreedBytes(context)
-            }
+                StorageTrendCard(
+                    history = trendState.history,
+                    recentChanges = trendState.recentChanges,
+                    lifetimeFreed = trendState.lifetimeFreed,
+                    onItemClick = onNodeClick,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
 
-            StorageTrendCard(
-                history = history,
-                recentChanges = recentChanges,
-                lifetimeFreed = lifetimeFreed,
-                onItemClick = onNodeClick,
-                modifier = Modifier.padding(horizontal = 20.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
 }

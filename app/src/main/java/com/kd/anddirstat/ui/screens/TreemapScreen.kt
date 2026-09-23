@@ -106,13 +106,6 @@ fun TreemapScreen(
     var showFilterMenu by remember { mutableStateOf(false) }
 
     val baseBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
-    val displayMetrics = remember { context.resources.displayMetrics }
-    val topTiles = remember(rootNode, isDark, displayMetrics.widthPixels, displayMetrics.heightPixels) {
-        val w = displayMetrics.widthPixels.toFloat().coerceAtLeast(360f)
-        val h = displayMetrics.heightPixels.toFloat().coerceAtLeast(640f)
-        val tiles = computeTreemapTiles(rootNode, rootNode.name, w, h, isDark)
-        tiles.filter { it.top <= 16f }
-    }
 
     val topBar = @Composable {
         Box(
@@ -121,36 +114,15 @@ fun TreemapScreen(
                 .clipToBounds()
                 .background(baseBg)
         ) {
-            // Exact same blurred chromatic aurora as bottom spacer
-            if (topTiles.isNotEmpty()) {
-                Canvas(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .blur(28.dp)
-                ) {
-                    for (tile in topTiles) {
-                        val tileColor = if (tile.pkgName != null) {
-                            AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
-                        } else {
-                            tile.baseColor
-                        }
-                        drawRect(
-                            color = tileColor.copy(alpha = 0.75f),
-                            topLeft = Offset(tile.left, 0f),
-                            size = Size(maxOf(1f, tile.width), size.height)
-                        )
-                    }
-                }
-            }
-
-            // Gradient overlay (same as bottom spacer, vertical orientation flipped for top)
+            // Gradient overlay for smooth transition to treemap canvas
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                baseBg.copy(alpha = 0.65f),
+                                baseBg,
+                                baseBg.copy(alpha = 0.85f),
                                 baseBg.copy(alpha = 0.35f),
                                 Color.Transparent
                             )
@@ -274,9 +246,7 @@ fun TreemapScreen(
                 isLandscape = isLandscape,
                 onNodeSelected = onNodeSelected,
                 onDismissPopup = onDismissPopup,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = if (isLandscape) 64.dp else 0.dp)
+                modifier = Modifier.fillMaxSize()
             )
         }
     }

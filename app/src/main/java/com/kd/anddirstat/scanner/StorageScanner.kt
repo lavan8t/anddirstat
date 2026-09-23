@@ -10,8 +10,11 @@ import android.os.Process
 import android.os.StatFs
 import android.os.storage.StorageManager
 import com.kd.anddirstat.model.CompactNode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
@@ -23,8 +26,10 @@ import com.kd.anddirstat.util.FileUtils
 
 class StorageScanner(private val context: Context) {
 
-    // Strictly bounded to maximum 3 worker threads for minimal memory and CPU contention
-    private val scanDispatcher = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
+    // Scaled thread pool matching CPU core count (minimum 4, maximum 8) for high parallel throughput
+    private val scanDispatcher = Executors.newFixedThreadPool(
+        Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
+    ).asCoroutineDispatcher()
 
     suspend fun scanStorage(
         selectedVolumes: List<StorageVolumeInfo> = emptyList(),
@@ -94,9 +99,9 @@ class StorageScanner(private val context: Context) {
         if (primaryVol != null) {
             val filesDeferred = async(scanDispatcher) {
                 updateProgress("Scanning Internal Storage", "Reading internal files...")
-                val rootPath = primaryVol.path
+                val rootDir = primaryVol.path
                 val mediaRootNode = CompactNode(name = "Files", isDirectory = true)
-                scanDir(rootPath, mediaRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
+                scanVolumeRoot(rootDir, mediaRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
                     updateProgress(phase, detail)
                 }
                 mediaRootNode
@@ -181,7 +186,7 @@ class StorageScanner(private val context: Context) {
         for (extVol in externalVols) {
             updateProgress("Scanning ${extVol.name}", "Reading external volume files...")
             val volRootNode = CompactNode(name = extVol.name, isDirectory = true)
-            scanDir(extVol.path, volRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
+            scanVolumeRoot(extVol.path, volRootNode, totalScannedBytes, scannedFilesCount) { phase, detail ->
                 updateProgress(phase, detail)
             }
             if (volRootNode.size > 0L) {
@@ -214,9 +219,13 @@ class StorageScanner(private val context: Context) {
             children = rootChildren.toTypedArray()
         )
 
-        // Save tree to persistent cache for instant startup if primary
+        // Save tree to persistent cache in background IO thread
         if (volumesToScan.size == 1 && volumesToScan.first().isPrimary) {
-            TreeCacheManager.saveTree(context, finalRoot)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    TreeCacheManager.saveTree(context, finalRoot)
+                } catch (_: Exception) {}
+            }
         }
 
         finalRoot
@@ -338,6 +347,44 @@ class StorageScanner(private val context: Context) {
             size += if (f.isDirectory) getDirSize(f) else f.length()
         }
         return size
+    }
+
+    private suspend fun scanVolumeRoot(
+        rootDir: File,
+        parentNode: CompactNode,
+        totalScannedBytes: AtomicLong,
+        scannedFilesCount: AtomicInteger,
+        onProgress: ((phase: String, detail: String) -> Unit)? = null
+    ) = withContext(scanDispatcher) {
+        val entries = rootDir.listFiles() ?: return@withContext
+        val deferredList = entries.map { entry ->
+            async(scanDispatcher) {
+                if (entry.isDirectory) {
+                    val count = scannedFilesCount.incrementAndGet()
+                    if (count % 30 == 0) {
+                        onProgress?.invoke("Scanning Files", entry.name)
+                    }
+                    val dirNode = CompactNode(name = entry.name, isDirectory = true)
+                    scanDir(entry, dirNode, totalScannedBytes, scannedFilesCount, onProgress)
+                    if (dirNode.size > 0L) dirNode else null
+                } else {
+                    val fileSize = entry.length()
+                    if (fileSize > 0L) {
+                        totalScannedBytes.addAndGet(fileSize)
+                        scannedFilesCount.incrementAndGet()
+                        CompactNode(name = entry.name, isDirectory = false, size = fileSize)
+                    } else null
+                }
+            }
+        }
+
+        val children = deferredList.mapNotNull { it.await() }.sortedByDescending { it.size }
+        if (children.isNotEmpty()) {
+            parentNode.children = children.toTypedArray()
+            parentNode.size = children.sumOf { it.size }
+        } else {
+            parentNode.size = 0L
+        }
     }
 
     private fun scanDir(

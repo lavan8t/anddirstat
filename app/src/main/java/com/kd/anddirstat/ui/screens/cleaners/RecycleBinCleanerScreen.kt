@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -385,16 +386,17 @@ fun RecycleBinCleanerView(onBack: () -> Unit) {
             else -> {
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(trashedFiles, key = { it.path }) { item ->
+                    itemsIndexed(trashedFiles, key = { _, it -> it.path }) { index, item ->
                         val isSelected = selectedFiles.contains(item.path)
+                        val itemShape = getGroupedItemShape(index, trashedFiles.size, outerRadius = 20.dp, innerRadius = 4.dp)
                         Card(
                             onClick = {
                                 selectedFiles = if (isSelected) selectedFiles - item.path else selectedFiles + item.path
                             },
-                            shape = RoundedCornerShape(14.dp),
+                            shape = itemShape,
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                                 else MaterialTheme.colorScheme.surfaceContainerHigh

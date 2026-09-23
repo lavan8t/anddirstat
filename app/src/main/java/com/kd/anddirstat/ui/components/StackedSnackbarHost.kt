@@ -51,9 +51,7 @@ fun StackedSnackbarHost(
     LaunchedEffect(Unit) {
         AppNotifier.messages.collect { message ->
             val newItem = StackedSnackbarItem(id = idCounter.incrementAndGet(), message = message)
-            if (items.size >= maxStacks) {
-                items.removeAt(0)
-            }
+            items.clear()
             items.add(newItem)
         }
     }

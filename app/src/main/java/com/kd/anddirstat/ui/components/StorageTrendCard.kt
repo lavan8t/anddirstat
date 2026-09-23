@@ -1,8 +1,8 @@
 package com.kd.anddirstat.ui.components
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +61,7 @@ fun StorageTrendCard(
     if (history.isEmpty()) return
 
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
     var selectedIndex by remember(history) { mutableIntStateOf(history.lastIndex) }
     val selectedPoint = history.getOrElse(selectedIndex) { history.last() }
 
@@ -70,14 +73,27 @@ fun StorageTrendCard(
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
     val outlineVariant = MaterialTheme.colorScheme.outlineVariant
 
-    val animProgress by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "trendAnim"
-    )
+    val animProgress = remember(history) { Animatable(0f) }
+    LaunchedEffect(history) {
+        animProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val strokePath = remember { Path() }
+    val fillPath = remember { Path() }
+    val strokeWidthPx = remember(density) { with(density) { 2.5.dp.toPx() } }
+    val strokeStyle = remember(strokeWidthPx) {
+        Stroke(
+            width = strokeWidthPx,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
+    }
+    val selRadiusOuter = remember(density) { with(density) { 8.dp.toPx() } }
+    val selRadiusInner = remember(density) { with(density) { 4.dp.toPx() } }
+    val unselRadius = remember(density) { with(density) { 2.5.dp.toPx() } }
 
     Column(
         modifier = modifier.fillMaxWidth()
@@ -204,6 +220,7 @@ fun StorageTrendCard(
                         }
                     }
             ) {
+                val progress = animProgress.value
                 val w = size.width
                 val h = size.height
                 val padStart = 16.dp.toPx()
@@ -214,39 +231,53 @@ fun StorageTrendCard(
                 val usableH = h - padTop - padBottom
                 val stepX = usableW / (pointCount - 1).coerceAtLeast(1)
 
-                val coords = history.mapIndexed { idx, pt ->
-                    val x = padStart + idx * stepX
+                strokePath.reset()
+                fillPath.reset()
+
+                var firstX = 0f
+                var firstY = 0f
+                var lastX = 0f
+
+                for (i in 0 until pointCount) {
+                    val pt = history[i]
+                    val x = padStart + i * stepX
                     val frac = ((pt.usedBytes - minVal).toFloat() / range.toFloat()).coerceIn(0f, 1f)
                     val targetY = (h - padBottom) - (frac * usableH)
-                    val animY = (h - padBottom) - ((h - padBottom - targetY) * animProgress)
-                    Offset(x, animY)
+                    val y = (h - padBottom) - ((h - padBottom - targetY) * progress)
+
+                    if (i == 0) {
+                        firstX = x
+                        firstY = y
+                        strokePath.moveTo(x, y)
+                    } else {
+                        val prevPt = history[i - 1]
+                        val prevX = padStart + (i - 1) * stepX
+                        val prevFrac = ((prevPt.usedBytes - minVal).toFloat() / range.toFloat()).coerceIn(0f, 1f)
+                        val prevTargetY = (h - padBottom) - (prevFrac * usableH)
+                        val prevY = (h - padBottom) - ((h - padBottom - prevTargetY) * progress)
+
+                        val cx1 = (prevX + x) / 2f
+                        val cy1 = prevY
+                        val cx2 = (prevX + x) / 2f
+                        val cy2 = y
+                        strokePath.cubicTo(cx1, cy1, cx2, cy2, x, y)
+                    }
+
+                    if (i == pointCount - 1) {
+                        lastX = x
+                    }
                 }
 
-                if (coords.size >= 2) {
-                    val strokePath = Path().apply {
-                        moveTo(coords[0].x, coords[0].y)
-                        for (i in 0 until coords.lastIndex) {
-                            val p0 = coords[i]
-                            val p1 = coords[i + 1]
-                            val cx1 = (p0.x + p1.x) / 2f
-                            val cy1 = p0.y
-                            val cx2 = (p0.x + p1.x) / 2f
-                            val cy2 = p1.y
-                            cubicTo(cx1, cy1, cx2, cy2, p1.x, p1.y)
-                        }
-                    }
-
-                    val fillPath = Path().apply {
-                        addPath(strokePath)
-                        lineTo(coords.last().x, h - padBottom)
-                        lineTo(coords.first().x, h - padBottom)
-                        close()
-                    }
+                if (pointCount >= 2) {
+                    fillPath.addPath(strokePath)
+                    fillPath.lineTo(lastX, h - padBottom)
+                    fillPath.lineTo(firstX, h - padBottom)
+                    fillPath.close()
 
                     drawPath(
                         path = fillPath,
                         brush = Brush.verticalGradient(
-                            colors = listOf(primaryColor.copy(alpha = 0.28f * animProgress), Color.Transparent),
+                            colors = listOf(primaryColor.copy(alpha = 0.28f * progress), Color.Transparent),
                             startY = padTop,
                             endY = h - padBottom
                         )
@@ -255,32 +286,34 @@ fun StorageTrendCard(
                     drawPath(
                         path = strokePath,
                         color = primaryColor,
-                        style = Stroke(
-                            width = 3.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
+                        style = strokeStyle
                     )
                 }
 
-                coords.forEachIndexed { i, pt ->
+                for (i in 0 until pointCount) {
+                    val pt = history[i]
+                    val x = padStart + i * stepX
+                    val frac = ((pt.usedBytes - minVal).toFloat() / range.toFloat()).coerceIn(0f, 1f)
+                    val targetY = (h - padBottom) - (frac * usableH)
+                    val y = (h - padBottom) - ((h - padBottom - targetY) * progress)
+
                     val isSelected = i == selectedIndex
                     if (isSelected) {
                         drawCircle(
                             color = primaryContainer,
-                            radius = 9.dp.toPx(),
-                            center = pt
+                            radius = selRadiusOuter,
+                            center = Offset(x, y)
                         )
                         drawCircle(
                             color = primaryColor,
-                            radius = 4.5.dp.toPx(),
-                            center = pt
+                            radius = selRadiusInner,
+                            center = Offset(x, y)
                         )
                     } else {
                         drawCircle(
                             color = outlineVariant,
-                            radius = 2.5.dp.toPx(),
-                            center = pt
+                            radius = unselRadius,
+                            center = Offset(x, y)
                         )
                     }
                 }

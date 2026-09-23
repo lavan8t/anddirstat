@@ -368,17 +368,18 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 10.dp, vertical = 4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
                                         group.files.forEachIndexed { index, fileItem ->
                                             val isSelected = selectedPaths.contains(fileItem.path)
                                             val isStarred = FavoritesManager.isStarred(context, fileItem.path)
+                                            val itemShape = getGroupedItemShape(index, group.files.size, outerRadius = 14.dp, innerRadius = 3.dp)
 
                                             Card(
                                                 onClick = {
                                                     selectedPaths = if (isSelected) selectedPaths - fileItem.path else selectedPaths + fileItem.path
                                                 },
-                                                shape = RoundedCornerShape(10.dp),
+                                                shape = itemShape,
                                                 colors = CardDefaults.cardColors(
                                                     containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                                                     else MaterialTheme.colorScheme.surfaceContainer
