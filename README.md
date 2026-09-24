@@ -1,12 +1,18 @@
-<p align="left">
-  <img src="logo.svg" height="60" alt="AndDirStat logo" />
-</p>
+[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?style=flat&logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Android Studio](https://img.shields.io/badge/Android_Studio-3DDC84?style=flat&logo=androidstudio&logoColor=white)](https://developer.android.com/studio)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-4285F4?style=flat&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 
-# AndDirStat
+<img src="logo.svg" alt="Project Logo" width="120">
 
-[![Download](https://img.shields.io/github/v/release/lavan8t/AndDirStat?label=Download&style=for-the-badge&logo=android)](https://github.com/lavan8t/AndDirStat/releases/latest)
 
-Requires Android 10+.
+Fast, interactive disk usage analyzer and storage treemap for Android.
+
+[![Latest Release](https://img.shields.io/github/v/release/lavan8t/anddirstat?style=flat&color=34A853&logoColor=white&label=Release)](https://github.com/lavan8t/anddirstat/releases/latest)
+[![Total Downloads](https://img.shields.io/github/downloads/lavan8t/anddirstat/total?style=flat&logo=github&color=34A853&logoColor=white&label=Downloads)](https://github.com/lavan8t/anddirstat/releases)
+[![Stars](https://img.shields.io/github/stars/lavan8t/anddirstat?style=flat&logo=github&color=34A853&logoColor=white&label=Stars)](https://github.com/lavan8t/anddirstat/stargazers)
+
+[![Report Bug](https://img.shields.io/badge/Report_Bug-34A853?style=flat&logo=github&logoColor=white)](https://github.com/lavan8t/anddirstat/issues/new?labels=bug)
+[![Request Feature](https://img.shields.io/badge/Request_Feature-34A853?style=flat&logo=github&logoColor=white)](https://github.com/lavan8t/anddirstat/issues/new?labels=enhancement)
 
 ---
 
@@ -59,22 +65,24 @@ Colors come from a fixed palette keyed by extension category. Images are orange,
 
 ## Download
 
-| APK | Devices |
-|---|---|
-| `arm64-v8a` | Most phones made after 2016 |
-| `armeabi-v7a` | Older 32-bit ARM devices |
-| `x86_64` | Emulators |
-| `universal` | Works everywhere, largest download |
+Download the APK for your device architecture from the [latest release](https://github.com/lavan8t/anddirstat/releases/latest):
 
-If unsure, pick `universal`.
+| APK | Architecture | Compatibility |
+|---|---|---|
+| [**app-arm64-v8a-release.apk**](https://github.com/lavan8t/anddirstat/releases/latest/download/app-arm64-v8a-release.apk) | `arm64-v8a` | Most modern phones (64-bit ARM) |
+| [**app-universal-release.apk**](https://github.com/lavan8t/anddirstat/releases/latest/download/app-universal-release.apk) | `universal` | Works everywhere (recommended if unsure) |
+| [**app-armeabi-v7a-release.apk**](https://github.com/lavan8t/anddirstat/releases/latest/download/app-armeabi-v7a-release.apk) | `armeabi-v7a` | Older 32-bit ARM devices |
+| [**app-x86_64-release.apk**](https://github.com/lavan8t/anddirstat/releases/latest/download/app-x86_64-release.apk) | `x86_64` | Android emulators & ChromeOS |
+
+If unsure, pick [**app-universal-release.apk**](https://github.com/lavan8t/anddirstat/releases/latest/download/app-universal-release.apk).
 
 ---
 
 ## Building
 
 ```bash
-git clone https://github.com/lavan8t/AndDirStat.git
-cd AndDirStat
+git clone https://github.com/lavan8t/anddirstat.git
+cd anddirstat
 ./gradlew assembleRelease
 ```
 

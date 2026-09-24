@@ -51,7 +51,6 @@ jobs:
         run: |
           VERSION_NAME=$(grep 'versionName =' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
           SHORT_HASH=$(git rev-parse --short HEAD)
-          COMMIT_MSG=$(git log -1 --pretty=%B)
           TAG_NAME="v${VERSION_NAME}-beta"
 
           if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
@@ -60,19 +59,41 @@ jobs:
 
           RELEASE_TITLE="AndDirStat v${VERSION_NAME} (Beta)"
 
-          RELEASE_NOTES=$(cat <<EOT
-          ### Commit: \`${SHORT_HASH}\`
+          # Extract version notes from CHANGELOG.md (Latch release format)
+          CHANGELOG_NOTES=$(awk -v ver="$VERSION_NAME" '
+            $0 ~ "^## \\[" ver "\\]" || $0 ~ "^## " ver { capture=1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md | sed -e 's/^[[:space:]]*---[[:space:]]*$//' | sed -e '/./,$!d' | tac | sed -e '/./,$!d' | tac)
 
-          ${COMMIT_MSG}
+          if [ -z "$CHANGELOG_NOTES" ]; then
+            CHANGELOG_NOTES=$(git log -1 --pretty=%B)
+          fi
 
-          ---
-          **Architecture Downloads:**
-          - **arm64-v8a**: Modern 64-bit Android devices
-          - **armeabi-v7a**: Older 32-bit ARM devices
-          - **x86_64**: Emulators and x86 devices
-          - **universal**: Compatible across all supported architectures
-          EOT
-          )
+          # Generate commits and author list
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS_LIST=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s by @%an in %h" | sed 's/@Lavanbarath B/@lavan8t/g')
+          else
+            COMMITS_LIST=$(git log -n 10 --pretty=format:"- %s by @%an in %h" | sed 's/@Lavanbarath B/@lavan8t/g')
+          fi
+
+          cat <<EOT > release-notes.md
+${CHANGELOG_NOTES}
+
+### Commits
+
+${COMMITS_LIST}
+
+Download the compatible version for your device from the assets below.
+
+---
+**Architecture Downloads:**
+- **arm64-v8a**: Modern 64-bit Android devices
+- **armeabi-v7a**: Older 32-bit ARM devices
+- **x86_64**: Emulators and x86 devices
+- **universal**: Compatible across all supported architectures
+EOT
 
           APK_FILES=$(find app/build/outputs/apk/release -name "*.apk")
 
@@ -81,7 +102,7 @@ jobs:
 
           gh release create "$TAG_NAME" $APK_FILES \
             --title "$RELEASE_TITLE" \
-            --notes "$RELEASE_NOTES" \
+            --notes-file release-notes.md \
             --prerelease
 
       - name: Delete prod branch
