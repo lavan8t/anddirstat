@@ -11,6 +11,7 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 
 object TreeCacheManager {
     private const val CACHE_FILE_NAME = "storage_tree_cache.bin"
@@ -20,16 +21,11 @@ object TreeCacheManager {
     // Default cache expiry: 2 hours
     const val DEFAULT_CACHE_EXPIRY_MS = 2 * 60 * 60 * 1000L
 
-    private val stringPool = Array<String?>(4096) { null }
+    // Smallest on-disk footprint of one child node: 2-byte UTF length + 1 char, 1 bool, 8 long, 4 int.
+    private const val MIN_BYTES_PER_NODE = 17
 
-    private fun intern(s: String): String {
-        if (s.length > 64) return s
-        val idx = (s.hashCode() and 0x7FFFFFFF) % stringPool.size
-        val existing = stringPool[idx]
-        if (existing == s) return existing
-        stringPool[idx] = s
-        return s
-    }
+    // Absolute ceiling on children in one node, so a corrupt count cannot ask for a huge array.
+    private const val MAX_CHILDREN_PER_NODE = 300_000
 
     suspend fun saveTree(context: Context, rootNode: CompactNode) = withContext(Dispatchers.IO) {
         try {
@@ -88,8 +84,6 @@ object TreeCacheManager {
         } catch (_: Exception) {
             try { file.delete() } catch (_: Exception) {}
             null
-        } finally {
-            stringPool.fill(null)
         }
     }
 
@@ -109,11 +103,20 @@ object TreeCacheManager {
     }
 
     private fun readNode(input: DataInputStream): CompactNode {
-        val name = intern(input.readUTF())
+        val name = input.readUTF()
         val isDirectory = input.readBoolean()
         val size = input.readLong()
         val count = input.readInt()
         val children = if (count > 0) {
+            // A count is attacker-free but still arbitrary file content: reject implausible values
+            // before allocating, so a corrupt cache is discarded instead of ballooning the heap.
+            if (count > MAX_CHILDREN_PER_NODE) {
+                throw IOException("implausible child count: $count")
+            }
+            val remaining = input.available().toLong()
+            if (remaining > 0L && count.toLong() * MIN_BYTES_PER_NODE > remaining) {
+                throw IOException("child count $count exceeds remaining cache bytes $remaining")
+            }
             Array(count) { readNode(input) }
         } else null
 

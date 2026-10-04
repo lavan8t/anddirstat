@@ -11,12 +11,14 @@ import android.os.StatFs
 import android.os.storage.StorageManager
 import com.kd.anddirstat.model.CompactNode
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -24,11 +26,27 @@ import java.util.concurrent.atomic.AtomicLong
 import com.kd.anddirstat.util.StorageVolumeInfo
 import com.kd.anddirstat.util.FileUtils
 
+// Safety valve for pathological trees: normal devices materialize far fewer nodes than this, and
+// whatever exceeds it is folded into synthetic aggregate leaves so no bytes are lost.
+private const val MAX_TREE_NODES = 300_000
+
+// Real device paths are rarely deeper than ~15 levels; deeper subtrees fold into one leaf per level.
+private const val MAX_TREE_DEPTH = 28
+
+// Depth of the entries directly under a volume root, i.e. the level their children sit at.
+private const val ROOT_ENTRY_DEPTH = 1
+
 class StorageScanner(private val context: Context) {
+
+    private val scanThreadCount = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
+
+    // Shared across the volume scans running in parallel during one scanStorage() call.
+    @Volatile
+    private var nodeBudget = ScanBudget()
 
     // Scaled thread pool matching CPU core count (minimum 4, maximum 8) with background priority
     private val scanDispatcher = Executors.newFixedThreadPool(
-        Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
+        scanThreadCount
     ) { runnable ->
         Thread {
             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
@@ -84,6 +102,7 @@ class StorageScanner(private val context: Context) {
 
         val targetUsedBytes = maxOf(1L, totalDeviceBytes - totalFreeBytes)
         val startTimeMs = System.currentTimeMillis()
+        nodeBudget = ScanBudget()
         val totalScannedBytes = AtomicLong(0L)
         val scannedFilesCount = AtomicInteger(0)
         val etaEstimator = ScanEtaEstimator()
@@ -260,11 +279,18 @@ class StorageScanner(private val context: Context) {
         val appNodes = mutableListOf<CompactNode>()
         var totalAppsSize = 0L
 
+        // getApplicationLabel() is a binder call per package; most packages repeat across users/versions.
+        val labelCache = HashMap<String, String>()
+
         for (appInfo in apps) {
-            val label = try {
-                pm.getApplicationLabel(appInfo).toString()
-            } catch (_: Exception) {
-                appInfo.packageName
+            val label = labelCache[appInfo.packageName] ?: run {
+                val resolved = try {
+                    pm.getApplicationLabel(appInfo).toString()
+                } catch (_: Exception) {
+                    appInfo.packageName
+                }
+                labelCache[appInfo.packageName] = resolved
+                resolved
             }
             onProgress?.invoke("Scanning Applications", label)
 
@@ -343,11 +369,12 @@ class StorageScanner(private val context: Context) {
         )
     }
 
-    private fun getDirSize(dir: File): Long {
+    private fun getDirSize(dir: File, depth: Int = 0): Long {
+        if (depth >= MAX_TREE_DEPTH) return 0L
         var size = 0L
         val files = dir.listFiles() ?: return 0L
         for (f in files) {
-            size += if (f.isDirectory) getDirSize(f) else f.length()
+            size += if (f.isDirectory) getDirSize(f, depth + 1) else f.length()
         }
         return size
     }
@@ -360,28 +387,35 @@ class StorageScanner(private val context: Context) {
         onProgress: ((phase: String, detail: String) -> Unit)? = null
     ) = withContext(scanDispatcher) {
         val entries = rootDir.listFiles() ?: return@withContext
-        val deferredList = entries.map { entry ->
-            async(scanDispatcher) {
-                if (entry.isDirectory) {
-                    val count = scannedFilesCount.incrementAndGet()
-                    if (count % 30 == 0) {
-                        onProgress?.invoke("Scanning Files", entry.name)
+        val children = mutableListOf<CompactNode>()
+
+        // One coroutine per top-level entry would queue thousands of suspended jobs behind a
+        // 4-8 thread pool, so only ~2x the pool size is kept in flight at a time.
+        val maxInFlight = scanThreadCount * 2
+        var index = 0
+        while (index < entries.size) {
+            val end = minOf(index + maxInFlight, entries.size)
+            val batch = ArrayList<Deferred<CompactNode?>>(end - index)
+            for (i in index until end) {
+                val entry = entries[i]
+                val expandable = nodeBudget.reserveNode()
+                batch.add(
+                    async(scanDispatcher) {
+                        if (expandable) {
+                            scanEntry(entry, ROOT_ENTRY_DEPTH, totalScannedBytes, scannedFilesCount, onProgress, relativeDetail = false)
+                        } else {
+                            collapseEntries(arrayOf(entry), 0, totalScannedBytes, scannedFilesCount)
+                        }
                     }
-                    val dirNode = CompactNode(name = entry.name, isDirectory = true)
-                    scanDir(entry, dirNode, totalScannedBytes, scannedFilesCount, onProgress)
-                    if (dirNode.size > 0L) dirNode else null
-                } else {
-                    val fileSize = entry.length()
-                    if (fileSize > 0L) {
-                        totalScannedBytes.addAndGet(fileSize)
-                        scannedFilesCount.incrementAndGet()
-                        CompactNode(name = entry.name, isDirectory = false, size = fileSize)
-                    } else null
-                }
+                )
             }
+            for (deferred in batch) {
+                deferred.await()?.let { children.add(it) }
+            }
+            index = end
         }
 
-        val children = deferredList.mapNotNull { it.await() }.sortedByDescending { it.size }
+        children.sortByDescending { it.size }
         if (children.isNotEmpty()) {
             parentNode.children = children.toTypedArray()
             parentNode.size = children.sumOf { it.size }
@@ -395,38 +429,120 @@ class StorageScanner(private val context: Context) {
         parentNode: CompactNode,
         totalScannedBytes: AtomicLong,
         scannedFilesCount: AtomicInteger,
-        onProgress: ((phase: String, detail: String) -> Unit)? = null
+        onProgress: ((phase: String, detail: String) -> Unit)? = null,
+        depth: Int = 0
     ) {
         val entries = dir.listFiles() ?: return
         val tempChildren = mutableListOf<CompactNode>()
         var accumulatedSize = 0L
+        val childDepth = depth + 1
 
-        for (entry in entries) {
-            if (entry.isDirectory) {
-                val count = scannedFilesCount.incrementAndGet()
-                if (count % 30 == 0) {
-                    val rel = entry.path.removePrefix("/storage/emulated/0/").removePrefix("/storage/emulated/0")
-                    onProgress?.invoke("Scanning Files", rel.ifEmpty { entry.name })
-                }
-                val dirNode = CompactNode(name = entry.name, isDirectory = true)
-                scanDir(entry, dirNode, totalScannedBytes, scannedFilesCount, onProgress)
-                if (dirNode.size > 0L) {
-                    tempChildren.add(dirNode)
-                    accumulatedSize += dirNode.size
-                }
+        for (index in entries.indices) {
+            // Reserve first: a failed reservation means the node budget (or the depth cap) is spent,
+            // so everything left in this directory folds into a single synthetic leaf.
+            if (childDepth < MAX_TREE_DEPTH && nodeBudget.reserveNode()) {
+                scanEntry(entries[index], childDepth, totalScannedBytes, scannedFilesCount, onProgress, relativeDetail = true)
+                    ?.let {
+                        tempChildren.add(it)
+                        accumulatedSize += it.size
+                    }
             } else {
-                val fileSize = entry.length()
-                if (fileSize > 0L) {
-                    tempChildren.add(CompactNode(name = entry.name, isDirectory = false, size = fileSize))
-                    accumulatedSize += fileSize
-                    totalScannedBytes.addAndGet(fileSize)
+                collapseEntries(entries, index, totalScannedBytes, scannedFilesCount)?.let {
+                    tempChildren.add(it)
+                    accumulatedSize += it.size
                 }
-                scannedFilesCount.incrementAndGet()
+                break
             }
         }
 
         tempChildren.sortByDescending { it.size }
         if (tempChildren.isNotEmpty()) parentNode.children = tempChildren.toTypedArray()
         parentNode.size = accumulatedSize
+    }
+
+    private fun scanEntry(
+        entry: File,
+        depth: Int,
+        totalScannedBytes: AtomicLong,
+        scannedFilesCount: AtomicInteger,
+        onProgress: ((phase: String, detail: String) -> Unit)?,
+        relativeDetail: Boolean
+    ): CompactNode? {
+        if (entry.isDirectory) {
+            val count = scannedFilesCount.incrementAndGet()
+            if (onProgress != null && count % 30 == 0) {
+                val detail = if (relativeDetail) {
+                    entry.path.removePrefix("/storage/emulated/0/").removePrefix("/storage/emulated/0").ifEmpty { entry.name }
+                } else {
+                    entry.name
+                }
+                onProgress("Scanning Files", detail)
+            }
+            val dirNode = CompactNode(name = entry.name, isDirectory = true)
+            scanDir(entry, dirNode, totalScannedBytes, scannedFilesCount, onProgress, depth)
+            return if (dirNode.size > 0L) dirNode else null
+        }
+
+        val fileSize = entry.length()
+        scannedFilesCount.incrementAndGet()
+        if (fileSize <= 0L) return null
+        totalScannedBytes.addAndGet(fileSize)
+        return CompactNode(name = entry.name, isDirectory = false, size = fileSize)
+    }
+
+    // Sums entries[fromIndex..] by traversal and returns one synthetic leaf standing in for all of
+    // them. The subtree walk uses an explicit stack so arbitrarily deep remnants cost no nodes and
+    // no stack frames; bytes are added to the caller exactly as individual entries would have been.
+    private fun collapseEntries(
+        entries: Array<File>,
+        fromIndex: Int,
+        totalScannedBytes: AtomicLong,
+        scannedFilesCount: AtomicInteger
+    ): CompactNode? {
+        var bytes = 0L
+        var files = 0
+        val pendingDirs = ArrayDeque<File>()
+
+        for (i in fromIndex until entries.size) {
+            val entry = entries[i]
+            scannedFilesCount.incrementAndGet()
+            if (entry.isDirectory) {
+                pendingDirs.addLast(entry)
+            } else {
+                val fileSize = entry.length()
+                if (fileSize > 0L) {
+                    bytes += fileSize
+                    files++
+                }
+            }
+        }
+
+        while (pendingDirs.isNotEmpty()) {
+            val subEntries = pendingDirs.removeLast().listFiles() ?: continue
+            for (entry in subEntries) {
+                scannedFilesCount.incrementAndGet()
+                if (entry.isDirectory) {
+                    pendingDirs.addLast(entry)
+                } else {
+                    val fileSize = entry.length()
+                    if (fileSize > 0L) {
+                        bytes += fileSize
+                        files++
+                    }
+                }
+            }
+        }
+
+        if (bytes <= 0L) return null
+        totalScannedBytes.addAndGet(bytes)
+        val name = if (files == 1) "1 more file" else "$files more files"
+        return CompactNode(name = name, isDirectory = false, size = bytes)
+    }
+
+    private class ScanBudget {
+        private val nodes = AtomicInteger(0)
+
+        // Synthetic aggregate leaves are deliberately not charged, so bytes are never dropped.
+        fun reserveNode(): Boolean = nodes.incrementAndGet() <= MAX_TREE_NODES
     }
 }
