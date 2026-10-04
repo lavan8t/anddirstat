@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import java.lang.reflect.Method
 
 data class LiveActivityState(
     val isActive: Boolean = false,
@@ -97,6 +98,23 @@ object AppNotifier {
             }
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             nm?.createNotificationChannel(channel)
+        }
+    }
+
+    // Android 16 Live Updates / Status Bar Chip support. Both setters are optional on older
+    // platform versions, so they stay reflective - resolved once instead of per updateProgress call.
+    private val setRequestPromotedOngoingMethod: Method? by lazy {
+        try {
+            NotificationCompat.Builder::class.java.getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType!!)
+        } catch (_: Exception) {
+            null
+        }
+    }
+    private val setShortCriticalTextMethod: Method? by lazy {
+        try {
+            NotificationCompat.Builder::class.java.getMethod("setShortCriticalText", CharSequence::class.java)
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -160,13 +178,11 @@ object AppNotifier {
 
             // Android 16 Live Updates / Status Bar Chip support
             try {
-                val setRequestPromotedOngoingMethod = builder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
-                setRequestPromotedOngoingMethod.invoke(builder, true)
+                setRequestPromotedOngoingMethod?.invoke(builder, true)
             } catch (_: Exception) {}
 
             try {
-                val setShortCriticalTextMethod = builder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
-                setShortCriticalTextMethod.invoke(builder, shortText)
+                setShortCriticalTextMethod?.invoke(builder, shortText)
             } catch (_: Exception) {}
 
             if (indeterminate || max <= 0) {

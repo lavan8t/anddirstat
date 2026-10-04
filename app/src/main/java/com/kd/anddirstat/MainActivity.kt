@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
 import android.os.storage.StorageManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -20,7 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.animation.core.spring
@@ -70,6 +71,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -132,6 +134,7 @@ import com.kd.anddirstat.ui.screens.PermissionScreen
 import com.kd.anddirstat.ui.screens.SettingsScreen
 import com.kd.anddirstat.ui.screens.TreemapScreen
 import com.kd.anddirstat.ui.screens.cleaners.*
+import com.kd.anddirstat.treemap.TreemapBitmapCache
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
 import com.kd.anddirstat.util.FileUtils
@@ -159,6 +162,47 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent { MainApp() }
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        TreemapBitmapCache.trim(level)
+    }
+}
+
+private const val SCAN_PUBLISH_INTERVAL_MS = 250L
+private const val SCAN_PHASE_START = "Analyzing storage..."
+private const val SCAN_DETAIL_START = "Starting scan..."
+private const val SCAN_PHASE_FINALIZING = "Finalizing"
+private const val SCAN_DETAIL_FINALIZING = "Rendering treemap..."
+
+private class ScanProgress {
+    var phase by mutableStateOf(SCAN_PHASE_START)
+    var detail by mutableStateOf(SCAN_DETAIL_START)
+    var percent by mutableStateOf(0)
+}
+
+private enum class BackTarget { NONE, NODE_POPUP, TREE_SELECTION, DISCOVER_SEARCH, NAV_PILL }
+
+@Composable
+private fun ScanProgressLoadingScreen(progress: ScanProgress) {
+    LoadingScreen(phase = progress.phase, detail = progress.detail)
+}
+
+@Composable
+private fun ScanProgressBanner(
+    progress: ScanProgress,
+    visible: Boolean,
+    onCancelScan: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ScanningBanner(
+        visible = visible,
+        phase = progress.phase,
+        detail = progress.detail,
+        progressPercent = progress.percent,
+        onCancelScan = onCancelScan,
+        modifier = modifier
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -169,11 +213,13 @@ fun MainApp() {
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
 
-    val themePref = prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key
+    val themePref = remember { prefs.getString("app_theme", AppTheme.SYSTEM.key) ?: AppTheme.SYSTEM.key }
+    val pureBlackPref = remember { prefs.getBoolean("pure_black", false) }
+    val dynamicThemePref = remember { prefs.getBoolean("dynamic_theme", false) }
+    val accentPref = remember { prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key }
     var currentTheme by remember { mutableStateOf(AppTheme.entries.firstOrNull { it.key == themePref } ?: AppTheme.SYSTEM) }
-    var pureBlack by remember { mutableStateOf(prefs.getBoolean("pure_black", false)) }
-    var dynamicTheme by remember { mutableStateOf(prefs.getBoolean("dynamic_theme", false)) }
-    val accentPref = prefs.getString("accent_color", AccentColor.GREEN.key) ?: AccentColor.GREEN.key
+    var pureBlack by remember { mutableStateOf(pureBlackPref) }
+    var dynamicTheme by remember { mutableStateOf(dynamicThemePref) }
     var accentColor by remember { mutableStateOf(AccentColor.entries.firstOrNull { it.key == accentPref } ?: AccentColor.GREEN) }
 
     AndDirStatTheme(appTheme = currentTheme, pureBlack = pureBlack, dynamicTheme = dynamicTheme, accentColor = accentColor) {
@@ -232,9 +278,7 @@ fun MainApp() {
         var isLoading by remember { mutableStateOf(hasStoragePermission && rootNode == null) }
         var scanJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
         var isBackgroundScanning by remember { mutableStateOf(false) }
-        var scanProgressPercent by remember { mutableStateOf(0) }
-        var scanPhase by remember { mutableStateOf("Analyzing storage...") }
-        var scanDetail by remember { mutableStateOf("Starting scan...") }
+        val scanProgress = remember { ScanProgress() }
 
         var stagedQueue by remember { mutableStateOf<Map<CompactNode, StagedQueueItem>>(emptyMap()) }
         var showCleanupReviewSheet by remember { mutableStateOf(false) }
@@ -266,6 +310,28 @@ fun MainApp() {
         var treeDeleteCurrentFileName by remember { mutableStateOf("") }
         var treeDeleteIsTrash by remember { mutableStateOf(true) }
 
+        fun clearTreeSelection() {
+            selectedTreeNodes = emptyMap()
+        }
+
+        fun clearDiscoverSelection() {
+            isDiscoverSearchActive = false
+            discoverSearchQuery = ""
+        }
+
+        // Both selection modes live in this composition, so acquiring one must release the other
+        // or a tab switch leaves two live selection UIs and nothing clears the stale one.
+        fun setTreeSelection(next: Map<CompactNode, String>) {
+            if (next.isNotEmpty()) clearDiscoverSelection()
+            selectedTreeNodes = next
+        }
+
+        fun setDiscoverSelection(query: String, active: Boolean) {
+            if (query.isNotBlank() || active) clearTreeSelection()
+            discoverSearchQuery = query
+            isDiscoverSearchActive = active
+        }
+
         fun updateFilter(fs: Boolean = showFreeSpace, sa: Boolean = showSystemApps, hf: Boolean = showHiddenFiles, so: Boolean = showSystemOS) {
             showFreeSpace = fs; showSystemApps = sa; showHiddenFiles = hf; showSystemOS = so
             val raw = rawScannedNode ?: return
@@ -273,7 +339,7 @@ fun MainApp() {
             rootNode = filtered
             extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
             topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
-            selectedTreeNodes = emptyMap()
+            clearTreeSelection()
             if (selectedNode != null) { selectedNode = null; selectedPath = null }
         }
 
@@ -321,9 +387,9 @@ fun MainApp() {
                 isBackgroundScanning = false
             }
 
-            scanPhase = "Analyzing storage..."; scanDetail = "Starting scan..."
-            scanProgressPercent = 0
-            AppNotifier.updateProgress(context, title = scanPhase, detail = scanDetail, indeterminate = true, type = "scan")
+            scanProgress.phase = SCAN_PHASE_START; scanProgress.detail = SCAN_DETAIL_START
+            scanProgress.percent = 0
+            AppNotifier.updateProgress(context, title = SCAN_PHASE_START, detail = SCAN_DETAIL_START, indeterminate = true, type = "scan")
             scanJob?.cancel()
             scanJob = scope.launch {
                 showFreeSpace = prefs.getBoolean("show_free_space", true)
@@ -331,12 +397,23 @@ fun MainApp() {
                 showHiddenFiles = prefs.getBoolean("show_hidden_files", false)
                 showSystemOS = prefs.getBoolean("show_system_os", false)
                 val scanner = StorageScanner(context)
+                var lastPublishMs = 0L
                 val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = effectiveScanApps) { phase, detail, progress, max ->
-                    scanPhase = phase; scanDetail = detail; scanProgressPercent = progress
-                    AppNotifier.updateProgress(context, title = phase, detail = detail, progress = progress, max = max, indeterminate = false, type = "scan")
+                    // The scanner ticks every ~30 directories; coalesce to 4Hz so a scan no longer
+                    // costs hundreds of notify() binder calls and UI recompositions.
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastPublishMs >= SCAN_PUBLISH_INTERVAL_MS) {
+                        lastPublishMs = now
+                        scanProgress.phase = phase; scanProgress.detail = detail; scanProgress.percent = progress
+                        AppNotifier.updateProgress(context, title = phase, detail = detail, progress = progress, max = max, indeterminate = false, type = "scan")
+                    }
                 }
                 rawScannedNode = scanned; deviceTotalBytes = scanned.size
-                scanPhase = "Finalizing"; scanDetail = "Rendering treemap..."
+                // The scanner caps reported progress at 99, so the completion state is published
+                // explicitly instead of leaving the last throttled tick on screen.
+                scanProgress.phase = SCAN_PHASE_FINALIZING; scanProgress.detail = SCAN_DETAIL_FINALIZING
+                scanProgress.percent = 100
+                AppNotifier.updateProgress(context, title = SCAN_PHASE_FINALIZING, detail = SCAN_DETAIL_FINALIZING, progress = 100, max = 100, indeterminate = false, type = "scan")
 
                 val filtered = withContext(Dispatchers.Default) {
                     val f = StorageFilterHelper.filterStorageTree(scanned, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, scanned.size)
@@ -362,7 +439,8 @@ fun MainApp() {
                     StorageTrendManager.recordSnapshot(context, scanned.size, deviceTotalBytes)
                     scanned.children?.firstOrNull { it.name == "Apps & System Packages" }?.children?.forEach { appNode ->
                         val pkg = FileUtils.extractPackageName(appNode)
-                        if (pkg != null) AppIconCache.get(context, pkg)
+                        // peek() keeps warm-up from repeating PackageManager IPC + pixel loops per scan
+                        if (pkg != null && AppIconCache.peek(pkg) == null) AppIconCache.get(context, pkg)
                     }
                 }
             }
@@ -375,10 +453,14 @@ fun MainApp() {
                 val updatedRaw = StorageFilterHelper.pruneNodes(currentRaw, deletedNodes)
                 rawScannedNode = updatedRaw; deviceTotalBytes = updatedRaw.size
                 val filtered = StorageFilterHelper.filterStorageTree(updatedRaw, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, updatedRaw.size)
+                val newStats = async { if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList() }
+                val newTopFiles = async { if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList() }
+                val computedStats = newStats.await()
+                val computedTopFiles = newTopFiles.await()
                 withContext(Dispatchers.Main) {
                     rootNode = filtered
-                    extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
-                    topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+                    extensionStats = computedStats
+                    topFiles = computedTopFiles
                     if (selectedNode != null && deletedNodes.contains(selectedNode)) { selectedNode = null; selectedPath = null }
                 }
                 withContext(Dispatchers.IO) { try { TreeCacheManager.saveTree(context, updatedRaw) } catch (_: Exception) {} }
@@ -412,7 +494,7 @@ fun MainApp() {
                 val vols = FileUtils.getAvailableStorageVolumes(context)
                 val cached = withContext(Dispatchers.IO) { try { TreeCacheManager.loadTree(context) } catch (_: Exception) { null } }
                 if (cached != null) {
-                    isLoading = true; scanPhase = "Restoring storage map..."; scanDetail = "Loading saved data..."
+                    isLoading = true; scanProgress.phase = "Restoring storage map..."; scanProgress.detail = "Loading saved data..."
                     rawScannedNode = cached; deviceTotalBytes = cached.size
                     val filtered = withContext(Dispatchers.Default) {
                         StorageFilterHelper.filterStorageTree(cached, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, cached.size)
@@ -434,16 +516,28 @@ fun MainApp() {
             }
         }
 
-        PredictiveBackHandler(enabled = selectedNode != null) { progress ->
+        val treeSelectionActive = selectedTreeNodes.isNotEmpty()
+        val discoverSelectionActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()
+        // One derived target for the four back handlers: the branch order makes them mutually
+        // exclusive by construction instead of relying on four overlapping guards.
+        val backTarget = when {
+            selectedNode != null -> BackTarget.NODE_POPUP
+            treeSelectionActive && currentRoute == AppDestinations.TREE -> BackTarget.TREE_SELECTION
+            discoverSelectionActive && currentRoute == AppDestinations.DISCOVER -> BackTarget.DISCOVER_SEARCH
+            !treeSelectionActive && !discoverSelectionActive && currentRoute != AppDestinations.TREE -> BackTarget.NAV_PILL
+            else -> BackTarget.NONE
+        }
+
+        PredictiveBackHandler(enabled = backTarget == BackTarget.NODE_POPUP) { progress ->
             try { progress.collect {}; selectedNode = null; selectedPath = null; selectedTouchOffset = null } catch (_: CancellationException) {}
         }
-        PredictiveBackHandler(enabled = selectedTreeNodes.isNotEmpty() && currentRoute == AppDestinations.TREE && selectedNode == null) { progress ->
-            try { progress.collect {}; selectedTreeNodes = emptyMap() } catch (_: CancellationException) {}
+        PredictiveBackHandler(enabled = backTarget == BackTarget.TREE_SELECTION) { progress ->
+            try { progress.collect {}; clearTreeSelection() } catch (_: CancellationException) {}
         }
-        PredictiveBackHandler(enabled = (isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()) && currentRoute == AppDestinations.DISCOVER && selectedNode == null) { progress ->
-            try { progress.collect {}; isDiscoverSearchActive = false; discoverSearchQuery = "" } catch (_: CancellationException) {}
+        PredictiveBackHandler(enabled = backTarget == BackTarget.DISCOVER_SEARCH) { progress ->
+            try { progress.collect {}; clearDiscoverSelection() } catch (_: CancellationException) {}
         }
-        PredictiveBackHandler(enabled = currentRoute != AppDestinations.TREE && selectedNode == null && selectedTreeNodes.isEmpty() && (!isDiscoverSearchActive && discoverSearchQuery.isEmpty())) { progress ->
+        PredictiveBackHandler(enabled = backTarget == BackTarget.NAV_PILL) { progress ->
             try {
                 isPillBackActive = true
                 progress.collect { backEvent ->
@@ -501,7 +595,7 @@ fun MainApp() {
                         }
                     )
                 }
-                isLoading -> LoadingScreen(phase = scanPhase, detail = scanDetail)
+                isLoading -> ScanProgressLoadingScreen(scanProgress)
                 rootNode != null -> {
                     val showNavPill = currentRoute == AppDestinations.TREE ||
                                       currentRoute == AppDestinations.EXPLORER ||
@@ -513,6 +607,8 @@ fun MainApp() {
                         selectedNode = null
                         selectedPath = null
                         selectedTouchOffset = null
+                        clearTreeSelection()
+                        clearDiscoverSelection()
                     }
 
                     val navHostContent = @Composable {
@@ -571,7 +667,7 @@ fun MainApp() {
                                     onToggleShowSystemApps = { updateFilter(sa = it); prefs.edit().putBoolean("show_system_apps", it).apply() },
                                     onToggleShowFreeSpace = { updateFilter(fs = it); prefs.edit().putBoolean("show_free_space", it).apply() },
                                     onToggleShowHiddenFiles = { updateFilter(hf = it); prefs.edit().putBoolean("show_hidden_files", it).apply() },
-                                    onClearSelection = { selectedTreeNodes = emptyMap() },
+                                    onClearSelection = { clearTreeSelection() },
                                     onRequestDeleteSelected = { showTreeDeleteDialog = true },
                                     onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null }
                                 )
@@ -645,13 +741,12 @@ fun MainApp() {
                                             isLandscape = isLandscape,
                                             haptic = haptic,
                                             onQueryChange = {
-                                                discoverSearchQuery = it
+                                                setDiscoverSelection(it, if (it.isNotBlank()) true else isDiscoverSearchActive)
                                                 if (it.isNotBlank()) {
-                                                    isDiscoverSearchActive = true
                                                     FavoritesManager.addRecentSearch(context, it)
                                                 }
                                             },
-                                            onSearchActiveChange = { isDiscoverSearchActive = it },
+                                            onSearchActiveChange = { setDiscoverSelection(discoverSearchQuery, it) },
                                             onBack = { navController.popBackStack() }
                                         )
                                     }
@@ -662,7 +757,7 @@ fun MainApp() {
                                             topFiles = topFiles,
                                             searchQuery = discoverSearchQuery,
                                             isSearchActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty(),
-                                            onSearchQueryChange = { discoverSearchQuery = it },
+                                            onSearchQueryChange = { setDiscoverSelection(it, isDiscoverSearchActive) },
                                             onNodeClick = { node, path ->
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 val realFile = FileUtils.resolveActualFile(path, context)
@@ -723,7 +818,7 @@ fun MainApp() {
                                 stagedReclaimableBytes = stagedReclaimableBytes,
                                 onOpenReviewSheet = { showCleanupReviewSheet = true },
                                 onClearStaged = { stagedQueue = emptyMap() },
-                                onClearSelection = { selectedTreeNodes = emptyMap() },
+                                onClearSelection = { clearTreeSelection() },
                                 onDeleteSelected = { showTreeDeleteDialog = true }
                             )
 
@@ -743,7 +838,7 @@ fun MainApp() {
                                         .padding(bottom = 14.dp)
                                 ) {
                                     TreemapNavPill(
-                                        isLandscape = false,
+                                        isLandscape = isLandscape,
                                         currentDestination = currentRoute,
                                         onBack = { navController.popBackStack() },
                                         stagedQueueCount = stagedQueue.size,
@@ -751,7 +846,7 @@ fun MainApp() {
                                         onOpenReviewSheet = { showCleanupReviewSheet = true },
                                         onClearStaged = { stagedQueue = emptyMap() },
                                         selectedTreeNodes = selectedTreeNodes,
-                                        onClearSelection = { selectedTreeNodes = emptyMap() },
+                                        onClearSelection = { clearTreeSelection() },
                                         onDeleteSelected = { showTreeDeleteDialog = true },
                                         predictiveBackProgress = pillBackProgress,
                                         isPredictiveBackActive = isPillBackActive,
@@ -776,11 +871,9 @@ fun MainApp() {
                                 }
                             }
 
-                            ScanningBanner(
+                            ScanProgressBanner(
+                                progress = scanProgress,
                                 visible = isBackgroundScanning,
-                                phase = scanPhase,
-                                detail = scanDetail,
-                                progressPercent = scanProgressPercent,
                                 onCancelScan = {
                                     scanJob?.cancel()
                                     scanJob = null
@@ -833,7 +926,7 @@ fun MainApp() {
                                 }
                             )
                             isTreeDeleting = false
-                            selectedTreeNodes = emptyMap()
+                            clearTreeSelection()
                             performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context))
                         }
                     },
@@ -994,8 +1087,10 @@ fun MainApp() {
                                        )
                                    )
                         ) {
-                            val swipeOffsetX = remember(activePopupNode) { Animatable(0f) }
-                            val swipeOffsetY = remember(activePopupNode) { Animatable(0f) }
+                            val swipeOffsetX = remember(activePopupNode) { mutableFloatStateOf(0f) }
+                            val swipeOffsetY = remember(activePopupNode) { mutableFloatStateOf(0f) }
+                            var swipeX by swipeOffsetX
+                            var swipeY by swipeOffsetY
                             val dismissThreshold = with(density) { 56.dp.toPx() }
 
                             Surface(
@@ -1005,16 +1100,18 @@ fun MainApp() {
                                 shadowElevation = 10.dp,
                                 modifier = Modifier
                                     .widthIn(min = 250.dp, max = 280.dp)
-                                    .offset { IntOffset(swipeOffsetX.value.roundToInt(), swipeOffsetY.value.roundToInt()) }
+                                    .offset { IntOffset(swipeOffsetX.floatValue.roundToInt(), swipeOffsetY.floatValue.roundToInt()) }
                                     .graphicsLayer {
-                                        val dist = kotlin.math.sqrt(swipeOffsetX.value * swipeOffsetX.value + swipeOffsetY.value * swipeOffsetY.value)
+                                        val x = swipeOffsetX.floatValue
+                                        val y = swipeOffsetY.floatValue
+                                        val dist = kotlin.math.sqrt(x * x + y * y)
                                         alpha = (1f - dist / (dismissThreshold * 3f)).coerceIn(0f, 1f)
                                     }
                                     .pointerInput(activePopupNode) {
                                         detectDragGestures(
                                             onDragEnd = {
-                                                val curX = swipeOffsetX.value
-                                                val curY = swipeOffsetY.value
+                                                val curX = swipeX
+                                                val curY = swipeY
                                                 val dist = kotlin.math.sqrt(curX * curX + curY * curY)
                                                 if (dist > dismissThreshold) {
                                                     val targetDist = maxOf(screenWidth, screenHeight).toFloat()
@@ -1022,16 +1119,10 @@ fun MainApp() {
                                                     val dirY = if (dist > 0.001f) curY / dist else 0f
                                                     scope.launch {
                                                         launch {
-                                                            swipeOffsetX.animateTo(
-                                                                targetValue = dirX * targetDist,
-                                                                animationSpec = spring(stiffness = Spring.StiffnessMedium)
-                                                            )
+                                                            animate(swipeX, dirX * targetDist, animationSpec = spring(stiffness = Spring.StiffnessMedium)) { value, _ -> swipeX = value }
                                                         }
                                                         launch {
-                                                            swipeOffsetY.animateTo(
-                                                                targetValue = dirY * targetDist,
-                                                                animationSpec = spring(stiffness = Spring.StiffnessMedium)
-                                                            )
+                                                            animate(swipeY, dirY * targetDist, animationSpec = spring(stiffness = Spring.StiffnessMedium)) { value, _ -> swipeY = value }
                                                         }
                                                         selectedNode = null
                                                         selectedPath = null
@@ -1040,32 +1131,24 @@ fun MainApp() {
                                                 } else {
                                                     scope.launch {
                                                         launch {
-                                                            swipeOffsetX.animateTo(
-                                                                targetValue = 0f,
-                                                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
-                                                            )
+                                                            animate(swipeX, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeX = value }
                                                         }
                                                         launch {
-                                                            swipeOffsetY.animateTo(
-                                                                targetValue = 0f,
-                                                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
-                                                            )
+                                                            animate(swipeY, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeY = value }
                                                         }
                                                     }
                                                 }
                                             },
                                             onDragCancel = {
                                                 scope.launch {
-                                                    launch { swipeOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) }
-                                                    launch { swipeOffsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) }
+                                                    launch { animate(swipeX, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeX = value } }
+                                                    launch { animate(swipeY, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeY = value } }
                                                 }
                                             }
                                         ) { change, dragAmount ->
                                             change.consume()
-                                            scope.launch {
-                                                swipeOffsetX.snapTo(swipeOffsetX.value + dragAmount.x)
-                                                swipeOffsetY.snapTo(swipeOffsetY.value + dragAmount.y)
-                                            }
+                                            swipeX += dragAmount.x
+                                            swipeY += dragAmount.y
                                         }
                                     }
                             ) {
@@ -1283,11 +1366,13 @@ fun MainApp() {
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .clickable {
-                                                        selectedTreeNodes = if (selectedTreeNodes.containsKey(node)) {
-                                                            selectedTreeNodes - node
-                                                        } else {
-                                                            selectedTreeNodes + (node to path)
-                                                        }
+                                                        setTreeSelection(
+                                                            if (selectedTreeNodes.containsKey(node)) {
+                                                                selectedTreeNodes - node
+                                                            } else {
+                                                                selectedTreeNodes + (node to path)
+                                                            }
+                                                        )
                                                         selectedNode = null
                                                         selectedPath = null
                                                         selectedTouchOffset = null
@@ -1453,7 +1538,7 @@ fun MainApp() {
                                         StorageTrendManager.recordFreedBytes(context, fLen)
                                     }
                                 }
-                                selectedTreeNodes = selectedTreeNodes - delNode
+                                setTreeSelection(selectedTreeNodes - delNode)
                                 nodeToDelete = null
                                 performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context))
                             }
