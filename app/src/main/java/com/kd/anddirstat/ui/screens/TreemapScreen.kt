@@ -1,10 +1,8 @@
 package com.kd.anddirstat.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -122,8 +120,10 @@ fun TreemapScreen(
                         Brush.verticalGradient(
                             colors = listOf(
                                 baseBg,
-                                baseBg.copy(alpha = 0.85f),
-                                baseBg.copy(alpha = 0.35f),
+                                baseBg.copy(alpha = 0.92f),
+                                baseBg.copy(alpha = 0.70f),
+                                baseBg.copy(alpha = 0.40f),
+                                baseBg.copy(alpha = 0.15f),
                                 Color.Transparent
                             )
                         )
@@ -163,12 +163,12 @@ fun TreemapScreen(
                     // Reset zoom button in top right before 3-dot
                     AnimatedVisibility(
                         visible = isZoomed,
-                        enter = fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                        enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
                                 scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) +
                                 slideInHorizontally(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy)) { it / 2 },
-                        exit = fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                               scaleOut(targetScale = 0.8f, animationSpec = tween(180)) +
-                               slideOutHorizontally(animationSpec = tween(180)) { it / 2 }
+                        exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+                               scaleOut(targetScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+                               slideOutHorizontally(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy)) { it / 2 }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

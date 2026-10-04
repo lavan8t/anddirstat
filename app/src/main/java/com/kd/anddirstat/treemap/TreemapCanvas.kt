@@ -14,10 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
 import androidx.compose.ui.util.lerp
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -368,7 +365,7 @@ fun TreemapCanvas(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val bottomSpaceDp = if (isLandscape) 0.dp else 104.dp
+    val bottomSpaceDp = if (isLandscape) 0.dp else 64.dp
     val bottomSpacePx = remember(density, isLandscape) {
         with(density) { bottomSpaceDp.toPx() }
     }
@@ -413,9 +410,9 @@ fun TreemapCanvas(
                 animate(
                     initialValue = 0f,
                     targetValue = 1f,
-                    animationSpec = tween(
-                        durationMillis = 320,
-                        easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
                     )
                 ) { progress, _ ->
                     scale = lerp(startScale, 1f, progress)
@@ -873,8 +870,11 @@ fun TreemapCanvas(
                             Brush.verticalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    canvasBg.copy(alpha = 0.35f),
-                                    canvasBg.copy(alpha = 0.65f)
+                                    canvasBg.copy(alpha = 0.15f),
+                                    canvasBg.copy(alpha = 0.40f),
+                                    canvasBg.copy(alpha = 0.70f),
+                                    canvasBg.copy(alpha = 0.92f),
+                                    canvasBg
                                 )
                             )
                         )
