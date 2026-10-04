@@ -56,7 +56,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "content_copy" -> R.drawable.sym_content_copy_1
             "camera_alt", "screenshot_monitor" -> R.drawable.sym_camera_alt_1
             "file_download", "download" -> R.drawable.sym_file_download_1
-            "auto_fix_high" -> R.drawable.sym_auto_fix_high_1
+            "auto_fix_high", "auto_awesome", "draw" -> R.drawable.sym_auto_fix_high_1
             "filter_list", "filter_alt" -> R.drawable.sym_filter_list_1
             "sort", "sort_by_alpha" -> R.drawable.sym_sort_1
             "schedule" -> R.drawable.sym_schedule_1
@@ -135,7 +135,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "content_copy" -> R.drawable.sym_content_copy_0
             "camera_alt", "screenshot_monitor" -> R.drawable.sym_camera_alt_0
             "file_download", "download" -> R.drawable.sym_file_download_0
-            "auto_fix_high" -> R.drawable.sym_auto_fix_high_0
+            "auto_fix_high", "auto_awesome", "draw" -> R.drawable.sym_auto_fix_high_0
             "filter_list", "filter_alt" -> R.drawable.sym_filter_list_0
             "sort", "sort_by_alpha" -> R.drawable.sym_sort_0
             "schedule" -> R.drawable.sym_schedule_0
