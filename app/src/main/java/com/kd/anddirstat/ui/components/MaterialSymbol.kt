@@ -81,7 +81,7 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "zoom_in" -> R.drawable.sym_zoom_in_1
             "zoom_out" -> R.drawable.sym_zoom_out_1
             "check" -> R.drawable.sym_check_1
-            "check_circle", "check_box", "select" -> R.drawable.sym_check_circle_1
+            "check_circle", "check_box", "check_box_outline_blank", "select" -> R.drawable.sym_check_circle_1
             "warning" -> R.drawable.sym_warning_1
             "error" -> R.drawable.sym_error_1
             "info" -> R.drawable.sym_info_1
@@ -94,6 +94,18 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "light_mode" -> R.drawable.sym_light_mode_1
             "brightness_medium" -> R.drawable.sym_brightness_medium_1
             "github" -> R.drawable.sym_github_1
+            "add_to_photos" -> R.drawable.sym_add_to_photos_1
+            "arrow_drop_down" -> R.drawable.sym_arrow_drop_down_1
+            "auto_delete" -> R.drawable.sym_auto_delete_1
+            "filter" -> R.drawable.sym_filter_1
+            "folder_fill" -> R.drawable.sym_folder_fill_1
+            "insights" -> R.drawable.sym_insights_1
+            "inventory_2" -> R.drawable.sym_inventory_2_1
+            "radar" -> R.drawable.sym_radar_1
+            "speed" -> R.drawable.sym_speed_1
+            "swipe" -> R.drawable.sym_swipe_1
+            "tune" -> R.drawable.sym_tune_1
+            "undo" -> R.drawable.sym_undo_1
             else -> R.drawable.sym_description_1
         }
     } else {
@@ -172,6 +184,18 @@ fun getMaterialSymbolRes(name: String, active: Boolean = true): Int {
             "light_mode" -> R.drawable.sym_light_mode_0
             "brightness_medium" -> R.drawable.sym_brightness_medium_0
             "github" -> R.drawable.sym_github_0
+            "add_to_photos" -> R.drawable.sym_add_to_photos_0
+            "arrow_drop_down" -> R.drawable.sym_arrow_drop_down_0
+            "auto_delete" -> R.drawable.sym_auto_delete_0
+            "filter" -> R.drawable.sym_filter_0
+            "folder_fill" -> R.drawable.sym_folder_fill_0
+            "insights" -> R.drawable.sym_insights_0
+            "inventory_2" -> R.drawable.sym_inventory_2_0
+            "radar" -> R.drawable.sym_radar_0
+            "speed" -> R.drawable.sym_speed_0
+            "swipe" -> R.drawable.sym_swipe_0
+            "tune" -> R.drawable.sym_tune_0
+            "undo" -> R.drawable.sym_undo_0
             else -> R.drawable.sym_description_0
         }
     }
