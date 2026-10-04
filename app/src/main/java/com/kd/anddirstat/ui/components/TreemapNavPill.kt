@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -76,6 +78,10 @@ fun TreemapNavRail(
     currentDestination: String,
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier,
+    stagedQueueCount: Int = 0,
+    stagedReclaimableBytes: Long = 0L,
+    onOpenReviewSheet: () -> Unit = {},
+    onClearStaged: () -> Unit = {},
     selectedTreeNodes: Map<CompactNode, String> = emptyMap(),
     onClearSelection: () -> Unit = {},
     onDeleteSelected: () -> Unit = {}
@@ -83,7 +89,9 @@ fun TreemapNavRail(
     val haptic = LocalHapticFeedback.current
     val layoutDirection = LocalLayoutDirection.current
     val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
-    val hasSelection = selectedTreeNodes.isNotEmpty() && currentDestination == AppDestinations.TREE
+    val hasStaged = stagedQueueCount > 0
+    val hasLegacySelection = selectedTreeNodes.isNotEmpty() && currentDestination == AppDestinations.TREE
+    val hasSelection = hasStaged || hasLegacySelection
 
     Surface(
         modifier = modifier
@@ -127,41 +135,99 @@ fun TreemapNavRail(
                     enter = expandVertically(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
                     exit = shrinkVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeOut(spring(stiffness = Spring.StiffnessMedium))
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onClearSelection()
-                                },
-                            contentAlignment = Alignment.Center
+                    if (hasStaged) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            AppTooltip(text = "Clear Cleanup Queue") {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onClearStaged()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                            AppTooltip(text = "Review Cleanup Queue") {
+                                BadgedBox(
+                                    badge = {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ) {
+                                            Text(
+                                                text = "$stagedQueueCount",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primaryContainer)
+                                            .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onOpenReviewSheet()
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        MaterialSymbol(
+                                            name = "delete",
+                                            active = true,
+                                            size = 18.dp,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
                         }
-                        Text(
-                            text = "${selectedTreeNodes.size}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.error)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onDeleteSelected()
-                                },
-                            contentAlignment = Alignment.Center
+                    } else if (hasLegacySelection) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onClearSelection()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Text(
+                                text = "${selectedTreeNodes.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.error)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onDeleteSelected()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
+                            }
                         }
                     }
                 }
@@ -257,13 +323,19 @@ fun TreemapNavPill(
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
     currentDestination: String = AppDestinations.TREE,
+    stagedQueueCount: Int = 0,
+    stagedReclaimableBytes: Long = 0L,
+    onOpenReviewSheet: () -> Unit = {},
+    onClearStaged: () -> Unit = {},
     selectedTreeNodes: Map<CompactNode, String> = emptyMap(),
     onClearSelection: () -> Unit = {},
     onDeleteSelected: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
-    val hasSelection = selectedTreeNodes.isNotEmpty() && currentDestination == AppDestinations.TREE
+    val hasStaged = stagedQueueCount > 0
+    val hasLegacySelection = selectedTreeNodes.isNotEmpty() && currentDestination == AppDestinations.TREE
+    val hasSelection = hasStaged || hasLegacySelection
 
     // If on Settings screen: only show Back button + Settings icon & name
     if (currentDestination == AppDestinations.SETTINGS) {
@@ -348,68 +420,134 @@ fun TreemapNavPill(
                 enter = expandVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
                 exit = shrinkVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeOut(spring(stiffness = Spring.StiffnessMedium))
             ) {
-                val totalBytes = remember(selectedTreeNodes) { selectedTreeNodes.keys.sumOf { it.size } }
-                Row(
-                    modifier = Modifier
-                        .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                if (hasStaged) {
                     Row(
+                        modifier = Modifier
+                            .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
+                            .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onClearStaged()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Column {
+                                Text(
+                                    text = "$stagedQueueCount staged",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "${FileUtils.formatFileSize(stagedReclaimableBytes, context)} reclaimable",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .size(34.dp)
+                                .height(34.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onClearSelection()
-                                },
-                            contentAlignment = Alignment.Center
+                                    onOpenReviewSheet()
+                                }
+                                .padding(horizontal = 14.dp)
                         ) {
-                            MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        Column {
+                            MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "${selectedTreeNodes.size} selected",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = FileUtils.formatFileSize(totalBytes, context),
+                                text = "Review",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }
-
+                } else if (hasLegacySelection) {
+                    val totalBytes = remember(selectedTreeNodes) { selectedTreeNodes.keys.sumOf { it.size } }
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .height(34.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.error)
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onDeleteSelected()
-                            }
-                            .padding(horizontal = 14.dp)
+                            .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Delete",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onError
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onClearSelection()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Column {
+                                Text(
+                                    text = "${selectedTreeNodes.size} selected",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = FileUtils.formatFileSize(totalBytes, context),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.error)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onDeleteSelected()
+                                }
+                                .padding(horizontal = 14.dp)
+                        ) {
+                            MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Delete",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        }
                     }
                 }
             }
