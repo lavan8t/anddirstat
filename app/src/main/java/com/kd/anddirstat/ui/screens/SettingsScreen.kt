@@ -62,7 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -70,7 +69,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -164,9 +162,6 @@ fun SettingsView(
     val isUnder4Gb = remember { FileUtils.isUnder4GbRam(context) }
     var lowRamOptimizations by remember {
         mutableStateOf(prefs.getBoolean("low_ram_optimizations", false))
-    }
-    var m3CanvasRendering by remember {
-        mutableStateOf(prefs.getBoolean("m3_compose_canvas_rendering", true))
     }
     val haptic = LocalHapticFeedback.current
     val isDarkActive = currentTheme == AppTheme.DARK || currentTheme == AppTheme.SYSTEM
@@ -431,93 +426,17 @@ fun SettingsView(
             }
         }
 
-        // Performance Section Header
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Performance",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-            )
-        }
-
-        // Direct GPU Canvas Rendering (Experimental)
-        item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .clip(singleShape)
-                    .clipToBounds()
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = "Direct GPU Canvas Rendering",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = "Hardware-accelerated treemap drawing with 0 MB bitmap allocations and 120fps touch response",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    },
-                    leadingContent = {
-                        MaterialSymbol(
-                            name = "auto_awesome",
-                            active = true,
-                            size = 24.dp,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = m3CanvasRendering,
-                            onCheckedChange = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                m3CanvasRendering = it
-                                prefs.edit { putBoolean("m3_compose_canvas_rendering", it) }
-                            },
-                            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
-                        )
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val newVal = !m3CanvasRendering
-                            m3CanvasRendering = newVal
-                            prefs.edit { putBoolean("m3_compose_canvas_rendering", newVal) }
-                        }
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(bottomStart = 8.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    shadowElevation = 0.dp,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) {
-                    Text(
-                        text = "EXPERIMENTAL",
-                        fontStyle = FontStyle.Italic,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-
         if (isUnder4Gb) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Performance",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
 
             item {
                 ListItem(

@@ -519,13 +519,34 @@ fun FileTypesView(
         }
     }
 
-    LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(top = 16.dp, bottom = 116.dp),
+    Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Usage",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                fontFamily = GoogleSansFlexFontFamily,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(top = 8.dp, bottom = 116.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
         // Merged Header: Big "X of Y used" + Free space + Proportional bar
         item {
             Column(
@@ -1149,4 +1170,5 @@ fun FileTypesView(
             }
         }
     }
+}
 }

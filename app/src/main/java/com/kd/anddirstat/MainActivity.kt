@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.animation.core.spring
@@ -204,7 +205,6 @@ fun MainApp() {
         var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
         var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", false)) }
         var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", false)) }
-        var isM3CanvasEnabled by remember { mutableStateOf(prefs.getBoolean("m3_compose_canvas_rendering", true)) }
 
         var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
         var deviceTotalBytes by remember { mutableLongStateOf(0L) }
@@ -287,7 +287,6 @@ fun MainApp() {
                     "show_hidden_files" -> updateFilter(hf = prefs.getBoolean("show_hidden_files", true))
                     "show_free_space" -> updateFilter(fs = prefs.getBoolean("show_free_space", true))
                     "show_system_apps" -> updateFilter(sa = prefs.getBoolean("show_system_apps", true))
-                    "m3_compose_canvas_rendering" -> isM3CanvasEnabled = prefs.getBoolean("m3_compose_canvas_rendering", true)
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -444,6 +443,19 @@ fun MainApp() {
         PredictiveBackHandler(enabled = (isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()) && currentRoute == AppDestinations.DISCOVER && selectedNode == null) { progress ->
             try { progress.collect {}; isDiscoverSearchActive = false; discoverSearchQuery = "" } catch (_: CancellationException) {}
         }
+        PredictiveBackHandler(enabled = currentRoute != AppDestinations.TREE && selectedNode == null && selectedTreeNodes.isEmpty() && (!isDiscoverSearchActive && discoverSearchQuery.isEmpty())) { progress ->
+            try {
+                isPillBackActive = true
+                progress.collect { backEvent ->
+                    pillBackProgress = backEvent.progress
+                }
+                navController.popBackStack()
+            } catch (_: CancellationException) {
+            } finally {
+                isPillBackActive = false
+                pillBackProgress = 0f
+            }
+        }
 
         val destIndexMap = remember { mapOf(AppDestinations.TREE to 0, AppDestinations.EXPLORER to 1, AppDestinations.TYPES to 2, AppDestinations.DISCOVER to 3) }
 
@@ -540,7 +552,6 @@ fun MainApp() {
                                     showSystemApps = showSystemApps,
                                     showFreeSpace = showFreeSpace,
                                     showHiddenFiles = showHiddenFiles,
-                                    isM3CanvasEnabled = isM3CanvasEnabled,
                                     onZoomChanged = { isTreemapZoomed = it },
                                     onResetZoom = { resetZoomKey++; isTreemapZoomed = false },
                                     onNodeSelected = { node, path, touchOffset -> selectedNode = node; selectedPath = path; selectedTouchOffset = touchOffset ?: lastTouchDown },
@@ -983,7 +994,8 @@ fun MainApp() {
                                        )
                                    )
                         ) {
-                            var swipeOffset by remember(activePopupNode) { mutableStateOf(Offset.Zero) }
+                            val swipeOffsetX = remember(activePopupNode) { Animatable(0f) }
+                            val swipeOffsetY = remember(activePopupNode) { Animatable(0f) }
                             val dismissThreshold = with(density) { 56.dp.toPx() }
 
                             Surface(
@@ -993,28 +1005,67 @@ fun MainApp() {
                                 shadowElevation = 10.dp,
                                 modifier = Modifier
                                     .widthIn(min = 250.dp, max = 280.dp)
-                                    .offset { IntOffset(swipeOffset.x.roundToInt(), swipeOffset.y.roundToInt()) }
+                                    .offset { IntOffset(swipeOffsetX.value.roundToInt(), swipeOffsetY.value.roundToInt()) }
                                     .graphicsLayer {
-                                        val dist = kotlin.math.sqrt(swipeOffset.x * swipeOffset.x + swipeOffset.y * swipeOffset.y)
-                                        alpha = (1f - dist / (dismissThreshold * 2.5f)).coerceIn(0.2f, 1f)
+                                        val dist = kotlin.math.sqrt(swipeOffsetX.value * swipeOffsetX.value + swipeOffsetY.value * swipeOffsetY.value)
+                                        alpha = (1f - dist / (dismissThreshold * 3f)).coerceIn(0f, 1f)
                                     }
                                     .pointerInput(activePopupNode) {
                                         detectDragGestures(
                                             onDragEnd = {
-                                                val dist = kotlin.math.sqrt(swipeOffset.x * swipeOffset.x + swipeOffset.y * swipeOffset.y)
+                                                val curX = swipeOffsetX.value
+                                                val curY = swipeOffsetY.value
+                                                val dist = kotlin.math.sqrt(curX * curX + curY * curY)
                                                 if (dist > dismissThreshold) {
-                                                    selectedNode = null
-                                                    selectedPath = null
-                                                    selectedTouchOffset = null
+                                                    val targetDist = maxOf(screenWidth, screenHeight).toFloat()
+                                                    val dirX = if (dist > 0.001f) curX / dist else 1f
+                                                    val dirY = if (dist > 0.001f) curY / dist else 0f
+                                                    scope.launch {
+                                                        launch {
+                                                            swipeOffsetX.animateTo(
+                                                                targetValue = dirX * targetDist,
+                                                                animationSpec = spring(stiffness = Spring.StiffnessMedium)
+                                                            )
+                                                        }
+                                                        launch {
+                                                            swipeOffsetY.animateTo(
+                                                                targetValue = dirY * targetDist,
+                                                                animationSpec = spring(stiffness = Spring.StiffnessMedium)
+                                                            )
+                                                        }
+                                                        selectedNode = null
+                                                        selectedPath = null
+                                                        selectedTouchOffset = null
+                                                    }
+                                                } else {
+                                                    scope.launch {
+                                                        launch {
+                                                            swipeOffsetX.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+                                                            )
+                                                        }
+                                                        launch {
+                                                            swipeOffsetY.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+                                                            )
+                                                        }
+                                                    }
                                                 }
-                                                swipeOffset = Offset.Zero
                                             },
                                             onDragCancel = {
-                                                swipeOffset = Offset.Zero
+                                                scope.launch {
+                                                    launch { swipeOffsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) }
+                                                    launch { swipeOffsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) }
+                                                }
                                             }
                                         ) { change, dragAmount ->
                                             change.consume()
-                                            swipeOffset += dragAmount
+                                            scope.launch {
+                                                swipeOffsetX.snapTo(swipeOffsetX.value + dragAmount.x)
+                                                swipeOffsetY.snapTo(swipeOffsetY.value + dragAmount.y)
+                                            }
                                         }
                                     }
                             ) {

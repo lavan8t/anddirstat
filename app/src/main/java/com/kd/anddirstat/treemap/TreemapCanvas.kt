@@ -89,134 +89,6 @@ import kotlin.math.abs
 private val CanvasBgColor = Color(0xFF08090E)
 private val SelectionBorderColor = Color.White
 
-object TreemapBitmapCache {
-    private val cache = LruCache<String, ImageBitmap>(8)
-    fun get(key: String): ImageBitmap? = cache.get(key)
-    fun put(key: String, bitmap: ImageBitmap) { cache.put(key, bitmap) }
-    fun clear() { cache.evictAll() }
-}
-
-private fun renderTreemapToBitmap(
-    tiles: List<TreemapTile>,
-    width: Int,
-    height: Int,
-    isDark: Boolean,
-    pureBlack: Boolean,
-    context: Context
-): ImageBitmap {
-    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bitmap)
-    val isAmoled = pureBlack && isDark
-    val shadingMode = FileUtils.getTreemapShadingMode(context)
-    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-
-    val bgColor = if (isAmoled) android.graphics.Color.BLACK else if (isDark) 0xFF08090E.toInt() else 0xFFF1F3F9.toInt()
-    canvas.drawColor(bgColor)
-
-    for (tile in tiles) {
-        val sLeft = tile.left
-        val sTop = tile.top
-        val sW = maxOf(1f, tile.width)
-        val sH = maxOf(1f, tile.height)
-
-        val appIcon = if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
-            AppIconCache.peek(tile.pkgName)
-        } else null
-
-        val tileBaseColor = if (tile.pkgName != null) {
-            AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
-        } else {
-            tile.baseColor
-        }
-
-        if (isAmoled) {
-            paint.style = android.graphics.Paint.Style.STROKE
-            paint.strokeWidth = 1.5f
-            paint.color = tileBaseColor.toArgb()
-            paint.shader = null
-            canvas.drawRect(sLeft, sTop, sLeft + sW, sTop + sH, paint)
-        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || sW < 3f || sH < 3f) {
-            paint.style = android.graphics.Paint.Style.FILL
-            paint.shader = null
-            paint.color = tileBaseColor.toArgb()
-            canvas.drawRect(sLeft, sTop, sLeft + sW, sTop + sH, paint)
-        } else {
-            val cHighlight = if (isDark) {
-                Color(
-                    red = (tileBaseColor.red * 1.65f + 0.25f).coerceIn(0f, 1f),
-                    green = (tileBaseColor.green * 1.65f + 0.25f).coerceIn(0f, 1f),
-                    blue = (tileBaseColor.blue * 1.65f + 0.25f).coerceIn(0f, 1f),
-                    alpha = 1f
-                ).toArgb()
-            } else {
-                Color(
-                    red = (tileBaseColor.red * 1.75f + 0.35f).coerceIn(0f, 1f),
-                    green = (tileBaseColor.green * 1.75f + 0.35f).coerceIn(0f, 1f),
-                    blue = (tileBaseColor.blue * 1.75f + 0.35f).coerceIn(0f, 1f),
-                    alpha = 1f
-                ).toArgb()
-            }
-            val cBase = tileBaseColor.toArgb()
-            val cShadow = if (isDark) {
-                Color(
-                    red = (tileBaseColor.red * 0.45f).coerceIn(0f, 1f),
-                    green = (tileBaseColor.green * 0.45f).coerceIn(0f, 1f),
-                    blue = (tileBaseColor.blue * 0.45f).coerceIn(0f, 1f),
-                    alpha = 1f
-                ).toArgb()
-            } else {
-                Color(
-                    red = (tileBaseColor.red * 0.40f).coerceIn(0f, 1f),
-                    green = (tileBaseColor.green * 0.40f).coerceIn(0f, 1f),
-                    blue = (tileBaseColor.blue * 0.40f).coerceIn(0f, 1f),
-                    alpha = 1f
-                ).toArgb()
-            }
-
-            val shader = if (shadingMode == FileUtils.TreemapShadingMode.LINEAR) {
-                android.graphics.LinearGradient(
-                    sLeft, sTop, sLeft + sW, sTop + sH,
-                    intArrayOf(cHighlight, cBase, cShadow),
-                    floatArrayOf(0f, 0.45f, 1.0f),
-                    android.graphics.Shader.TileMode.CLAMP
-                )
-            } else {
-                // Exact Cushion Treemap (CTM) Shading model (van Wijk & van de Wetering):
-                // Directional light vector L = [1, 2, 10] -> offset center (38% X, 35% Y)
-                // Gradient stretches and squeezes with the exact tile aspect ratio:
-                val radShader = android.graphics.RadialGradient(
-                    0.38f, 0.35f, 0.85f,
-                    intArrayOf(cHighlight, cBase, cShadow),
-                    floatArrayOf(0f, 0.50f, 1.0f),
-                    android.graphics.Shader.TileMode.CLAMP
-                )
-                val matrix = android.graphics.Matrix()
-                matrix.setScale(sW, sH)
-                matrix.postTranslate(sLeft, sTop)
-                radShader.setLocalMatrix(matrix)
-                radShader
-            }
-            paint.style = android.graphics.Paint.Style.FILL
-            paint.shader = shader
-            canvas.drawRect(sLeft, sTop, sLeft + sW, sTop + sH, paint)
-        }
-
-        if (appIcon != null && sW >= 24f && sH >= 24f) {
-            val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
-            val iconX = sLeft + (sW - iconSize) / 2f
-            val iconY = sTop + (sH - iconSize) / 2f
-            val androidBmp = appIcon.asAndroidBitmap()
-            val srcRect = android.graphics.Rect(0, 0, androidBmp.width, androidBmp.height)
-            val dstRect = android.graphics.RectF(iconX, iconY, iconX + iconSize, iconY + iconSize)
-            paint.shader = null
-            paint.style = android.graphics.Paint.Style.FILL
-            canvas.drawBitmap(androidBmp, srcRect, dstRect, paint)
-        }
-    }
-
-    return bitmap.asImageBitmap()
-}
-
 class TreemapTile(
     val node: CompactNode,
     val path: String,
@@ -356,7 +228,6 @@ fun TreemapCanvas(
     resetKey: Int = 0,
     isDark: Boolean = true,
     pureBlack: Boolean = false,
-    isM3CanvasEnabled: Boolean = true,
     onScaleChanged: ((Float) -> Unit)? = null,
     onZoomChanged: ((Boolean) -> Unit)? = null,
     onZoomFocusChanged: ((Float) -> Unit)? = null,
@@ -468,7 +339,7 @@ fun TreemapCanvas(
         label = "selectionScale"
     )
 
-    val targetStrokeWidth = if (hasSelection && selectedTile != null) {
+    val targetStrokeWidth = if (selectedTile != null) {
         val minDim = minOf(selectedTile.width * scale, selectedTile.height * scale)
         if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 3.0f
     } else 0f
@@ -481,38 +352,6 @@ fun TreemapCanvas(
         ),
         label = "selectionBorderWidth"
     )
-
-    val staticBitmap by produceState<ImageBitmap?>(
-        initialValue = if (!isM3CanvasEnabled) TreemapBitmapCache.get("${cacheKey}_$pureBlack") else null,
-        cacheKey,
-        pureBlack,
-        precalculatedTiles,
-        isM3CanvasEnabled
-    ) {
-        if (!isM3CanvasEnabled && canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.isNotEmpty()) {
-            val bmpKey = "${cacheKey}_$pureBlack"
-            val cachedBmp = TreemapBitmapCache.get(bmpKey)
-            if (cachedBmp != null) {
-                value = cachedBmp
-            } else {
-                val usableH = (canvasSize.height.toFloat() - bottomSpacePx).toInt().coerceAtLeast(100)
-                val bmp = withContext(Dispatchers.Default) {
-                    renderTreemapToBitmap(
-                        tiles = precalculatedTiles,
-                        width = canvasSize.width,
-                        height = usableH,
-                        isDark = isDark,
-                        pureBlack = pureBlack,
-                        context = context
-                    )
-                }
-                TreemapBitmapCache.put(bmpKey, bmp)
-                value = bmp
-            }
-        } else {
-            value = null
-        }
-    }
 
     val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
@@ -676,174 +515,8 @@ fun TreemapCanvas(
         ) {
             val usableDrawH = (size.height - bottomSpacePx).coerceAtLeast(100f)
             clipRect(0f, 0f, size.width, usableDrawH) {
-                val currentScale = scale
-                val currentOffset = offset
-                val isAmoled = pureBlack && isDark
-                val currentStaticBitmap = staticBitmap
-                val isFrozenStatic = !isM3CanvasEnabled && currentScale <= 1.001f && currentOffset == Offset.Zero && currentStaticBitmap != null
-
-                if (isFrozenStatic && currentStaticBitmap != null) {
-                    drawImage(currentStaticBitmap)
-
-                    // Draw marked selection highlights over cached snapshot
-                    for (node in selectedNodes) {
-                        val tile = nodeToTileMap[node] ?: continue
-                        val sLeft = tile.left
-                        val sTop = tile.top
-                        val drawW = maxOf(1f, tile.width)
-                        val drawH = maxOf(1f, tile.height)
-                        val minDim = minOf(drawW, drawH)
-                        val strokeW = if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 2.5f
-                        val halfStroke = strokeW / 2f
-
-                        drawRect(
-                            color = Color(0x6600E676),
-                            topLeft = Offset(sLeft, sTop),
-                            size = Size(drawW, drawH)
-                        )
-                        drawRect(
-                            color = Color(0xFF00E676),
-                            topLeft = Offset(sLeft + halfStroke, sTop + halfStroke),
-                            size = Size(maxOf(1f, drawW - strokeW), maxOf(1f, drawH - strokeW)),
-                            style = Stroke(width = strokeW)
-                        )
-                    }
-                } else if (!isM3CanvasEnabled) {
-                    // Direct full GPU hardware vector rendering on zoom and pan with frustum culling
-                    val viewW = size.width
-                    val viewH = size.height
-                    val numTiles = precalculatedTiles.size
-                    for (i in 0 until numTiles) {
-                        val tile = precalculatedTiles[i]
-
-                        val sLeft = tile.left * currentScale + currentOffset.x
-                        val sTop = tile.top * currentScale + currentOffset.y
-                        val sW = tile.width * currentScale
-                        val sH = tile.height * currentScale
-
-                        // Viewport frustum culling
-                        if (sLeft + sW < 0f || sLeft > viewW || sTop + sH < 0f || sTop > viewH) {
-                            continue
-                        }
-
-                        val drawW = maxOf(1f, sW)
-                        val drawH = maxOf(1f, sH)
-
-                        val tileBaseColor = if (tile.pkgName != null) {
-                            AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
-                        } else {
-                            tile.baseColor
-                        }
-
-                        if (isAmoled) {
-                            drawRect(
-                                color = tileBaseColor,
-                                topLeft = Offset(sLeft, sTop),
-                                size = Size(drawW, drawH),
-                                style = Stroke(width = if (currentScale > 1.5f) 2.5f else 1.5f)
-                            )
-                        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || drawW < 3f || drawH < 3f) {
-                            drawRect(
-                                color = tileBaseColor,
-                                topLeft = Offset(sLeft, sTop),
-                                size = Size(drawW, drawH)
-                            )
-                        } else {
-                            val cHighlight = if (isDark) {
-                                Color(
-                                    red = (tileBaseColor.red * 1.65f + 0.25f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 1.65f + 0.25f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 1.65f + 0.25f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            } else {
-                                Color(
-                                    red = (tileBaseColor.red * 1.75f + 0.35f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 1.75f + 0.35f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 1.75f + 0.35f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            }
-                            val cShadow = if (isDark) {
-                                Color(
-                                    red = (tileBaseColor.red * 0.45f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 0.45f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 0.45f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            } else {
-                                Color(
-                                    red = (tileBaseColor.red * 0.40f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 0.40f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 0.40f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            }
-
-                            if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
-                                drawContext.canvas.save()
-                                drawContext.transform.translate(sLeft, sTop)
-                                drawContext.transform.scale(drawW, drawH, pivot = Offset.Zero)
-                                drawRect(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(cHighlight, tileBaseColor, cShadow),
-                                        center = Offset(0.38f, 0.35f),
-                                        radius = 0.85f
-                                    ),
-                                    topLeft = Offset.Zero,
-                                    size = Size(1f, 1f)
-                                )
-                                drawContext.canvas.restore()
-                            } else {
-                                val brush = Brush.linearGradient(
-                                    colors = listOf(cHighlight, tileBaseColor, cShadow),
-                                    start = Offset(sLeft, sTop),
-                                    end = Offset(sLeft + drawW, sTop + drawH)
-                                )
-                                drawRect(
-                                    brush = brush,
-                                    topLeft = Offset(sLeft, sTop),
-                                    size = Size(drawW, drawH)
-                                )
-                            }
-                        }
-
-                    val isMarked = selectedNodes.contains(tile.node)
-                    if (isMarked) {
-                        val minDim = minOf(drawW, drawH)
-                        val strokeW = if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 2.5f
-                        val halfStroke = strokeW / 2f
-
-                        drawRect(
-                            color = Color(0x6600E676),
-                            topLeft = Offset(sLeft, sTop),
-                            size = Size(drawW, drawH)
-                        )
-                        drawRect(
-                            color = Color(0xFF00E676),
-                            topLeft = Offset(sLeft + halfStroke, sTop + halfStroke),
-                            size = Size(maxOf(1f, drawW - strokeW), maxOf(1f, drawH - strokeW)),
-                            style = Stroke(width = strokeW)
-                        )
-                    }
-
-                    if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
-                        val bmp = AppIconCache.get(context, tile.pkgName)
-                        if (bmp != null) {
-                            val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
-                            val iconX = sLeft + (sW - iconSize) / 2f
-                            val iconY = sTop + (sH - iconSize) / 2f
-                            drawImage(
-                                image = bmp,
-                                dstOffset = IntOffset(iconX.toInt(), iconY.toInt()),
-                                dstSize = IntSize(iconSize.toInt(), iconSize.toInt())
-                            )
-                        }
-                    }
-                }
-                } else {
-                    // Modern direct hardware GPU Compose Canvas rendering:
-                    val viewW = size.width
+                // Modern direct hardware GPU Compose Canvas rendering:
+                val viewW = size.width
                     val viewH = size.height
                     val curScale = currentScaleState.value
                     val curOff = currentOffsetState.value
@@ -931,7 +604,6 @@ fun TreemapCanvas(
                             )
                         }
                     }
-                }
 
             // Exact adaptive inset selection border matching the precise tile bounds with spring physics
             val sel = selectedTile ?: lastSelectedTile
@@ -1189,22 +861,84 @@ fun getNodeColor(node: CompactNode, isDark: Boolean = true): Color {
     if (cached != null) return cached
 
     val computed = when (ext) {
-        "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" ->
-            if (isDark) Color(0xFF154378) else Color(0xFF0055FF)
-        "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" ->
-            if (isDark) Color(0xFF5E227F) else Color(0xFFAA00FF)
-        "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico" ->
-            if (isDark) Color(0xFF8F3E00) else Color(0xFFFF8800)
-        "apk", "apks", "xapk", "apkm", "obb", "aab" ->
-            if (isDark) Color(0xFF801524) else Color(0xFFFF0055)
-        "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" ->
-            if (isDark) Color(0xFF165C22) else Color(0xFF00CC44)
-        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz" ->
-            if (isDark) Color(0xFF005E6B) else Color(0xFF00CCCC)
-        "so", "bin", "dex", "jar", "class", "exe", "dll" ->
-            if (isDark) Color(0xFF6B1212) else Color(0xFFCC0000)
-        "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py" ->
-            if (isDark) Color(0xFF8F6200) else Color(0xFFFFCC00)
+        // Videos - Blues family
+        "mp4" -> if (isDark) Color(0xFF1565C0) else Color(0xFF1976D2)
+        "mkv" -> if (isDark) Color(0xFF0D47A1) else Color(0xFF1565C0)
+        "avi" -> if (isDark) Color(0xFF1976D2) else Color(0xFF2196F3)
+        "mov" -> if (isDark) Color(0xFF0277BD) else Color(0xFF039BE5)
+        "webm" -> if (isDark) Color(0xFF283593) else Color(0xFF3F51B5)
+        "flv" -> if (isDark) Color(0xFF303F9F) else Color(0xFF5C6BC0)
+        "3gp" -> if (isDark) Color(0xFF1A237E) else Color(0xFF3949AB)
+        "ts" -> if (isDark) Color(0xFF01579B) else Color(0xFF0288D1)
+        "wmv" -> if (isDark) Color(0xFF006064) else Color(0xFF00838F)
+        "m4v" -> if (isDark) Color(0xFF311B92) else Color(0xFF4527A0)
+        "mpg", "mpeg", "vob" -> if (isDark) Color(0xFF1E88E5) else Color(0xFF42A5F5)
+
+        // Audio - Purples & Violets family
+        "mp3" -> if (isDark) Color(0xFF6A1B9A) else Color(0xFF8E24AA)
+        "flac" -> if (isDark) Color(0xFF4A148C) else Color(0xFF6A1B9A)
+        "wav" -> if (isDark) Color(0xFF7B1FA2) else Color(0xFF9C27B0)
+        "m4a" -> if (isDark) Color(0xFF8E24AA) else Color(0xFFAB47BC)
+        "ogg" -> if (isDark) Color(0xFF512DA8) else Color(0xFF673AB7)
+        "aac" -> if (isDark) Color(0xFF5E35B1) else Color(0xFF7E57C2)
+        "opus" -> if (isDark) Color(0xFF4527A0) else Color(0xFF5E35B1)
+        "wma" -> if (isDark) Color(0xFF7E57C2) else Color(0xFF9575CD)
+        "mid", "midi" -> if (isDark) Color(0xFFBA68C8) else Color(0xFFCE93D8)
+        "alac", "amr" -> if (isDark) Color(0xFF6200EA) else Color(0xFF7C4DFF)
+
+        // Images - Oranges & Ambers family
+        "jpg", "jpeg" -> if (isDark) Color(0xFFE65100) else Color(0xFFF57C00)
+        "png" -> if (isDark) Color(0xFFD84315) else Color(0xFFFF5722)
+        "webp" -> if (isDark) Color(0xFFF57C00) else Color(0xFFFF9800)
+        "heic", "heif" -> if (isDark) Color(0xFFBF360C) else Color(0xFFE64A19)
+        "gif" -> if (isDark) Color(0xFFFF6F00) else Color(0xFFFFA000)
+        "svg" -> if (isDark) Color(0xFFE64A19) else Color(0xFFFF7043)
+        "raw", "dng", "cr2", "nef" -> if (isDark) Color(0xFFEF6C00) else Color(0xFFFB8C00)
+        "bmp", "ico" -> if (isDark) Color(0xFFFF8F00) else Color(0xFFFFB300)
+
+        // Documents - Greens & Emeralds family
+        "pdf" -> if (isDark) Color(0xFF1B5E20) else Color(0xFF2E7D32)
+        "doc", "docx" -> if (isDark) Color(0xFF2E7D32) else Color(0xFF388E3C)
+        "txt", "log", "rtf" -> if (isDark) Color(0xFF388E3C) else Color(0xFF43A047)
+        "xlsx", "xls" -> if (isDark) Color(0xFF004D40) else Color(0xFF00695C)
+        "pptx", "ppt" -> if (isDark) Color(0xFF00695C) else Color(0xFF00796B)
+        "csv" -> if (isDark) Color(0xFF33691E) else Color(0xFF558B2F)
+        "epub", "mobi" -> if (isDark) Color(0xFF558B2F) else Color(0xFF689F38)
+
+        // Archives - Teals & Cyans family
+        "zip" -> if (isDark) Color(0xFF006064) else Color(0xFF00838F)
+        "rar" -> if (isDark) Color(0xFF00838F) else Color(0xFF0097A7)
+        "7z" -> if (isDark) Color(0xFF004D40) else Color(0xFF00695C)
+        "tar" -> if (isDark) Color(0xFF00796B) else Color(0xFF00897B)
+        "gz", "tgz" -> if (isDark) Color(0xFF0097A7) else Color(0xFF00ACC1)
+        "bz2", "xz" -> if (isDark) Color(0xFF00838F) else Color(0xFF00BCD4)
+        "iso", "img", "dmg" -> if (isDark) Color(0xFF004D40) else Color(0xFF00796B)
+
+        // Code & Data - Yellows, Golds & Warm Oranges
+        "kt", "kts" -> if (isDark) Color(0xFFF57F17) else Color(0xFFFBC02D)
+        "java" -> if (isDark) Color(0xFFF9A825) else Color(0xFFFDD835)
+        "py" -> if (isDark) Color(0xFFE65100) else Color(0xFFEF6C00)
+        "js", "mjs", "cjs" -> if (isDark) Color(0xFFFF8F00) else Color(0xFFFFA000)
+        "ts", "tsx" -> if (isDark) Color(0xFF0277BD) else Color(0xFF039BE5)
+        "html", "htm" -> if (isDark) Color(0xFFE64A19) else Color(0xFFFF5722)
+        "css", "scss" -> if (isDark) Color(0xFF0288D1) else Color(0xFF29B6F6)
+        "json" -> if (isDark) Color(0xFFFFB300) else Color(0xFFFFCA28)
+        "xml" -> if (isDark) Color(0xFFFF8F00) else Color(0xFFFFB300)
+        "yaml", "yml" -> if (isDark) Color(0xFFF57F17) else Color(0xFFFFEE58)
+        "c", "cpp", "h", "hpp" -> if (isDark) Color(0xFF0D47A1) else Color(0xFF1976D2)
+        "md" -> if (isDark) Color(0xFF6D4C41) else Color(0xFF8D6E63)
+
+        // Packages - Crimsons & Roses family
+        "apk" -> if (isDark) Color(0xFFB71C1C) else Color(0xFFD32F2F)
+        "apks", "xapk", "apkm", "aab" -> if (isDark) Color(0xFF880E4F) else Color(0xFFC2185B)
+        "obb" -> if (isDark) Color(0xFFAD1457) else Color(0xFFD81B60)
+
+        // Binaries / Runtimes - Deep Browns & Maroons
+        "so" -> if (isDark) Color(0xFF4A148C) else Color(0xFF7B1FA2)
+        "dex" -> if (isDark) Color(0xFF3E2723) else Color(0xFF5D4037)
+        "bin", "exe", "dll" -> if (isDark) Color(0xFF4E342E) else Color(0xFF6D4C41)
+        "jar", "class" -> if (isDark) Color(0xFF5D4037) else Color(0xFF795548)
+
         else -> {
             val hash = abs(ext.hashCode())
             val hue = (hash * 137.50777f) % 360f

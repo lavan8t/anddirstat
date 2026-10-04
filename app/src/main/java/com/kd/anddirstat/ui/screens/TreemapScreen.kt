@@ -82,7 +82,6 @@ fun TreemapScreen(
     showSystemApps: Boolean,
     showFreeSpace: Boolean,
     showHiddenFiles: Boolean,
-    isM3CanvasEnabled: Boolean? = null,
     onZoomChanged: (Boolean) -> Unit = {},
     onResetZoom: () -> Unit,
     onNodeSelected: (CompactNode, String, Offset?) -> Unit,
@@ -101,8 +100,6 @@ fun TreemapScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("anddirstat_prefs", Context.MODE_PRIVATE) }
-    val resolvedM3CanvasEnabled = isM3CanvasEnabled ?: prefs.getBoolean("m3_compose_canvas_rendering", true)
     val haptic = LocalHapticFeedback.current
     val layoutDirection = LocalLayoutDirection.current
     val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
@@ -247,7 +244,6 @@ fun TreemapScreen(
                 resetKey = resetZoomKey,
                 isDark = isDark,
                 pureBlack = pureBlack,
-                isM3CanvasEnabled = resolvedM3CanvasEnabled,
                 onZoomChanged = onZoomChanged,
                 isLandscape = isLandscape,
                 onNodeSelected = onNodeSelected,

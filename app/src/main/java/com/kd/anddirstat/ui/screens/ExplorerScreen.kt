@@ -263,13 +263,34 @@ fun ExplorerView(
                 alpha = if (isPredictiveBackActive) 1f - (predictiveBackProgress * 0.15f) else 1f
             }
     ) {
-        LazyColumn(
-            state = listState,
-            contentPadding = PaddingValues(top = 8.dp, bottom = 116.dp),
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Explorer",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = GoogleSansFlexFontFamily,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(top = 4.dp, bottom = 116.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
             // Starred and Recycle Bin 2-Column Tools Row
             item(key = "virtual_folders_tools_row") {
                 Row(
@@ -404,6 +425,7 @@ fun ExplorerView(
                 )
             }
         }
+    }
 
         // Floating Selection Bar (Rich, expressive, sitting right above bottom navbar)
         AnimatedVisibility(
