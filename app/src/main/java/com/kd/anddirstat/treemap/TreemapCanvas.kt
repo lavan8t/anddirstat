@@ -59,6 +59,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.Shadow
@@ -875,39 +878,45 @@ fun TreemapCanvas(
         }
     }
 
-        // Bottom empty space for nav pill: exact same blurred chromatic aurora + gradient as top appbar
+        // Bottom nav-pill zone: sharp tile extrusion -> progressively blurred copy (alpha-masked) -> fade to bg
         if (!isLandscape && bottomSpaceDp > 0.dp) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(bottomSpaceDp)
-                    .clipToBounds()
-                    .background(canvasBg)
             ) {
                 if (bottomTiles.isNotEmpty()) {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(28.dp)
-                    ) {
+                    val drawColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
                         val curScale = currentScaleState.value
                         val curOff = currentOffsetState.value
                         for (tile in bottomTiles) {
-                            val sLeft = tile.left * curScale + curOff.x
-                            val sW = tile.width * curScale
-                            val tileColor = if (tile.pkgName != null) {
-                                AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
-                            } else {
-                                tile.baseColor
-                            }
                             drawRect(
-                                color = tileColor.copy(alpha = 0.75f),
-                                topLeft = Offset(sLeft, 0f),
-                                size = Size(maxOf(1f, sW), size.height)
+                                color = if (tile.pkgName != null) AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor else tile.baseColor,
+                                topLeft = Offset(tile.left * curScale + curOff.x, 0f),
+                                size = Size(maxOf(1f, tile.width * curScale), size.height)
                             )
                         }
                     }
+                    Canvas(Modifier.fillMaxSize(), onDraw = drawColumns)
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0f to Color.Transparent,
+                                        0.6f to Color.Black.copy(alpha = 0.6f),
+                                        1f to Color.Black
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            }
+                            .blur(28.dp),
+                        onDraw = drawColumns
+                    )
                 }
 
                 Box(
