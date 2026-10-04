@@ -26,10 +26,18 @@ import com.kd.anddirstat.util.FileUtils
 
 class StorageScanner(private val context: Context) {
 
-    // Scaled thread pool matching CPU core count (minimum 4, maximum 8) for high parallel throughput
+    // Scaled thread pool matching CPU core count (minimum 4, maximum 8) with background priority
     private val scanDispatcher = Executors.newFixedThreadPool(
         Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
-    ).asCoroutineDispatcher()
+    ) { runnable ->
+        Thread {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+            runnable.run()
+        }.apply {
+            isDaemon = true
+            name = "scan-worker"
+        }
+    }.asCoroutineDispatcher()
 
     suspend fun scanStorage(
         selectedVolumes: List<StorageVolumeInfo> = emptyList(),
@@ -78,17 +86,12 @@ class StorageScanner(private val context: Context) {
         val startTimeMs = System.currentTimeMillis()
         val totalScannedBytes = AtomicLong(0L)
         val scannedFilesCount = AtomicInteger(0)
+        val etaEstimator = ScanEtaEstimator()
+        etaEstimator.start(startTimeMs)
 
         fun updateProgress(phase: String, detail: String) {
-            val elapsedMs = System.currentTimeMillis() - startTimeMs
             val bytes = totalScannedBytes.get()
-            val etaStr = if (elapsedMs > 600 && bytes > 1024 * 1024) {
-                val bytesPerMs = bytes.toDouble() / elapsedMs.toDouble()
-                val remainingBytes = maxOf(0L, targetUsedBytes - bytes)
-                val etaSec = (remainingBytes / (bytesPerMs * 1000.0)).toInt()
-                if (etaSec in 1..3600) " (~${etaSec}s left)" else ""
-            } else ""
-
+            val etaStr = etaEstimator.update(bytes, targetUsedBytes)
             val pct = if (targetUsedBytes > 0) ((bytes.toDouble() / targetUsedBytes.toDouble()) * 100.0).toInt().coerceIn(0, 99) else 0
             onProgress?.invoke("$phase$etaStr", detail, pct, 100)
         }
