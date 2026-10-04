@@ -6,11 +6,9 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +24,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -48,11 +47,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.kd.anddirstat.model.AppDestinations
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.util.FileUtils
@@ -329,7 +331,10 @@ fun TreemapNavPill(
     onClearStaged: () -> Unit = {},
     selectedTreeNodes: Map<CompactNode, String> = emptyMap(),
     onClearSelection: () -> Unit = {},
-    onDeleteSelected: () -> Unit = {}
+    onDeleteSelected: () -> Unit = {},
+    predictiveBackProgress: Float = 0f,
+    isPredictiveBackActive: Boolean = false,
+    predictiveBackTargetDestination: String = AppDestinations.TREE
 ) {
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -552,84 +557,86 @@ fun TreemapNavPill(
                 }
             }
 
-            // Navigation Pill Buttons Row with pure spring specs
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                NAV_ITEMS.forEach { item ->
-                    val isSelected = currentDestination == item.destination
-                    val animBg by animateColorAsState(
-                        targetValue = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-                        label = "pillBg"
-                    )
-                    val animTint by animateColorAsState(
-                        targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-                        label = "pillTint"
-                    )
-                    val iconScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.08f else 1.0f,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-                        label = "iconScale"
-                    )
+            val density = LocalDensity.current
+            val slotWidth = 48.dp
+            val slotHeight = 42.dp
+            val slotSpacing = 4.dp
+            val slotPitchPx = with(density) { (slotWidth + slotSpacing).toPx() }
 
-                    AppTooltip(text = item.label) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .height(42.dp)
-                                .clip(CircleShape)
-                                .background(animBg)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onNavigate(item.destination)
-                                }
-                                .padding(horizontal = if (isSelected) 14.dp else 10.dp)
-                                .animateContentSize(
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMedium
-                                    )
-                                )
-                        ) {
-                            Box(modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale }) {
+            val targetIndex = remember(currentDestination) {
+                NavPillHelper.getDestinationIndex(currentDestination)
+            }
+            val backTargetIndex = remember(predictiveBackTargetDestination) {
+                NavPillHelper.getDestinationIndex(predictiveBackTargetDestination)
+            }
+
+            val effectiveTargetIndex = remember(targetIndex, backTargetIndex, predictiveBackProgress, isPredictiveBackActive) {
+                NavPillHelper.calculateEffectiveIndex(
+                    currentIndex = targetIndex,
+                    targetIndex = backTargetIndex,
+                    predictiveBackProgress = predictiveBackProgress,
+                    isPredictiveBackActive = isPredictiveBackActive
+                )
+            }
+
+            val animatedIndicatorIndex by animateFloatAsState(
+                targetValue = effectiveTargetIndex,
+                animationSpec = if (isPredictiveBackActive) {
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
+                } else {
+                    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+                },
+                label = "navIndicatorOffset"
+            )
+
+            Box(
+                modifier = Modifier.padding(horizontal = 4.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                // Single sliding fill background indicator
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                x = (animatedIndicatorIndex * slotPitchPx).roundToInt(),
+                                y = 0
+                            )
+                        }
+                        .size(width = slotWidth, height = slotHeight)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                )
+
+                // Fixed-pitch navigation icons
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(slotSpacing),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    NAV_ITEMS.forEachIndexed { index, item ->
+                        val isSelected = currentDestination == item.destination
+                        val animTint by animateColorAsState(
+                            targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                            label = "iconTint"
+                        )
+
+                        AppTooltip(text = item.label) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = slotWidth, height = slotHeight)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onNavigate(item.destination)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
                                 MaterialSymbol(
                                     name = item.icon,
                                     active = isSelected,
                                     size = 24.dp,
                                     tint = animTint
                                 )
-                            }
-                            AnimatedVisibility(
-                                visible = isSelected,
-                                enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) + expandHorizontally(
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMedium
-                                    ),
-                                    expandFrom = Alignment.Start
-                                ),
-                                exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)) + shrinkHorizontally(
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMedium
-                                    ),
-                                    shrinkTowards = Alignment.Start
-                                )
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = item.label,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = animTint,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                }
                             }
                         }
                     }
