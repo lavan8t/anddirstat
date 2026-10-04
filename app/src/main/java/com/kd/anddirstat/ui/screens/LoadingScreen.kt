@@ -1,8 +1,8 @@
 package com.kd.anddirstat.ui.screens
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -123,7 +123,7 @@ fun LoadingScreen(
             AnimatedContent(
                 targetState = phase,
                 transitionSpec = {
-                    fadeIn(tween(200, easing = FastOutSlowInEasing)) togetherWith fadeOut(tween(160, easing = FastOutSlowInEasing))
+                    fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith fadeOut(spring(stiffness = Spring.StiffnessMedium))
                 },
                 label = "PhaseTransition"
             ) { targetPhase ->
@@ -141,7 +141,7 @@ fun LoadingScreen(
             AnimatedContent(
                 targetState = detail,
                 transitionSpec = {
-                    fadeIn(tween(180, easing = FastOutSlowInEasing)) togetherWith fadeOut(tween(140, easing = FastOutSlowInEasing))
+                    fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith fadeOut(spring(stiffness = Spring.StiffnessMedium))
                 },
                 label = "DetailTransition"
             ) { targetDetail ->

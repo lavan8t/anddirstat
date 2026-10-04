@@ -112,6 +112,12 @@ import com.kd.anddirstat.ui.components.DiscoverSearchTopAppBar
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.ui.components.StackedSnackbarHost
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import com.kd.anddirstat.cleanup.CleanupQueueHelper
+import com.kd.anddirstat.cleanup.StagedQueueItem
+import com.kd.anddirstat.ui.components.CleanupQueueReviewSheet
+import com.kd.anddirstat.ui.components.ScanningBanner
 import com.kd.anddirstat.ui.components.TreeDeleteDialog
 import com.kd.anddirstat.ui.components.TreemapNavPill
 import com.kd.anddirstat.ui.components.TreemapNavRail
@@ -198,6 +204,7 @@ fun MainApp() {
         var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
         var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", false)) }
         var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", false)) }
+        var isM3CanvasEnabled by remember { mutableStateOf(prefs.getBoolean("m3_compose_canvas_rendering", true)) }
 
         var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
         var deviceTotalBytes by remember { mutableLongStateOf(0L) }
@@ -223,8 +230,19 @@ fun MainApp() {
         var explorerTargetPath by remember { mutableStateOf<String?>(null) }
         var nodeToDelete by remember { mutableStateOf<Pair<CompactNode, String>?>(null) }
         var isLoading by remember { mutableStateOf(hasStoragePermission && rootNode == null) }
+        var scanJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+        var isBackgroundScanning by remember { mutableStateOf(false) }
+        var scanProgressPercent by remember { mutableStateOf(0) }
         var scanPhase by remember { mutableStateOf("Analyzing storage...") }
         var scanDetail by remember { mutableStateOf("Starting scan...") }
+
+        var stagedQueue by remember { mutableStateOf<Map<CompactNode, StagedQueueItem>>(emptyMap()) }
+        var showCleanupReviewSheet by remember { mutableStateOf(false) }
+        val stagedReclaimableBytes = remember(stagedQueue) {
+            CleanupQueueHelper.calculateTotalReclaimable(stagedQueue.values)
+        }
+        var pillBackProgress by remember { mutableStateOf(0f) }
+        var isPillBackActive by remember { mutableStateOf(false) }
 
         val navController = rememberNavController()
         val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -269,6 +287,7 @@ fun MainApp() {
                     "show_hidden_files" -> updateFilter(hf = prefs.getBoolean("show_hidden_files", true))
                     "show_free_space" -> updateFilter(fs = prefs.getBoolean("show_free_space", true))
                     "show_system_apps" -> updateFilter(sa = prefs.getBoolean("show_system_apps", true))
+                    "m3_compose_canvas_rendering" -> isM3CanvasEnabled = prefs.getBoolean("m3_compose_canvas_rendering", true)
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -293,17 +312,28 @@ fun MainApp() {
             if (!hasStoragePermission || (volumesToScan.isEmpty() && !effectiveScanApps)) return
             activeVolume = if (volumesToScan.size == 1) volumesToScan.first() else null
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            isLoading = true
+
+            val hasTree = rootNode != null
+            if (hasTree) {
+                isBackgroundScanning = true
+                isLoading = false
+            } else {
+                isLoading = true
+                isBackgroundScanning = false
+            }
+
             scanPhase = "Analyzing storage..."; scanDetail = "Starting scan..."
+            scanProgressPercent = 0
             AppNotifier.updateProgress(context, title = scanPhase, detail = scanDetail, indeterminate = true, type = "scan")
-            scope.launch {
+            scanJob?.cancel()
+            scanJob = scope.launch {
                 showFreeSpace = prefs.getBoolean("show_free_space", true)
                 showSystemApps = prefs.getBoolean("show_system_apps", true)
                 showHiddenFiles = prefs.getBoolean("show_hidden_files", false)
                 showSystemOS = prefs.getBoolean("show_system_os", false)
                 val scanner = StorageScanner(context)
                 val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = effectiveScanApps) { phase, detail, progress, max ->
-                    scanPhase = phase; scanDetail = detail
+                    scanPhase = phase; scanDetail = detail; scanProgressPercent = progress
                     AppNotifier.updateProgress(context, title = phase, detail = detail, progress = progress, max = max, indeterminate = false, type = "scan")
                 }
                 rawScannedNode = scanned; deviceTotalBytes = scanned.size
@@ -323,7 +353,9 @@ fun MainApp() {
                     f
                 }
                 rootNode = filtered
-                selectedNode = null; selectedPath = null; isLoading = false
+                selectedNode = null; selectedPath = null
+                isLoading = false
+                isBackgroundScanning = false
                 AppNotifier.finishActivity(context)
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
 
@@ -508,6 +540,7 @@ fun MainApp() {
                                     showSystemApps = showSystemApps,
                                     showFreeSpace = showFreeSpace,
                                     showHiddenFiles = showHiddenFiles,
+                                    isM3CanvasEnabled = isM3CanvasEnabled,
                                     onZoomChanged = { isTreemapZoomed = it },
                                     onResetZoom = { resetZoomKey++; isTreemapZoomed = false },
                                     onNodeSelected = { node, path, touchOffset -> selectedNode = node; selectedPath = path; selectedTouchOffset = touchOffset ?: lastTouchDown },
@@ -675,6 +708,10 @@ fun MainApp() {
                                     }
                                 },
                                 selectedTreeNodes = selectedTreeNodes,
+                                stagedQueueCount = stagedQueue.size,
+                                stagedReclaimableBytes = stagedReclaimableBytes,
+                                onOpenReviewSheet = { showCleanupReviewSheet = true },
+                                onClearStaged = { stagedQueue = emptyMap() },
                                 onClearSelection = { selectedTreeNodes = emptyMap() },
                                 onDeleteSelected = { showTreeDeleteDialog = true }
                             )
@@ -698,9 +735,16 @@ fun MainApp() {
                                         isLandscape = false,
                                         currentDestination = currentRoute,
                                         onBack = { navController.popBackStack() },
+                                        stagedQueueCount = stagedQueue.size,
+                                        stagedReclaimableBytes = stagedReclaimableBytes,
+                                        onOpenReviewSheet = { showCleanupReviewSheet = true },
+                                        onClearStaged = { stagedQueue = emptyMap() },
                                         selectedTreeNodes = selectedTreeNodes,
                                         onClearSelection = { selectedTreeNodes = emptyMap() },
                                         onDeleteSelected = { showTreeDeleteDialog = true },
+                                        predictiveBackProgress = pillBackProgress,
+                                        isPredictiveBackActive = isPillBackActive,
+                                        predictiveBackTargetDestination = AppDestinations.TREE,
                                         onNavigate = { dest ->
                                             if (dest == currentRoute) {
                                                 if (dest == AppDestinations.TREE) {
@@ -720,9 +764,40 @@ fun MainApp() {
                                     )
                                 }
                             }
+
+                            ScanningBanner(
+                                visible = isBackgroundScanning,
+                                phase = scanPhase,
+                                detail = scanDetail,
+                                progressPercent = scanProgressPercent,
+                                onCancelScan = {
+                                    scanJob?.cancel()
+                                    scanJob = null
+                                    isBackgroundScanning = false
+                                    AppNotifier.finishActivity(context)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .statusBarsPadding()
+                            )
                         }
                     }
                 }
+            }
+
+            if (showCleanupReviewSheet) {
+                CleanupQueueReviewSheet(
+                    stagedItems = stagedQueue.values.toList(),
+                    onUnstageItem = { item -> stagedQueue = stagedQueue - item.node },
+                    onClearAll = { stagedQueue = emptyMap() },
+                    onCommitCleanup = { _ ->
+                        showCleanupReviewSheet = false
+                        val nodesToDelete = stagedQueue.keys.toSet()
+                        removeDeletedNodes(nodesToDelete)
+                        stagedQueue = emptyMap()
+                    },
+                    onDismiss = { showCleanupReviewSheet = false }
+                )
             }
 
 
@@ -908,12 +983,40 @@ fun MainApp() {
                                        )
                                    )
                         ) {
+                            var swipeOffset by remember(activePopupNode) { mutableStateOf(Offset.Zero) }
+                            val dismissThreshold = with(density) { 56.dp.toPx() }
+
                             Surface(
                                 shape = RoundedCornerShape(22.dp),
                                 color = Color(0xFF14161F),
                                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
                                 shadowElevation = 10.dp,
-                                modifier = Modifier.widthIn(min = 250.dp, max = 280.dp)
+                                modifier = Modifier
+                                    .widthIn(min = 250.dp, max = 280.dp)
+                                    .offset { IntOffset(swipeOffset.x.roundToInt(), swipeOffset.y.roundToInt()) }
+                                    .graphicsLayer {
+                                        val dist = kotlin.math.sqrt(swipeOffset.x * swipeOffset.x + swipeOffset.y * swipeOffset.y)
+                                        alpha = (1f - dist / (dismissThreshold * 2.5f)).coerceIn(0.2f, 1f)
+                                    }
+                                    .pointerInput(activePopupNode) {
+                                        detectDragGestures(
+                                            onDragEnd = {
+                                                val dist = kotlin.math.sqrt(swipeOffset.x * swipeOffset.x + swipeOffset.y * swipeOffset.y)
+                                                if (dist > dismissThreshold) {
+                                                    selectedNode = null
+                                                    selectedPath = null
+                                                    selectedTouchOffset = null
+                                                }
+                                                swipeOffset = Offset.Zero
+                                            },
+                                            onDragCancel = {
+                                                swipeOffset = Offset.Zero
+                                            }
+                                        ) { change, dragAmount ->
+                                            change.consume()
+                                            swipeOffset += dragAmount
+                                        }
+                                    }
                             ) {
                             Box(
                                 modifier = Modifier
@@ -1034,20 +1137,50 @@ fun MainApp() {
                                             }
                                         }
 
-                                        IconButton(
-                                            onClick = {
-                                                selectedNode = null
-                                                selectedPath = null
-                                                selectedTouchOffset = null
-                                            },
-                                            modifier = Modifier.size(32.dp)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            MaterialSymbol(
-                                                name = "close",
-                                                active = true,
-                                                size = 18.dp,
-                                                tint = Color.White.copy(alpha = 0.85f)
-                                            )
+                                            val isStaged = stagedQueue.containsKey(node)
+                                            IconButton(
+                                                onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    stagedQueue = CleanupQueueHelper.toggleItem(
+                                                        stagedQueue,
+                                                        StagedQueueItem(
+                                                            node = node,
+                                                            path = path,
+                                                            reclaimableBytes = node.size,
+                                                            isApp = isApp,
+                                                            pkgName = pkgName
+                                                        )
+                                                    )
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = if (isStaged) "check_box" else "add_to_photos",
+                                                    active = isStaged,
+                                                    size = 18.dp,
+                                                    tint = if (isStaged) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.85f)
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    selectedNode = null
+                                                    selectedPath = null
+                                                    selectedTouchOffset = null
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                MaterialSymbol(
+                                                    name = "close",
+                                                    active = true,
+                                                    size = 18.dp,
+                                                    tint = Color.White.copy(alpha = 0.85f)
+                                                )
+                                            }
                                         }
                                     }
 
