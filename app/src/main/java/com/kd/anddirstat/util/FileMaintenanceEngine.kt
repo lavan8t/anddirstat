@@ -1,6 +1,7 @@
 package com.kd.anddirstat.util
 
 import android.content.Context
+import com.kd.anddirstat.cleanup.DeletionSafetyGuard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -24,10 +25,17 @@ object FileMaintenanceEngine {
             AppNotifier.notify("Cannot delete starred items. Unstar them first.")
             return@withContext BatchResult(0, starred.size)
         }
+        val (safeFiles, blockedByGuard) = unstarred.partition { file ->
+            DeletionSafetyGuard.isDeletionAllowed(null, file.absolutePath, context)
+        }
+        if (safeFiles.isEmpty() && blockedByGuard.isNotEmpty()) {
+            AppNotifier.notify("Deletion blocked: Protected system paths selected.")
+            return@withContext BatchResult(0, starred.size)
+        }
 
         var deletedCount = 0
-        val total = unstarred.size
-        unstarred.forEachIndexed { index, file ->
+        val total = safeFiles.size
+        safeFiles.forEachIndexed { index, file ->
             onProgress(index + 1, total, file.name)
             try {
                 val fLen = file.length()
@@ -60,15 +68,22 @@ object FileMaintenanceEngine {
             AppNotifier.notify("Cannot delete starred files. Unstar them manually first.")
             return@withContext 0
         }
-        val allAlreadyTrashed = unstarredItems.all { (node, path) ->
+        val (safeItems, blockedByGuard) = unstarredItems.partition { (node, path) ->
+            DeletionSafetyGuard.isDeletionAllowed(node, path, context)
+        }
+        if (safeItems.isEmpty() && blockedByGuard.isNotEmpty()) {
+            AppNotifier.notify("Deletion blocked: Protected system paths selected.")
+            return@withContext 0
+        }
+        val allAlreadyTrashed = safeItems.all { (node, path) ->
             node.name.startsWith(".trashed") || path.contains(".trashed") || path.contains("[Recycle Bin]")
         }
         val isTrash = !allAlreadyTrashed
         var processedCount = 0
         val packagesToUninstall = mutableListOf<String>()
 
-        unstarredItems.forEachIndexed { index, (node, path) ->
-            onProgress(index + 1, unstarredItems.size, node.name, isTrash)
+        safeItems.forEachIndexed { index, (node, path) ->
+            onProgress(index + 1, safeItems.size, node.name, isTrash)
             val pkg = FileUtils.extractPackageName(node, path, context)
             if (pkg != null) {
                 packagesToUninstall.add(pkg)
