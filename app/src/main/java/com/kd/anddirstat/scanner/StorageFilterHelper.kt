@@ -6,6 +6,67 @@ import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.treemap.getNodeColor
 import com.kd.anddirstat.util.FileUtils
 
+private val VIDEO_EXTENSIONS = setOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".ts", ".wmv", ".m4v")
+private val AUDIO_EXTENSIONS = setOf(".mp3", ".flac", ".wav", ".m4a", ".ogg", ".aac", ".opus", ".wma", ".mid")
+private val IMAGE_EXTENSIONS = setOf(".jpg", ".jpeg", ".png", ".webp", ".heic", ".raw", ".svg", ".gif", ".bmp", ".ico")
+private val PACKAGE_EXTENSIONS = setOf(".apk", ".apks", ".xapk", ".apkm", ".obb", ".aab")
+private val DOCUMENT_EXTENSIONS = setOf(".pdf", ".doc", ".docx", ".txt", ".xlsx", ".xls", ".ppt", ".pptx", ".csv", ".epub")
+private val ARCHIVE_EXTENSIONS = setOf(".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso")
+
+private const val RECYCLE_BIN_MARKER = "[Recycle Bin]"
+
+private class DuplicateCandidate(val node: CompactNode, private val parentPath: String) {
+    private var cachedPath: String? = null
+
+    fun path(): String {
+        var known = cachedPath
+        if (known == null) {
+            known = if (parentPath.isEmpty()) node.name else "$parentPath/${node.name}"
+            cachedPath = known
+        }
+        return known
+    }
+
+    fun toEntry(): TopFileEntry = TopFileEntry(node, path())
+}
+
+// Replaces the "size_ext" / "name_size" string keys. A Long always renders as digits only, so the
+// split point is unambiguous and distinct (size, text) pairs can never collide the way strings could.
+private data class DuplicateKey(val size: Long, val text: String)
+
+private fun appendDuplicateGroups(
+    groups: Map<DuplicateKey, List<DuplicateCandidate>>,
+    out: MutableList<TopFileEntry>,
+    seen: MutableSet<String>
+) {
+    for (group in groups.values) {
+        if (group.size > 1) {
+            for (candidate in group) {
+                if (seen.add(candidate.path())) out.add(candidate.toEntry())
+            }
+        }
+    }
+}
+
+// Identical output to s.filter { it.isDigit() || it == '.' }, but skips the StringBuilder when the
+// rejected characters are only a trailing unit suffix, which is the usual "> 100MB" shape.
+private fun numericChars(s: String): String {
+    var firstRejected = -1
+    for (i in s.indices) {
+        val c = s[i]
+        if (!c.isDigit() && c != '.') {
+            firstRejected = i
+            break
+        }
+    }
+    if (firstRejected < 0) return s
+    for (i in (firstRejected + 1) until s.length) {
+        val c = s[i]
+        if (c.isDigit() || c == '.') return s.filter { it.isDigit() || it == '.' }
+    }
+    return s.substring(0, firstRejected)
+}
+
 object StorageFilterHelper {
 
     fun filterStorageTree(
@@ -150,6 +211,8 @@ object StorageFilterHelper {
         collect(rootNode)
 
         return statsMap.map { (ext, pair) ->
+            // getNodeColor() keys off the name and size only, so one throwaway node per statistic
+            // is cheaper than duplicating its colour table.
             val dummyNode = CompactNode(name = if (ext.startsWith(".")) "file$ext" else ext, isDirectory = false, size = pair.first)
             val color = if (ext == "[trashed]") androidx.compose.ui.graphics.Color(0xFFF43F5E) else getNodeColor(dummyNode)
             val category = when {
@@ -158,12 +221,12 @@ object StorageFilterHelper {
                 ext == "[trashed]" || ext == "[Recycle Bin]" || ext == ".trashed" || ext == "Recycle Bin" -> "Recycle Bin"
                 ext == "Cache" -> "App Cache"
                 ext == "Data" -> "App Data"
-                ext in listOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".ts", ".wmv", ".m4v") -> "Video"
-                ext in listOf(".mp3", ".flac", ".wav", ".m4a", ".ogg", ".aac", ".opus", ".wma", ".mid") -> "Audio"
-                ext in listOf(".jpg", ".jpeg", ".png", ".webp", ".heic", ".raw", ".svg", ".gif", ".bmp", ".ico") -> "Image"
-                ext in listOf(".apk", ".apks", ".xapk", ".apkm", ".obb", ".aab") -> "App Package"
-                ext in listOf(".pdf", ".doc", ".docx", ".txt", ".xlsx", ".xls", ".ppt", ".pptx", ".csv", ".epub") -> "Document"
-                ext in listOf(".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso") -> "Archive"
+                ext in VIDEO_EXTENSIONS -> "Video"
+                ext in AUDIO_EXTENSIONS -> "Audio"
+                ext in IMAGE_EXTENSIONS -> "Image"
+                ext in PACKAGE_EXTENSIONS -> "App Package"
+                ext in DOCUMENT_EXTENSIONS -> "Document"
+                ext in ARCHIVE_EXTENSIONS -> "Archive"
                 else -> "Other"
             }
             ExtensionStat(
@@ -178,40 +241,44 @@ object StorageFilterHelper {
 
     fun aggregateTopFiles(rootNode: CompactNode, limit: Int = 30): List<TopFileEntry> {
         val minHeap = java.util.PriorityQueue<TopFileEntry>(limit + 1, compareBy { it.node.size })
-        fun collect(node: CompactNode, currentPath: String) {
-            val name = node.name
-            val lowerName = name.lowercase()
-            val lowerPath = currentPath.lowercase()
 
-            // Skip non-internal-storage elements: Free space, System OS, Recycle Bin, and Apps container
-            if (name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
+        // Prune round: non-internal-storage elements (Free space, System OS, Recycle Bin, the Apps
+        // container) plus the synthetic app split nodes. Same predicates and same case sensitivity as
+        // the original chains; cheapest round, so it runs before any lowercase copy is built.
+        fun isPrunedName(name: String): Boolean =
+            name == "[Free Space]" || name == "[System & OS]" || name == "[Recycle Bin]" ||
                 name.equals("System & OS", ignoreCase = true) || name.equals("[System & OS]", ignoreCase = true) ||
                 name == "Apps & System Packages" || name.startsWith(".trashed") ||
-                currentPath.startsWith("Apps & System Packages") || currentPath.contains("/Apps & System Packages")
-            ) return
-
-            // Skip synthetic app split nodes (App Code, Data, Cache)
-            if (name.startsWith("App Code") || name.startsWith("APK (") ||
+                name.startsWith("App Code") || name.startsWith("APK (") ||
                 name.startsWith("Data (") || name.startsWith("Cache (") ||
                 name.startsWith("External Data (") || name.startsWith("External Media (")
-            ) return
 
-            // Skip Android/data and Android/obb app data folders
-            if (currentPath.contains("Android/data") || currentPath.contains("Android/obb")) return
+        fun isPrunedPath(path: String): Boolean =
+            path.startsWith("Apps & System Packages") || path.contains("/Apps & System Packages") ||
+                path.contains("Android/data") || path.contains("Android/obb")
 
-            // Filter temporary and system runtime files
-            if (lowerName.endsWith(".tmp") || lowerName.endsWith(".temp") ||
+        // Filter round: temporary and system runtime files. These always ran against lowercased
+        // copies, so keep them: lowercase() returns the same instance when nothing changes, and
+        // contains(ignoreCase = true) is a per-character loop that costs roughly twice the whole walk.
+        fun isFilteredName(name: String): Boolean {
+            val lowerName = name.lowercase()
+            return lowerName.endsWith(".tmp") || lowerName.endsWith(".temp") ||
                 lowerName.endsWith(".log") || lowerName.endsWith(".crdownload") ||
                 lowerName.endsWith(".part") || lowerName.endsWith(".cache") ||
                 lowerName.endsWith(".dmp") || lowerName.endsWith(".dump") ||
                 lowerName.endsWith(".trace") || lowerName == ".nomedia" ||
                 lowerName.startsWith(".pending") || lowerName.startsWith(".tmp") ||
-                lowerName == "thumbs.db" || lowerName == ".ds_store" ||
-                lowerPath.contains("/.thumbnails") || lowerPath.contains("/cache/") ||
+                lowerName == "thumbs.db" || lowerName == ".ds_store"
+        }
+
+        fun isFilteredPath(path: String): Boolean {
+            val lowerPath = path.lowercase()
+            return lowerPath.contains("/.thumbnails") || lowerPath.contains("/cache/") ||
                 lowerPath.contains("/.cache/") || lowerPath.contains("/temp/") ||
                 lowerPath.contains("/tmp/")
-            ) return
+        }
 
+        fun collectChildren(node: CompactNode, currentPath: String) {
             if (!node.isDirectory) {
                 if (minHeap.size < limit) {
                     minHeap.offer(TopFileEntry(node, currentPath))
@@ -219,14 +286,27 @@ object StorageFilterHelper {
                     minHeap.poll()
                     minHeap.offer(TopFileEntry(node, currentPath))
                 }
-            } else {
-                node.children?.forEach { child ->
-                    val childPath = if (currentPath == "Device Storage") child.name else "$currentPath/${child.name}"
-                    collect(child, childPath)
-                }
+                return
+            }
+            val children = node.children ?: return
+            for (index in children.indices) {
+                val child = children[index]
+                val childName = child.name
+                // Name-rejected children are dropped before their path String is built.
+                if (isPrunedName(childName)) continue
+                val childPath = if (currentPath == "Device Storage") childName else "$currentPath/$childName"
+                if (isPrunedPath(childPath)) continue
+                if (isFilteredName(childName) || isFilteredPath(childPath)) continue
+                collectChildren(child, childPath)
             }
         }
-        collect(rootNode, rootNode.name)
+
+        val rootPath = rootNode.name
+        if (!isPrunedName(rootPath) && !isPrunedPath(rootPath) &&
+            !isFilteredName(rootPath) && !isFilteredPath(rootPath)
+        ) {
+            collectChildren(rootNode, rootPath)
+        }
         val result = ArrayList<TopFileEntry>(minHeap.size)
         while (minHeap.isNotEmpty()) {
             result.add(minHeap.poll()!!)
@@ -267,67 +347,76 @@ object StorageFilterHelper {
     }
 
     fun findDuplicates(rootNode: CompactNode, limit: Int = 200): List<TopFileEntry> {
-        val allFiles = mutableListOf<TopFileEntry>()
-        fun traverse(node: CompactNode, currentPath: String) {
-            val path = if (currentPath.isEmpty()) node.name else "$currentPath/${node.name}"
+        val candidates = ArrayList<DuplicateCandidate>()
+
+        // The marker contains no '/', so it can never straddle the "/" that join() inserts: testing
+        // the parent path and the node name separately matches searching the joined path, and the
+        // parent half is shared by every sibling.
+        fun traverse(node: CompactNode, parentPath: String, parentHasRecycleBin: Boolean) {
+            val name = node.name
             if (!node.isDirectory) {
-                if (node.size > 0 && !node.name.startsWith(".trashed") && !path.contains("[Recycle Bin]")) {
-                    allFiles.add(TopFileEntry(node, path))
+                if (node.size > 0L && !name.startsWith(".trashed") &&
+                    !parentHasRecycleBin && !name.contains(RECYCLE_BIN_MARKER)
+                ) {
+                    candidates.add(DuplicateCandidate(node, parentPath))
                 }
-            } else {
-                node.children?.forEach { traverse(it, path) }
+                return
+            }
+            val children = node.children ?: return
+            val path = if (parentPath.isEmpty()) name else "$parentPath/$name"
+            val childParentHasRecycleBin = parentHasRecycleBin || name.contains(RECYCLE_BIN_MARKER)
+            for (index in children.indices) {
+                traverse(children[index], path, childParentHasRecycleBin)
             }
         }
-        traverse(rootNode, "")
+        traverse(rootNode, "", false)
 
         val duplicateList = mutableListOf<TopFileEntry>()
         val seen = mutableSetOf<String>()
 
         // 1. Match files by exact byte size (>= 10KB) with same extension
-        val bySizeAndExt = allFiles.filter { it.node.size >= 10240L }
-            .groupBy { "${it.node.size}_${it.node.name.substringAfterLast('.', "").lowercase()}" }
-
-        for ((_, group) in bySizeAndExt) {
-            if (group.size > 1) {
-                for (entry in group) {
-                    if (seen.add(entry.path)) {
-                        duplicateList.add(entry)
-                    }
-                }
-            }
+        val bySizeAndExt = linkedMapOf<DuplicateKey, MutableList<DuplicateCandidate>>()
+        for (index in candidates.indices) {
+            val candidate = candidates[index]
+            val node = candidate.node
+            if (node.size < 10240L) continue
+            val key = DuplicateKey(node.size, node.name.substringAfterLast('.', "").lowercase())
+            bySizeAndExt.getOrPut(key) { mutableListOf() }.add(candidate)
         }
+        appendDuplicateGroups(bySizeAndExt, duplicateList, seen)
 
-        // 2. Match files by exact name and size for smaller files
-        val byExactNameAndSize = allFiles.groupBy { "${it.node.name.lowercase()}_${it.node.size}" }
-        for ((_, group) in byExactNameAndSize) {
-            if (group.size > 1) {
-                for (entry in group) {
-                    if (seen.add(entry.path)) {
-                        duplicateList.add(entry)
-                    }
-                }
-            }
+        // 2. Match files by exact name and size for every file, including those matched above
+        val byExactNameAndSize = linkedMapOf<DuplicateKey, MutableList<DuplicateCandidate>>()
+        for (candidate in candidates) {
+            val node = candidate.node
+            val key = DuplicateKey(node.size, node.name.lowercase())
+            byExactNameAndSize.getOrPut(key) { mutableListOf() }.add(candidate)
         }
+        appendDuplicateGroups(byExactNameAndSize, duplicateList, seen)
 
         return duplicateList.sortedByDescending { it.node.size }.take(limit)
     }
 
     fun filterByPreset(rootNode: CompactNode, preset: String, context: android.content.Context? = null): List<TopFileEntry> {
-        val allFiles = aggregateTopFiles(rootNode, limit = 500)
+        // Only the branches below read it; "Screenshots" and "Duplicates" walk the tree themselves.
+        fun topFiles() = aggregateTopFiles(rootNode, limit = 500)
         return when (preset) {
             "Starred" -> if (context != null) {
+                val allFiles = topFiles()
                 val starred = com.kd.anddirstat.util.FavoritesManager.getStarredPaths(context)
                 allFiles.filter { starred.contains(it.path) || com.kd.anddirstat.util.FavoritesManager.isStarred(context, it.path) }
             } else emptyList()
-            "> 1 GB" -> allFiles.filter { it.node.size >= 1024L * 1024L * 1024L }
+            "> 1 GB" -> topFiles().filter { it.node.size >= 1024L * 1024L * 1024L }
             "Screenshots" -> getScreenshots(rootNode)
             "Duplicates" -> findDuplicates(rootNode)
-            "Old Downloads" -> allFiles.filter { it.path.contains("Download", ignoreCase = true) }
-            "APKs" -> allFiles.filter {
-                val n = it.node.name.lowercase()
-                n.endsWith(".apk") || n.endsWith(".xapk") || n.endsWith(".apks") || n.endsWith(".apkm") || n.startsWith("app code")
+            "Old Downloads" -> topFiles().filter { it.path.contains("Download", ignoreCase = true) }
+            "APKs" -> topFiles().filter {
+                val n = it.node.name
+                n.endsWith(".apk", ignoreCase = true) || n.endsWith(".xapk", ignoreCase = true) ||
+                    n.endsWith(".apks", ignoreCase = true) || n.endsWith(".apkm", ignoreCase = true) ||
+                    n.startsWith("App Code", ignoreCase = true)
             }
-            else -> allFiles
+            else -> topFiles()
         }
     }
 
@@ -342,6 +431,7 @@ object StorageFilterHelper {
         val allFiles = aggregateTopFiles(rootNode, limit = 1000)
 
         // Check size threshold query: e.g. "> 100MB", "> 1GB", "> 500M"
+        // Both the threshold branch and the name branch below read allFiles, so the walk stays.
         if (query.startsWith(">") || query.startsWith("<")) {
             val isGreater = query.startsWith(">")
             val numStr = query.substring(1).trim().lowercase()
@@ -351,7 +441,7 @@ object StorageFilterHelper {
                 numStr.endsWith("kb") || numStr.endsWith("k") -> 1024L
                 else -> 1L
             }
-            val numPart = numStr.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+            val numPart = numericChars(numStr).toDoubleOrNull() ?: 0.0
             val targetBytes = (numPart * multiplier).toLong()
             return if (isGreater) {
                 allFiles.filter { it.node.size >= targetBytes }
