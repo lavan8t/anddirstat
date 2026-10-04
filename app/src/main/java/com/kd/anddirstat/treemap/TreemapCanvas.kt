@@ -58,15 +58,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.blur.BlurRadiusSpec
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.Shadow
@@ -96,6 +96,32 @@ import kotlin.math.abs
 
 private val CanvasBgColor = Color(0xFF08090E)
 private val SelectionBorderColor = Color.White
+
+private const val BOTTOM_BLUR_RADIUS_DP = 30f
+
+/**
+ * Bottom fade blur, tiered by platform capability.
+ *
+ * API 33+ gets a true progressive blur: radius ramps 0 -> [BOTTOM_BLUR_RADIUS_DP] top to
+ * bottom, so the extrusion stays sharp where it meets the treemap and softens as it descends
+ * behind the nav pill. API 31-32 only support a uniform radius, so it gets a flat blur.
+ * Below 31 RenderEffect is unavailable and the modifier is a silent no-op, so we skip it
+ * entirely rather than stacking an unblurred duplicate over the sharp copy.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun progressiveBottomBlur(): Modifier = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+        Modifier.blur(
+            BlurRadiusSpec.verticalGradient(
+                startRadius = 0.dp,
+                endRadius = BOTTOM_BLUR_RADIUS_DP.dp
+            )
+        )
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        Modifier.blur(BOTTOM_BLUR_RADIUS_DP.dp)
+    else -> Modifier
+}
 private const val ICON_PREFETCH_BATCH = 8
 
 object TreemapBitmapCache {
@@ -939,7 +965,9 @@ fun TreemapCanvas(
         }
     }
 
-        // Bottom nav-pill zone: sharp tile extrusion -> progressively blurred copy (alpha-masked) -> fade to bg
+        // Bottom nav-pill zone: sharp tile extrusion -> progressively blurred copy -> fade to bg.
+        // The blurred copy is filled with the tiles' cached gradient brushes rather than flat
+        // base colours, because a blur over flat colour blocks is a visual no-op.
         if (!isLandscape && bottomSpaceDp > 0.dp) {
             Box(
                 modifier = Modifier
@@ -959,24 +987,26 @@ fun TreemapCanvas(
                             )
                         }
                     }
+                    // Gradient-filled variant: gives the blur real detail to work with.
+                    val drawGradientColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
+                        val curScale = currentScaleState.value
+                        val curOff = currentOffsetState.value
+                        for (tile in bottomTiles) {
+                            val w = maxOf(1f, tile.width * curScale)
+                            drawRect(
+                                brush = tile.cushionBrush,
+                                topLeft = Offset(tile.left * curScale + curOff.x, 0f),
+                                size = Size(w, size.height)
+                            )
+                        }
+                    }
                     Canvas(Modifier.fillMaxSize(), onDraw = drawColumns)
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0f to Color.Transparent,
-                                        0.6f to Color.Black.copy(alpha = 0.6f),
-                                        1f to Color.Black
-                                    ),
-                                    blendMode = BlendMode.DstIn
-                                )
-                            }
-                            .blur(28.dp),
-                        onDraw = drawColumns
+                            .then(progressiveBottomBlur()),
+                        onDraw = drawGradientColumns
                     )
                 }
 

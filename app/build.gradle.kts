@@ -8,6 +8,7 @@ android {
     compileSdk {
         version = release(37)
     }
+    compileSdkMinor = 1
 
     defaultConfig {
         applicationId = "com.kd.anddirstat"

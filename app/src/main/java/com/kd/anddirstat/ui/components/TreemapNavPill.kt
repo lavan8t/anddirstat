@@ -42,7 +42,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -334,24 +336,24 @@ fun TreemapNavPill(
     // spring (surface-tension snap), exit a non-bouncy one (clean re-absorption).
     // Animatable also cancels toward the new target if selection toggles mid-flight.
     val droplet = remember { Animatable(0f) }
+    var dropletActive by remember { mutableStateOf(false) }
     LaunchedEffect(hasLegacySelection) {
-        if (hasLegacySelection) {
-            droplet.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
+        if (hasLegacySelection) dropletActive = true
+        droplet.animateTo(
+            targetValue = if (hasLegacySelection) 1f else 0f,
+            animationSpec = if (hasLegacySelection) {
+                spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
                     stiffness = Spring.StiffnessMediumLow
                 )
-            )
-        } else {
-            droplet.animateTo(
-                targetValue = 0f,
-                animationSpec = spring(
+            } else {
+                spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessMedium
                 )
-            )
-        }
+            }
+        )
+        if (!hasLegacySelection) dropletActive = false
     }
     val dropletScaleX = 0.05f + 0.95f * droplet.value
     val dropletScaleY = if (droplet.value < 0.72f) {
@@ -443,12 +445,18 @@ fun TreemapNavPill(
                         stiffness = Spring.StiffnessMedium
                     )
                 )
-                .graphicsLayer {
-                    scaleX = dropletScaleX
-                    scaleY = dropletScaleY
-                    alpha = dropletAlpha
-                    transformOrigin = TransformOrigin(0.5f, 0.5f)
-                },
+                .then(
+                    if (dropletActive) {
+                        Modifier.graphicsLayer {
+                            scaleX = dropletScaleX
+                            scaleY = dropletScaleY
+                            alpha = dropletAlpha
+                            transformOrigin = TransformOrigin(0.5f, 0.5f)
+                        }
+                    } else {
+                        Modifier
+                    }
+                ),
             shape = if (hasSelection) RoundedCornerShape(dropletCorner) else CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
             shadowElevation = 0.dp,
