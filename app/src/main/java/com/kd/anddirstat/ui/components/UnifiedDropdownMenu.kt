@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +33,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.util.FileUtils
 import com.kd.anddirstat.util.StorageVolumeInfo
+
+private const val ActionItemCount = 2
+private const val FilterItemCount = 4
+
+@Composable
+private fun FilterToggleIcon(name: String) {
+    val iconColor = LocalContentColor.current
+    MaterialSymbol(name = name, active = true, size = 22.dp, tint = iconColor)
+}
 
 @Composable
 fun UnifiedDropdownMenu(
@@ -52,13 +64,14 @@ fun UnifiedDropdownMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = Modifier.width(260.dp),
-        shape = RoundedCornerShape(16.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 3.dp,
-        shadowElevation = 3.dp
+        modifier = Modifier.width(260.dp)
     ) {
         DropdownMenuItem(
+            onClick = {
+                onDismissRequest()
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onRescanClick()
+            },
             text = {
                 Text(
                     text = "Rescan",
@@ -66,18 +79,20 @@ fun UnifiedDropdownMenu(
                     fontWeight = FontWeight.Medium
                 )
             },
+            shape = MenuDefaults.itemShape(0, ActionItemCount).shape,
             leadingIcon = {
-                MaterialSymbol("refresh", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            },
-            onClick = {
-                onDismissRequest()
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onRescanClick()
+                val iconColor = LocalContentColor.current
+                MaterialSymbol("refresh", active = true, size = 22.dp, tint = iconColor)
             },
             enabled = canRescan
         )
 
         DropdownMenuItem(
+            onClick = {
+                onDismissRequest()
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSettingsClick()
+            },
             text = {
                 Text(
                     text = "Settings",
@@ -85,129 +100,99 @@ fun UnifiedDropdownMenu(
                     fontWeight = FontWeight.Medium
                 )
             },
+            shape = MenuDefaults.itemShape(1, ActionItemCount).shape,
             leadingIcon = {
-                MaterialSymbol("settings", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            },
-            onClick = {
-                onDismissRequest()
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onSettingsClick()
+                val iconColor = LocalContentColor.current
+                MaterialSymbol("settings", active = true, size = 22.dp, tint = iconColor)
             }
         )
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        HorizontalDivider(modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding))
 
-        DropdownMenuItem(
-            text = {
-                Text(
-                    text = "Show OS space",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            leadingIcon = {
-                MaterialSymbol(
-                    name = "tune",
-                    active = true,
-                    size = 22.dp,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = {
-                Checkbox(
-                    checked = showSystemOS,
-                    onCheckedChange = null
-                )
-            },
-            onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onToggleShowSystemOS(!showSystemOS)
-            }
-        )
+        DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+            MenuDefaults.DropdownMenuGroupLabel { Text("Filters") }
+            HorizontalDivider(modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding))
 
-        DropdownMenuItem(
-            text = {
-                Text(
-                    text = "Show system apps",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            leadingIcon = {
-                MaterialSymbol(
-                    name = "android",
-                    active = true,
-                    size = 22.dp,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = {
-                Checkbox(
-                    checked = showSystemApps,
-                    onCheckedChange = null
-                )
-            },
-            onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onToggleShowSystemApps(!showSystemApps)
-            }
-        )
+            DropdownMenuItem(
+                checked = showSystemOS,
+                onCheckedChange = { newValue ->
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onToggleShowSystemOS(newValue)
+                },
+                text = {
+                    Text(
+                        text = "Show OS space",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                shapes = MenuDefaults.itemShape(0, FilterItemCount),
+                leadingIcon = { FilterToggleIcon("tune") },
+                checkedLeadingIcon = { FilterToggleIcon("tune") },
+                trailingContent = {
+                    Checkbox(checked = showSystemOS, onCheckedChange = null)
+                }
+            )
 
-        DropdownMenuItem(
-            text = {
-                Text(
-                    text = "Show free space",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            leadingIcon = {
-                MaterialSymbol(
-                    name = "storage",
-                    active = true,
-                    size = 22.dp,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = {
-                Checkbox(
-                    checked = showFreeSpace,
-                    onCheckedChange = null
-                )
-            },
-            onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onToggleShowFreeSpace(!showFreeSpace)
-            }
-        )
+            DropdownMenuItem(
+                checked = showSystemApps,
+                onCheckedChange = { newValue ->
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onToggleShowSystemApps(newValue)
+                },
+                text = {
+                    Text(
+                        text = "Show system apps",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                shapes = MenuDefaults.itemShape(1, FilterItemCount),
+                leadingIcon = { FilterToggleIcon("android") },
+                checkedLeadingIcon = { FilterToggleIcon("android") },
+                trailingContent = {
+                    Checkbox(checked = showSystemApps, onCheckedChange = null)
+                }
+            )
 
-        DropdownMenuItem(
-            text = {
-                Text(
-                    text = "Show hidden files",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            leadingIcon = {
-                MaterialSymbol(
-                    name = "visibility",
-                    active = true,
-                    size = 22.dp,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = {
-                Checkbox(
-                    checked = showHiddenFiles,
-                    onCheckedChange = null
-                )
-            },
-            onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onToggleShowHiddenFiles(!showHiddenFiles)
-            }
-        )
+            DropdownMenuItem(
+                checked = showFreeSpace,
+                onCheckedChange = { newValue ->
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onToggleShowFreeSpace(newValue)
+                },
+                text = {
+                    Text(
+                        text = "Show free space",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                shapes = MenuDefaults.itemShape(2, FilterItemCount),
+                leadingIcon = { FilterToggleIcon("storage") },
+                checkedLeadingIcon = { FilterToggleIcon("storage") },
+                trailingContent = {
+                    Checkbox(checked = showFreeSpace, onCheckedChange = null)
+                }
+            )
+
+            DropdownMenuItem(
+                checked = showHiddenFiles,
+                onCheckedChange = { newValue ->
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onToggleShowHiddenFiles(newValue)
+                },
+                text = {
+                    Text(
+                        text = "Show hidden files",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                shapes = MenuDefaults.itemShape(3, FilterItemCount),
+                leadingIcon = { FilterToggleIcon("visibility") },
+                checkedLeadingIcon = { FilterToggleIcon("visibility") },
+                trailingContent = {
+                    Checkbox(checked = showHiddenFiles, onCheckedChange = null)
+                }
+            )
+        }
     }
 }
 

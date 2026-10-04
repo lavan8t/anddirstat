@@ -95,7 +95,7 @@ fun AppNavScaffold(
                                 showMenu = true
                             }
                         ) {
-                            MaterialSymbol("more_vert", active = true, size = 22.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            MaterialSymbol("more_vert", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
                         }
                         UnifiedDropdownMenu(
                             expanded = showMenu,
