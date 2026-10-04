@@ -72,6 +72,8 @@ private val NAV_ITEMS = listOf(
     NavItemData("Discover", "search", AppDestinations.DISCOVER)
 )
 
+private val PORTRAIT_NAV_ITEMS = NAV_ITEMS.take(3)
+
 /**
  * Landscape Nameless Navigation Rail with AndDirStat Branded Logo Header.
  */
@@ -404,242 +406,295 @@ fun TreemapNavPill(
         return
     }
 
-    Surface(
-        modifier = modifier.animateContentSize(
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMedium
-            )
-        ),
-        shape = if (hasSelection) RoundedCornerShape(24.dp) else CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shadowElevation = 0.dp,
-        tonalElevation = 6.dp
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        // Left Pill: Treemap, Explorer, Usage
+        Surface(
+            modifier = Modifier.animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ),
+            shape = if (hasSelection) RoundedCornerShape(24.dp) else CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shadowElevation = 0.dp,
+            tonalElevation = 6.dp
         ) {
-            AnimatedVisibility(
-                visible = hasSelection,
-                enter = expandVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
-                exit = shrinkVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeOut(spring(stiffness = Spring.StiffnessMedium))
+            Column(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (hasStaged) {
-                    Row(
-                        modifier = Modifier
-                            .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                AnimatedVisibility(
+                    visible = hasSelection,
+                    enter = expandVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
+                    exit = shrinkVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                ) {
+                    if (hasStaged) {
                         Row(
+                            modifier = Modifier
+                                .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
+                                .fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onClearStaged()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Column {
+                                    Text(
+                                        text = "$stagedQueueCount staged",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = "${FileUtils.formatFileSize(stagedReclaimableBytes, context)} reclaimable",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .height(34.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onClearStaged()
-                                    },
-                                contentAlignment = Alignment.Center
+                                        onOpenReviewSheet()
+                                    }
+                                    .padding(horizontal = 14.dp)
                             ) {
-                                MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
-                            }
-                            Column {
+                                MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "$stagedQueueCount staged",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
-                                )
-                                Text(
-                                    text = "${FileUtils.formatFileSize(stagedReclaimableBytes, context)} reclaimable",
+                                    text = "Review",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
                         }
-
+                    } else if (hasLegacySelection) {
+                        val totalBytes = remember(selectedTreeNodes) { selectedTreeNodes.keys.sumOf { it.size } }
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .height(34.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onOpenReviewSheet()
-                                }
-                                .padding(horizontal = 14.dp)
+                                .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
+                                .fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Review",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onClearSelection()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Column {
+                                    Text(
+                                        text = "${selectedTreeNodes.size} selected",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = FileUtils.formatFileSize(totalBytes, context),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.error)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onDeleteSelected()
+                                    }
+                                    .padding(horizontal = 14.dp)
+                            ) {
+                                MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Delete",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onError
+                                )
+                            }
                         }
                     }
-                } else if (hasLegacySelection) {
-                    val totalBytes = remember(selectedTreeNodes) { selectedTreeNodes.keys.sumOf { it.size } }
-                    Row(
-                        modifier = Modifier
-                            .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onClearSelection()
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
-                            }
-                            Column {
-                                Text(
-                                    text = "${selectedTreeNodes.size} selected",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
-                                )
-                                Text(
-                                    text = FileUtils.formatFileSize(totalBytes, context),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                }
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .height(34.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.error)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onDeleteSelected()
-                                }
-                                .padding(horizontal = 14.dp)
-                        ) {
-                            MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Delete",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onError
+                val density = LocalDensity.current
+                val slotWidth = 48.dp
+                val slotHeight = 42.dp
+                val slotSpacing = 4.dp
+                val slotPitchPx = with(density) { (slotWidth + slotSpacing).toPx() }
+
+                val targetIndex = remember(currentDestination) {
+                    NavPillHelper.getDestinationIndex(currentDestination)
+                }
+                val backTargetIndex = remember(predictiveBackTargetDestination) {
+                    NavPillHelper.getDestinationIndex(predictiveBackTargetDestination)
+                }
+
+                val effectiveTargetIndex = remember(targetIndex, backTargetIndex, predictiveBackProgress, isPredictiveBackActive) {
+                    NavPillHelper.calculateEffectiveIndex(
+                        currentIndex = targetIndex,
+                        targetIndex = backTargetIndex,
+                        predictiveBackProgress = predictiveBackProgress,
+                        isPredictiveBackActive = isPredictiveBackActive
+                    )
+                }
+
+                val animatedIndicatorIndex by animateFloatAsState(
+                    targetValue = if (effectiveTargetIndex >= 0f) effectiveTargetIndex else 0f,
+                    animationSpec = if (isPredictiveBackActive) {
+                        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
+                    } else {
+                        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+                    },
+                    label = "navIndicatorOffset"
+                )
+
+                val indicatorAlpha by animateFloatAsState(
+                    targetValue = if (effectiveTargetIndex >= 0f) 1f else 0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                    label = "navIndicatorAlpha"
+                )
+
+                Box(
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    // Single sliding fill background indicator
+                    Box(
+                        modifier = Modifier
+                            .offset {
+                                IntOffset(
+                                    x = (animatedIndicatorIndex * slotPitchPx).roundToInt(),
+                                    y = 0
+                                )
+                            }
+                            .size(width = slotWidth, height = slotHeight)
+                            .clip(CircleShape)
+                            .graphicsLayer { alpha = indicatorAlpha }
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                    )
+
+                    // Fixed-pitch navigation icons
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(slotSpacing),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PORTRAIT_NAV_ITEMS.forEach { item ->
+                            val isSelected = currentDestination == item.destination
+                            val animTint by animateColorAsState(
+                                targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                                label = "iconTint"
                             )
+
+                            AppTooltip(text = item.label) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = slotWidth, height = slotHeight)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onNavigate(item.destination)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MaterialSymbol(
+                                        name = item.icon,
+                                        active = isSelected,
+                                        size = 24.dp,
+                                        tint = animTint
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
 
-            val density = LocalDensity.current
-            val slotWidth = 48.dp
-            val slotHeight = 42.dp
-            val slotSpacing = 4.dp
-            val slotPitchPx = with(density) { (slotWidth + slotSpacing).toPx() }
+        // Right Pill: Discover
+        val isDiscover = currentDestination == AppDestinations.DISCOVER
+        val discoverBg by animateColorAsState(
+            targetValue = if (isDiscover) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+            label = "discoverBg"
+        )
+        val discoverTint by animateColorAsState(
+            targetValue = if (isDiscover) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+            label = "discoverTint"
+        )
 
-            val targetIndex = remember(currentDestination) {
-                NavPillHelper.getDestinationIndex(currentDestination)
-            }
-            val backTargetIndex = remember(predictiveBackTargetDestination) {
-                NavPillHelper.getDestinationIndex(predictiveBackTargetDestination)
-            }
-
-            val effectiveTargetIndex = remember(targetIndex, backTargetIndex, predictiveBackProgress, isPredictiveBackActive) {
-                NavPillHelper.calculateEffectiveIndex(
-                    currentIndex = targetIndex,
-                    targetIndex = backTargetIndex,
-                    predictiveBackProgress = predictiveBackProgress,
-                    isPredictiveBackActive = isPredictiveBackActive
-                )
-            }
-
-            val animatedIndicatorIndex by animateFloatAsState(
-                targetValue = effectiveTargetIndex,
-                animationSpec = if (isPredictiveBackActive) {
-                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessHigh)
-                } else {
-                    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
-                },
-                label = "navIndicatorOffset"
-            )
-
-            Box(
-                modifier = Modifier.padding(horizontal = 4.dp),
-                contentAlignment = Alignment.CenterStart
+        AppTooltip(text = "Discover") {
+            Surface(
+                shape = CircleShape,
+                color = discoverBg,
+                shadowElevation = 0.dp,
+                tonalElevation = 6.dp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNavigate(AppDestinations.DISCOVER)
+                    }
             ) {
-                // Single sliding fill background indicator
                 Box(
                     modifier = Modifier
-                        .offset {
-                            IntOffset(
-                                x = (animatedIndicatorIndex * slotPitchPx).roundToInt(),
-                                y = 0
-                            )
-                        }
-                        .size(width = slotWidth, height = slotHeight)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                )
-
-                // Fixed-pitch navigation icons
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(slotSpacing),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .size(48.dp, 42.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    NAV_ITEMS.forEachIndexed { index, item ->
-                        val isSelected = currentDestination == item.destination
-                        val animTint by animateColorAsState(
-                            targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-                            label = "iconTint"
-                        )
-
-                        AppTooltip(text = item.label) {
-                            Box(
-                                modifier = Modifier
-                                    .size(width = slotWidth, height = slotHeight)
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onNavigate(item.destination)
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                MaterialSymbol(
-                                    name = item.icon,
-                                    active = isSelected,
-                                    size = 24.dp,
-                                    tint = animTint
-                                )
-                            }
-                        }
-                    }
+                    MaterialSymbol(name = "search", active = isDiscover, size = 22.dp, tint = discoverTint)
                 }
             }
         }

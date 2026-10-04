@@ -12,8 +12,19 @@ class NavPillHelperTest {
         assertEquals(0, NavPillHelper.getDestinationIndex(AppDestinations.TREE))
         assertEquals(1, NavPillHelper.getDestinationIndex(AppDestinations.EXPLORER))
         assertEquals(2, NavPillHelper.getDestinationIndex(AppDestinations.TYPES))
-        assertEquals(3, NavPillHelper.getDestinationIndex(AppDestinations.DISCOVER))
-        assertEquals(0, NavPillHelper.getDestinationIndex("unknown"))
+        assertEquals(-1, NavPillHelper.getDestinationIndex(AppDestinations.DISCOVER))
+        assertEquals(-1, NavPillHelper.getDestinationIndex("unknown"))
+    }
+
+    @Test
+    fun testEffectiveIndexWhenNotInLeftPill() {
+        val effective = NavPillHelper.calculateEffectiveIndex(
+            currentIndex = -1,
+            targetIndex = 0,
+            predictiveBackProgress = 0.5f,
+            isPredictiveBackActive = true
+        )
+        assertEquals(-1.0f, effective, 0.001f)
     }
 
     @Test
@@ -46,6 +57,17 @@ class NavPillHelperTest {
             isPredictiveBackActive = true
         )
         assertEquals(0.0f, completed, 0.001f)
+    }
+
+    @Test
+    fun testEffectiveIndexWhenPredictiveBackTargetNotInLeftPill() {
+        val effective = NavPillHelper.calculateEffectiveIndex(
+            currentIndex = 1,
+            targetIndex = -1,
+            predictiveBackProgress = 0.5f,
+            isPredictiveBackActive = true
+        )
+        assertEquals(1.0f, effective, 0.001f)
     }
 
     @Test

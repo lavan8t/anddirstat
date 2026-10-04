@@ -9,8 +9,7 @@ object NavPillHelper {
             AppDestinations.TREE -> 0
             AppDestinations.EXPLORER -> 1
             AppDestinations.TYPES -> 2
-            AppDestinations.DISCOVER -> 3
-            else -> 0
+            else -> -1
         }
     }
 
@@ -20,7 +19,8 @@ object NavPillHelper {
         predictiveBackProgress: Float = 0f,
         isPredictiveBackActive: Boolean = false
     ): Float {
-        return if (isPredictiveBackActive) {
+        if (currentIndex !in 0..2) return -1f
+        return if (isPredictiveBackActive && targetIndex in 0..2) {
             val clampedProgress = predictiveBackProgress.coerceIn(0f, 1f)
             currentIndex + (targetIndex - currentIndex) * clampedProgress
         } else {
