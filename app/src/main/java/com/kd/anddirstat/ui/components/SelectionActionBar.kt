@@ -1,6 +1,7 @@
 package com.kd.anddirstat.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,14 +22,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.util.FileUtils
 
+/**
+ * Shared selection controls for every selection surface in the app (discover bar,
+ * nav pill, landscape rail). Differences are parameters, never layout forks.
+ *
+ * Set [containerSurface] to false when the host already draws a Surface and the
+ * controls must read as part of that surface rather than a card sitting on it.
+ */
 @Composable
 fun SelectionActionBar(
     selectedCount: Int,
@@ -37,13 +47,20 @@ fun SelectionActionBar(
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    vertical: Boolean = false,
+    showActionLabel: Boolean = true,
     actionLabel: String = "Delete",
     actionIcon: String = "delete",
     clearTooltip: String? = null,
     clearButtonColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     countTextStyle: TextStyle = MaterialTheme.typography.titleMedium,
     sizeTextStyle: TextStyle = MaterialTheme.typography.bodyMedium,
-    actionTextStyle: TextStyle = MaterialTheme.typography.labelLarge
+    actionTextStyle: TextStyle = MaterialTheme.typography.labelLarge,
+    containerSurface: Boolean = true,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    containerShape: Shape = RoundedCornerShape(28.dp),
+    containerShadowElevation: Dp = 3.dp,
+    containerTonalElevation: Dp = 2.dp
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -60,6 +77,7 @@ fun SelectionActionBar(
     } else {
         PaddingValues(horizontal = 18.dp, vertical = 10.dp)
     }
+    val controlGap = if (compact) 6.dp else 8.dp
 
     val clearControl: @Composable () -> Unit = {
         Surface(
@@ -84,68 +102,33 @@ fun SelectionActionBar(
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shadowElevation = 3.dp,
-        tonalElevation = 2.dp,
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
+    val actionButton: @Composable () -> Unit = {
+        Button(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onAction()
+            },
+            shape = actionShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            ),
+            contentPadding = if (showActionLabel) actionPadding else PaddingValues(0.dp),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .height(actionHeight)
+                .then(if (showActionLabel) Modifier else Modifier.size(actionHeight))
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(groupSpacing)
+                horizontalArrangement = Arrangement.spacedBy(actionSpacing)
             ) {
-                if (clearTooltip != null) {
-                    AppTooltip(text = clearTooltip) { clearControl() }
-                } else {
-                    clearControl()
-                }
-                Column {
-                    Text(
-                        text = "$selectedCount selected",
-                        style = countTextStyle,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = FileUtils.formatFileSize(totalBytes, context),
-                        style = sizeTextStyle,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Button(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onAction()
-                },
-                shape = actionShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                ),
-                contentPadding = actionPadding,
-                modifier = Modifier.height(actionHeight)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(actionSpacing)
-                ) {
-                    MaterialSymbol(
-                        name = actionIcon,
-                        active = true,
-                        size = actionIconSize,
-                        tint = MaterialTheme.colorScheme.onError
-                    )
+                MaterialSymbol(
+                    name = actionIcon,
+                    active = true,
+                    size = actionIconSize,
+                    tint = MaterialTheme.colorScheme.onError
+                )
+                if (showActionLabel) {
                     Text(
                         text = actionLabel,
                         style = actionTextStyle,
@@ -155,5 +138,70 @@ fun SelectionActionBar(
                 }
             }
         }
+    }
+
+    val labels: @Composable () -> Unit = {
+        Column(horizontalAlignment = Alignment.Start) {
+            Text(
+                text = "$selectedCount selected",
+                style = countTextStyle,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = FileUtils.formatFileSize(totalBytes, context),
+                style = sizeTextStyle,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    val content: @Composable () -> Unit = {
+        if (vertical) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(controlGap)
+            ) {
+                clearControl()
+                labels()
+                actionButton()
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(groupSpacing)
+                ) {
+                    if (clearTooltip != null) {
+                        AppTooltip(text = clearTooltip) { clearControl() }
+                    } else {
+                        clearControl()
+                    }
+                    labels()
+                }
+                actionButton()
+            }
+        }
+    }
+
+    if (containerSurface) {
+        Surface(
+            shape = containerShape,
+            color = containerColor,
+            shadowElevation = containerShadowElevation,
+            tonalElevation = containerTonalElevation,
+            modifier = modifier.fillMaxWidth()
+        ) {
+            content()
+        }
+    } else {
+        Box(modifier = modifier) { content() }
     }
 }
