@@ -194,7 +194,7 @@ private fun PermissionCardItem(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (isGranted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerHigh,
-        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "perm_card_bg"
     )
 

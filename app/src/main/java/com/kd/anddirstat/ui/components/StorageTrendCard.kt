@@ -73,11 +73,12 @@ fun StorageTrendCard(
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
     val outlineVariant = MaterialTheme.colorScheme.outlineVariant
 
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val animProgress = remember(history) { Animatable(0f) }
     LaunchedEffect(history) {
         animProgress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+            animationSpec = spatialSpec
         )
     }
 
