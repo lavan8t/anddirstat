@@ -1,5 +1,6 @@
 package com.kd.anddirstat.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,9 +11,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -37,6 +40,120 @@ import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Stable equivalent of `sortedBy { java.io.File(path).lastModified() }` (and its descending
+ * form): same values, same ordering for equal timestamps, but each `File`/`lastModified()`
+ * pair is evaluated exactly once per element instead of once per comparison.
+ *
+ * `sortedBy` builds its comparator from the selector, so the JVM's stable sort calls it
+ * ~n log n times - i.e. one stat() syscall per comparison. The keys are identical here, and
+ * because the comparator falls back to the original index, the resulting total order is
+ * exactly what a stable sort of the untouched list produced.
+ */
+private fun List<TopFileEntry>.sortedByLastModified(descending: Boolean): List<TopFileEntry> {
+    if (size < 2) return this
+    val keys = LongArray(size) { index -> java.io.File(this[index].path).lastModified() }
+    val order = (0 until size).sortedWith(
+        Comparator<Int> { a, b ->
+            val byKey = if (descending) keys[b].compareTo(keys[a]) else keys[a].compareTo(keys[b])
+            if (byKey != 0) byKey else a.compareTo(b)
+        }
+    )
+    val sorted = ArrayList<TopFileEntry>(size)
+    for (index in order) sorted.add(this[index])
+    return sorted
+}
+
+/**
+ * The whole Discover search pipeline (tree walk + filtering + sorting). Pure with respect to
+ * the passed-in [rootNode]/[context]; kept out of the composable so it can run on a
+ * background dispatcher.
+ */
+private fun computeDiscoverSearchResults(
+    rootNode: CompactNode,
+    context: Context,
+    searchQuery: String,
+    selectedSearchFilter: String,
+    selectedSortOrder: String
+): List<TopFileEntry> {
+    fun isSystemEntry(entry: TopFileEntry): Boolean {
+        val name = entry.node.name.trim().lowercase().removeSurrounding("[", "]")
+        return name in setOf("system & os", "free space", "recycle bin", "trashed") ||
+                entry.path.contains("[system", ignoreCase = true) ||
+                entry.path.contains("[free space", ignoreCase = true) ||
+                entry.path.contains("[recycle bin", ignoreCase = true)
+    }
+
+    val baseList = if (searchQuery.isNotBlank()) {
+        StorageFilterHelper.searchTree(rootNode, searchQuery).filterNot { isSystemEntry(it) }
+    } else if (selectedSearchFilter != "all") {
+        when (selectedSearchFilter) {
+            "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB", context).filterNot { isSystemEntry(it) }
+            "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads", context).filterNot { isSystemEntry(it) }
+            else -> {
+                val results = mutableListOf<TopFileEntry>()
+                fun collect(node: CompactNode, currentPath: String) {
+                    val fullPath = if (currentPath.isEmpty()) node.name else "$currentPath/${node.name}"
+                    val ext = node.name.substringAfterLast('.', "").lowercase()
+                    if (!node.isDirectory && node.size > 0) {
+                        val matches = when (selectedSearchFilter) {
+                            "video" -> ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v")
+                            "image" -> ext in setOf("jpg", "jpeg", "png", "webp", "heic", "gif", "bmp", "raw", "svg")
+                            "audio" -> ext in setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma")
+                            "doc" -> ext in setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub")
+                            "apk" -> ext in setOf("apk", "xapk", "apks", "aab", "obb") || node.children?.any { it.name.startsWith("App Code") } == true
+                            "archive" -> ext in setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "xz", "bz2")
+                            else -> false
+                        }
+                        if (matches) {
+                            results.add(TopFileEntry(node, fullPath))
+                        }
+                    }
+                    node.children?.forEach { collect(it, fullPath) }
+                }
+                collect(rootNode, "")
+                results.filterNot { isSystemEntry(it) }.sortedByDescending { it.node.size }
+            }
+        }
+    } else {
+        emptyList()
+    }
+
+    return if (searchQuery.isNotBlank() && selectedSearchFilter != "all") {
+        val videoExts = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v", "mpg", "mpeg", "vob")
+        val imageExts = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "raw", "svg", "gif", "bmp", "ico", "dng", "cr2", "nef")
+        val audioExts = setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid", "midi", "alac", "amr")
+        val docExts = setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub", "mobi", "log", "rtf", "html", "htm", "json", "xml", "md", "yaml", "yml")
+        val apkExts = setOf("apk", "xapk", "apks", "aab", "obb")
+        val archiveExts = setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz")
+
+        baseList.filter { entry ->
+            val ext = entry.node.name.substringAfterLast('.', "").lowercase()
+            when (selectedSearchFilter) {
+                "video" -> ext in videoExts
+                "image" -> ext in imageExts
+                "audio" -> ext in audioExts
+                "doc" -> ext in docExts
+                "apk" -> ext in apkExts || entry.node.children?.any { it.name.startsWith("App Code") } == true
+                "archive" -> ext in archiveExts
+                "large" -> entry.node.size >= 1024L * 1024L * 1024L
+                "old" -> entry.path.contains("/download", ignoreCase = true)
+                else -> true
+            }
+        }
+    } else {
+        baseList
+    }.let { list ->
+        when (selectedSortOrder) {
+            "largest" -> list.sortedByDescending { it.node.size }
+            "smallest" -> list.sortedBy { it.node.size }
+            "oldest" -> list.sortedByLastModified(descending = false)
+            "newest" -> list.sortedByLastModified(descending = true)
+            else -> list
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,8 +197,20 @@ fun DiscoverView(
     var selectedSearchFilter by remember { mutableStateOf("all") }
     var selectedSortOrder by remember { mutableStateOf("largest") }
 
-    var recentSearches by remember(searchQuery) {
-        mutableStateOf(FavoritesManager.getRecentSearches(context))
+    // Recent searches: the host saves every new query while the user types (see MainActivity)
+    // and "Clear" wipes them below, so the persisted list has to be re-read - but never on the
+    // main thread and never per keystroke. The chips are only rendered while searchQuery is
+    // blank, so reading on that transition (and on the initial composition) yields exactly the
+    // list the chips need; a non-blank query cannot change what is on screen.
+    // recentSearchesVersion is bumped on clear so a read already in flight is cancelled instead
+    // of resurrecting the cleared entries.
+    var recentSearches by remember { mutableStateOf(emptyList<String>()) }
+    val recentSearchesVersion = remember { mutableIntStateOf(0) }
+    LaunchedEffect(searchQuery, recentSearchesVersion) {
+        if (searchQuery.isNotBlank()) return@LaunchedEffect
+        recentSearches = withContext(Dispatchers.IO) {
+            FavoritesManager.getRecentSearches(context)
+        }
     }
 
     val appsContainer = rootNode.children?.firstOrNull { it.name == "Apps & System Packages" }
@@ -103,82 +232,19 @@ fun DiscoverView(
         largestEntries.take(5)
     }
 
-    val searchResults = remember(rootNode, searchQuery, selectedSearchFilter, selectedSortOrder) {
-        fun isSystemEntry(entry: TopFileEntry): Boolean {
-            val name = entry.node.name.trim().lowercase().removeSurrounding("[", "]")
-            return name in setOf("system & os", "free space", "recycle bin", "trashed") ||
-                    entry.path.contains("[system", ignoreCase = true) ||
-                    entry.path.contains("[free space", ignoreCase = true) ||
-                    entry.path.contains("[recycle bin", ignoreCase = true)
-        }
-
-        val baseList = if (searchQuery.isNotBlank()) {
-            StorageFilterHelper.searchTree(rootNode, searchQuery).filterNot { isSystemEntry(it) }
-        } else if (selectedSearchFilter != "all") {
-            when (selectedSearchFilter) {
-                "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB", context).filterNot { isSystemEntry(it) }
-                "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads", context).filterNot { isSystemEntry(it) }
-                else -> {
-                    val results = mutableListOf<TopFileEntry>()
-                    fun collect(node: CompactNode, currentPath: String) {
-                        val fullPath = if (currentPath.isEmpty()) node.name else "$currentPath/${node.name}"
-                        val ext = node.name.substringAfterLast('.', "").lowercase()
-                        if (!node.isDirectory && node.size > 0) {
-                            val matches = when (selectedSearchFilter) {
-                                "video" -> ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v")
-                                "image" -> ext in setOf("jpg", "jpeg", "png", "webp", "heic", "gif", "bmp", "raw", "svg")
-                                "audio" -> ext in setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma")
-                                "doc" -> ext in setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub")
-                                "apk" -> ext in setOf("apk", "xapk", "apks", "aab", "obb") || node.children?.any { it.name.startsWith("App Code") } == true
-                                "archive" -> ext in setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "xz", "bz2")
-                                else -> false
-                            }
-                            if (matches) {
-                                results.add(TopFileEntry(node, fullPath))
-                            }
-                        }
-                        node.children?.forEach { collect(it, fullPath) }
-                    }
-                    collect(rootNode, "")
-                    results.filterNot { isSystemEntry(it) }.sortedByDescending { it.node.size }
-                }
-            }
-        } else {
-            emptyList()
-        }
-
-        if (searchQuery.isNotBlank() && selectedSearchFilter != "all") {
-            val videoExts = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v", "mpg", "mpeg", "vob")
-            val imageExts = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "raw", "svg", "gif", "bmp", "ico", "dng", "cr2", "nef")
-            val audioExts = setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid", "midi", "alac", "amr")
-            val docExts = setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub", "mobi", "log", "rtf", "html", "htm", "json", "xml", "md", "yaml", "yml")
-            val apkExts = setOf("apk", "xapk", "apks", "aab", "obb")
-            val archiveExts = setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz")
-
-            baseList.filter { entry ->
-                val ext = entry.node.name.substringAfterLast('.', "").lowercase()
-                when (selectedSearchFilter) {
-                    "video" -> ext in videoExts
-                    "image" -> ext in imageExts
-                    "audio" -> ext in audioExts
-                    "doc" -> ext in docExts
-                    "apk" -> ext in apkExts || entry.node.children?.any { it.name.startsWith("App Code") } == true
-                    "archive" -> ext in archiveExts
-                    "large" -> entry.node.size >= 1024L * 1024L * 1024L
-                    "old" -> entry.path.contains("/download", ignoreCase = true)
-                    else -> true
-                }
-            }
-        } else {
-            baseList
-        }.let { list ->
-            when (selectedSortOrder) {
-                "largest" -> list.sortedByDescending { it.node.size }
-                "smallest" -> list.sortedBy { it.node.size }
-                "oldest" -> list.sortedBy { java.io.File(it.path).lastModified() }
-                "newest" -> list.sortedByDescending { java.io.File(it.path).lastModified() }
-                else -> list
-            }
+    // The search pipeline (full tree walk + filtering + the lastModified() sort, i.e. one
+    // stat() per result) runs on Dispatchers.Default instead of during composition. Keys are
+    // unchanged; produceState keeps the previous list visible while the new one is computed
+    // and drops the result if a newer key arrives first, so the last keystroke always wins.
+    // (produceState tops out at three keys, so the two chip selections share one.)
+    val searchResults by produceState(
+        initialValue = emptyList<TopFileEntry>(),
+        key1 = rootNode,
+        key2 = searchQuery,
+        key3 = selectedSearchFilter to selectedSortOrder
+    ) {
+        value = withContext(Dispatchers.Default) {
+            computeDiscoverSearchResults(rootNode, context, searchQuery, selectedSearchFilter, selectedSortOrder)
         }
     }
 
@@ -204,6 +270,7 @@ fun DiscoverView(
                     onClearRecentSearches = {
                         FavoritesManager.clearRecentSearches(context)
                         recentSearches = emptyList()
+                        recentSearchesVersion.value += 1
                     },
                     onToggleSelect = { entry ->
                         selectedEntries = if (selectedEntries.contains(entry)) selectedEntries - entry else selectedEntries + entry

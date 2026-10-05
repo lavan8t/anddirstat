@@ -68,6 +68,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -102,6 +103,39 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+
+/**
+ * Exactly `FavoritesManager.isStarred(context, path)` semantics, but against a starred set that
+ * was read once instead of once per node.
+ *
+ * `isStarred` matches the exact path *or* any ancestor prefix (`path.startsWith("$it/")`), so a
+ * plain `set.contains(path)` is NOT equivalent - starring a folder marks every descendant. The
+ * "$it/" match holds exactly when `it` is a prefix of [path] that ends on a '/' boundary, which
+ * is what is tested here (including index 0, i.e. a stored empty entry + a path starting with '/').
+ */
+private fun isStarredIn(starredPaths: Set<String>, path: String): Boolean {
+    if (path.isBlank()) return false
+    if (starredPaths.contains(path)) return true
+    var slash = path.indexOf('/')
+    while (slash >= 0) {
+        if (starredPaths.contains(path.substring(0, slash))) return true
+        slash = path.indexOf('/', slash + 1)
+    }
+    return false
+}
+
+private fun collectStarredEntries(root: CompactNode, starredPaths: Set<String>): List<TopFileEntry> {
+    val list = mutableListOf<TopFileEntry>()
+    fun collect(node: CompactNode, path: String) {
+        val fullPath = if (path.isEmpty()) node.name else "$path/${node.name}"
+        if (isStarredIn(starredPaths, fullPath)) {
+            list.add(TopFileEntry(node, fullPath))
+        }
+        node.children?.forEach { collect(it, fullPath) }
+    }
+    collect(root, "")
+    return list.distinctBy { it.path }.sortedByDescending { it.node.size }
+}
 
 private fun findAncestorNodes(root: CompactNode, target: String): Set<CompactNode> {
     val ancestors = mutableSetOf<CompactNode>()
@@ -164,7 +198,8 @@ fun ExplorerView(
 
     LaunchedEffect(targetPath, rootNode) {
         if (!targetPath.isNullOrBlank()) {
-            val ancestors = findAncestorNodes(rootNode, targetPath)
+            // Recursive DFS with per-node string concatenation: keep it off the main thread.
+            val ancestors = withContext(Dispatchers.Default) { findAncestorNodes(rootNode, targetPath) }
             if (ancestors.isNotEmpty()) {
                 expandedNodes = expandedNodes + ancestors
                 val topLevelIdx = topLevelChildren.indexOfFirst { ancestors.contains(it) }
@@ -184,19 +219,21 @@ fun ExplorerView(
     var trashedCount by remember { mutableIntStateOf(0) }
     var trashedSize by remember { mutableLongStateOf(0L) }
 
-    val starredEntries = remember(rootNode, starredPaths, isStarredExpanded) {
-        if (!isStarredExpanded || starredPaths.isEmpty()) emptyList()
-        else {
-            val list = mutableListOf<TopFileEntry>()
-            fun collect(node: CompactNode, path: String) {
-                val fullPath = if (path.isEmpty()) node.name else "$path/${node.name}"
-                if (starredPaths.contains(fullPath) || FavoritesManager.isStarred(context, fullPath)) {
-                    list.add(TopFileEntry(node, fullPath))
-                }
-                node.children?.forEach { collect(it, fullPath) }
+    // Full tree walk plus a starred check per node, so it runs on Dispatchers.Default instead of
+    // during composition. starredPaths is the snapshot already held in state (re-read whenever
+    // rootNode changes), so the starred set is resolved once rather than once per node.
+    val starredEntries by produceState(
+        initialValue = emptyList<TopFileEntry>(),
+        key1 = rootNode,
+        key2 = starredPaths,
+        key3 = isStarredExpanded
+    ) {
+        if (!isStarredExpanded || starredPaths.isEmpty()) {
+            value = emptyList()
+        } else {
+            value = withContext(Dispatchers.Default) {
+                collectStarredEntries(rootNode, starredPaths)
             }
-            collect(rootNode, "")
-            list.distinctBy { it.path }.sortedByDescending { it.node.size }
         }
     }
 

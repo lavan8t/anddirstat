@@ -498,7 +498,11 @@ fun FileTypesView(
     val heroBarProgress = remember { Animatable(0f) }
     LaunchedEffect(overview.usedSpace, overview.totalCapacity) {
         if (overview.usedSpace > 0L) {
-            StorageTrendManager.recordSnapshot(context, overview.usedSpace, overview.totalCapacity)
+            // prefs read + JSONArray parse of the whole history + edit(): all blocking, all off
+            // the main thread. The guard and the animation stay in this composition scope.
+            withContext(Dispatchers.IO) {
+                StorageTrendManager.recordSnapshot(context, overview.usedSpace, overview.totalCapacity)
+            }
             heroBarProgress.animateTo(
                 targetValue = 1f,
                 animationSpec = spatialSpec
