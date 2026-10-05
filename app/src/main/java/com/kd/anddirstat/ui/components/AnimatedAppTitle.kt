@@ -59,10 +59,11 @@ fun AnimatedAppTitle(
         mutableStateOf(if (hasPlayedTitleLaunchAnimation) TitleLeadState.AND else TitleLeadState.ICON)
     }
     val fontWidth = remember { Animatable(if (hasPlayedTitleLaunchAnimation) 100f else 140f) }
+    val settleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
 
     LaunchedEffect(Unit) {
         if (!hasPlayedTitleLaunchAnimation) {
-            delay(500)
+            Animatable(0f).animateTo(1f, settleSpec)
             leadState = TitleLeadState.AND
             fontWidth.snapTo(140f)
             fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))
@@ -95,7 +96,7 @@ fun AnimatedAppTitle(
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 scope.launch {
                     leadState = TitleLeadState.ICON
-                    delay(300)
+                    Animatable(0f).animateTo(1f, settleSpec)
                     leadState = TitleLeadState.AND
                     fontWidth.snapTo(140f)
                     fontWidth.animateTo(100f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow))

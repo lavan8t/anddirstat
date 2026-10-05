@@ -706,9 +706,10 @@ private fun ExplorerNodeItem(
         )
     }
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val settleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     LaunchedEffect(isHighlighted) {
         if (isHighlighted) {
-            delay(300)
+            Animatable(0f).animateTo(1f, settleSpec)
             bringIntoViewRequester.bringIntoView()
         }
     }

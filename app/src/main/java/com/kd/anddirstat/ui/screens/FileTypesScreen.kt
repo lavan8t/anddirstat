@@ -494,13 +494,14 @@ fun FileTypesView(
         if (listState.isScrollInProgress) onDismissPopup()
     }
 
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val heroBarProgress = remember { Animatable(0f) }
     LaunchedEffect(overview.usedSpace, overview.totalCapacity) {
         if (overview.usedSpace > 0L) {
             StorageTrendManager.recordSnapshot(context, overview.usedSpace, overview.totalCapacity)
             heroBarProgress.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing)
+                animationSpec = spatialSpec
             )
         }
     }
