@@ -219,23 +219,8 @@ fun TreemapCanvas(
 
     val hasSelection = selectedNode != null && selectedTile != null
 
-    var lastSelectedNode by remember { mutableStateOf<CompactNode?>(null) }
-    var bouncePulse by remember { mutableStateOf(1f) }
-
-    LaunchedEffect(selectedNode) {
-        if (selectedNode != null && selectedNode != lastSelectedNode) {
-            lastSelectedNode = selectedNode
-            bouncePulse = 1.05f
-            kotlinx.coroutines.delay(16)
-            bouncePulse = 1f
-        } else if (selectedNode == null) {
-            lastSelectedNode = null
-            bouncePulse = 1f
-        }
-    }
-
     val selectionScale by animateFloatAsState(
-        targetValue = if (hasSelection) bouncePulse else 0.92f,
+        targetValue = if (hasSelection) 1f else 0.92f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
@@ -633,11 +618,25 @@ fun TreemapCanvas(
                         val curScale = currentScaleState.value
                         val curOff = currentOffsetState.value
                         for (tile in bottomTiles) {
-                            drawRect(
-                                color = if (tile.pkgName != null) AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor else tile.baseColor,
-                                topLeft = Offset(tile.left * curScale + curOff.x, 0f),
-                                size = Size(maxOf(1f, tile.width * curScale), size.height)
-                            )
+                            val tLeft = tile.left * curScale + curOff.x
+                            val tWidth = maxOf(1f, tile.width * curScale)
+                            val dom = tile.pkgName?.let { AppIconCache.getDominantColor(it) }
+                            val colors = if (dom == null || dom == tile.baseColor) tile.gradientColors else shadeColors(dom, isDark)
+                            if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
+                                val brush = if (colors === tile.gradientColors) tile.cushionBrush
+                                else Brush.radialGradient(colors, center = Offset(0.38f, 0.35f), radius = 0.85f)
+                                drawContext.canvas.save()
+                                drawContext.transform.translate(tLeft, 0f)
+                                drawContext.transform.scale(tWidth, size.height, pivot = Offset.Zero)
+                                drawRect(brush = brush, topLeft = Offset.Zero, size = Size(1f, 1f))
+                                drawContext.canvas.restore()
+                            } else {
+                                drawRect(
+                                    color = colors[1],
+                                    topLeft = Offset(tLeft, 0f),
+                                    size = Size(tWidth, size.height)
+                                )
+                            }
                         }
                     }
                     Canvas(Modifier.fillMaxSize(), onDraw = drawColumns)

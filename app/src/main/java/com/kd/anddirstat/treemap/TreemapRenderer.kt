@@ -22,6 +22,11 @@ object TreemapBitmapCache {
     fun get(key: String): ImageBitmap? = cache.get(key)
     fun put(key: String, bitmap: ImageBitmap) { cache.put(key, bitmap) }
     fun clear() { cache.evictAll() }
+    fun trim(level: Int) {
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            clear()
+        }
+    }
 }
 
 private val MarkFill = Color(0x6600E676)
