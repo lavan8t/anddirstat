@@ -54,7 +54,8 @@ fun AppNavScaffold(
     content: @Composable (PaddingValues) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    var showMenu by remember { mutableStateOf(false) }
+    var showFilterMenu by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
     val layoutDirection = LocalLayoutDirection.current
     val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
 
@@ -92,16 +93,14 @@ fun AppNavScaffold(
                         IconButton(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showMenu = true
+                                showFilterMenu = true
                             }
                         ) {
-                            MaterialSymbol("more_vert", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            MaterialSymbol("filter_list", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
                         }
-                        UnifiedDropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            onRescanClick = onRescanClick,
-                            onSettingsClick = onSettingsClick,
+                        FilterDropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
                             showSystemOS = showSystemOS,
                             onToggleShowSystemOS = onToggleShowSystemOS,
                             showSystemApps = showSystemApps,
@@ -110,6 +109,22 @@ fun AppNavScaffold(
                             onToggleShowFreeSpace = onToggleShowFreeSpace,
                             showHiddenFiles = showHiddenFiles,
                             onToggleShowHiddenFiles = onToggleShowHiddenFiles
+                        )
+                    }
+                    Box {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showMoreMenu = true
+                            }
+                        ) {
+                            MaterialSymbol("more_vert", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                        ActionDropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false },
+                            onRescanClick = onRescanClick,
+                            onSettingsClick = onSettingsClick
                         )
                     }
                 },

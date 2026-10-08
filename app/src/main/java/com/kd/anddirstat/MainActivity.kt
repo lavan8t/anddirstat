@@ -21,16 +21,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateIntOffsetAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -616,19 +620,25 @@ fun MainApp() {
                             navController = navController,
                             startDestination = AppDestinations.TREE,
                             modifier = Modifier.fillMaxSize(),
-                            enterTransition = { EnterTransition.None },
-                            exitTransition = { ExitTransition.None },
+                            enterTransition = {
+                                val isFwd = (destIndexMap[targetState.destination.route] ?: 99) >= (destIndexMap[initialState.destination.route] ?: -1)
+                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                            },
+                            exitTransition = {
+                                val isFwd = (destIndexMap[targetState.destination.route] ?: 99) >= (destIndexMap[initialState.destination.route] ?: -1)
+                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
+                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
+                            },
                             popEnterTransition = {
-                                slideInHorizontally(
-                                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-                                    initialOffsetX = { -it }
-                                )
+                                val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: 99)
+                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
                             },
                             popExitTransition = {
-                                slideOutHorizontally(
-                                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-                                    targetOffsetX = { it }
-                                )
+                                val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: 99)
+                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeOut(tween(180, easing = FastOutSlowInEasing))
+                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeOut(tween(180, easing = FastOutSlowInEasing))
                             }
                         ) {
                             composable(AppDestinations.TREE) {

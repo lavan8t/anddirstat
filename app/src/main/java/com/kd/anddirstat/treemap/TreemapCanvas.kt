@@ -53,15 +53,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.blur.BlurRadiusSpec
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.Shadow
@@ -605,13 +603,14 @@ fun TreemapCanvas(
         }
     }
 
-        // Bottom nav-pill zone: sharp tile extrusion -> progressively blurred copy (alpha-masked) -> fade to bg
+        // Bottom nav-pill zone: true progressive Gaussian blur connecting seamlessly with treemap tiles
         if (!isLandscape && bottomSpaceDp > 0.dp) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(bottomSpaceDp)
+                    .clipToBounds()
             ) {
                 if (bottomTiles.isNotEmpty()) {
                     val drawColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
@@ -639,43 +638,24 @@ fun TreemapCanvas(
                             }
                         }
                     }
-                    Canvas(Modifier.fillMaxSize(), onDraw = drawColumns)
+
+                    val blurModifier = remember {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            Modifier.blur(BlurRadiusSpec.verticalGradient(0.dp, 36.dp))
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            Modifier.blur(20.dp)
+                        } else {
+                            Modifier
+                        }
+                    }
+
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0f to Color.Transparent,
-                                        0.6f to Color.Black.copy(alpha = 0.6f),
-                                        1f to Color.Black
-                                    ),
-                                    blendMode = BlendMode.DstIn
-                                )
-                            }
-                            .blur(28.dp),
+                            .then(blurModifier),
                         onDraw = drawColumns
                     )
                 }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    canvasBg.copy(alpha = 0.15f),
-                                    canvasBg.copy(alpha = 0.40f),
-                                    canvasBg.copy(alpha = 0.70f),
-                                    canvasBg.copy(alpha = 0.92f),
-                                    canvasBg
-                                )
-                            )
-                        )
-                )
             }
         }
     }

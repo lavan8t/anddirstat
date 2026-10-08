@@ -60,6 +60,8 @@ import com.kd.anddirstat.treemap.computeTreemapTiles
 import com.kd.anddirstat.ui.components.AnimatedAppTitle
 import com.kd.anddirstat.ui.components.AppIconCache
 import com.kd.anddirstat.ui.components.DriveSelectorCompactChip
+import com.kd.anddirstat.ui.components.ActionDropdownMenu
+import com.kd.anddirstat.ui.components.FilterDropdownMenu
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.UnifiedDropdownMenu
 import com.kd.anddirstat.util.StorageVolumeInfo
@@ -104,6 +106,7 @@ fun TreemapScreen(
     val layoutDirection = LocalLayoutDirection.current
     val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
     var showFilterMenu by remember { mutableStateOf(false) }
+    var showActionMenu by remember { mutableStateOf(false) }
 
     val baseBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
@@ -207,18 +210,16 @@ fun TreemapScreen(
                             modifier = Modifier.size(36.dp)
                         ) {
                             MaterialSymbol(
-                                name = "more_vert",
+                                name = "filter_list",
                                 active = true,
                                 size = 20.dp,
                                 tint = if (isDark) Color.White else Color(0xFF1E293B)
                             )
                         }
 
-                        UnifiedDropdownMenu(
+                        FilterDropdownMenu(
                             expanded = showFilterMenu,
                             onDismissRequest = { showFilterMenu = false },
-                            onRescanClick = onRescanClick,
-                            onSettingsClick = onSettingsClick,
                             showSystemOS = showSystemOS,
                             onToggleShowSystemOS = onToggleShowSystemOS,
                             showSystemApps = showSystemApps,
@@ -227,6 +228,30 @@ fun TreemapScreen(
                             onToggleShowFreeSpace = onToggleShowFreeSpace,
                             showHiddenFiles = showHiddenFiles,
                             onToggleShowHiddenFiles = onToggleShowHiddenFiles
+                        )
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showActionMenu = true
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            MaterialSymbol(
+                                name = "more_vert",
+                                active = true,
+                                size = 20.dp,
+                                tint = if (isDark) Color.White else Color(0xFF1E293B)
+                            )
+                        }
+
+                        ActionDropdownMenu(
+                            expanded = showActionMenu,
+                            onDismissRequest = { showActionMenu = false },
+                            onRescanClick = onRescanClick,
+                            onSettingsClick = onSettingsClick
                         )
                     }
                 }
