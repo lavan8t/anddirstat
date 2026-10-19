@@ -78,22 +78,15 @@ jobs:
             COMMITS_LIST=$(git log -n 10 --pretty=format:"- %s by @%an in %h" | sed 's/@Lavanbarath B/@lavan8t/g')
           fi
 
-          cat <<EOT > release-notes.md
-${CHANGELOG_NOTES}
-
-### Commits
-
-${COMMITS_LIST}
-
-Download the compatible version for your device from the assets below.
-
----
-**Architecture Downloads:**
-- **arm64-v8a**: Modern 64-bit Android devices
-- **armeabi-v7a**: Older 32-bit ARM devices
-- **x86_64**: Emulators and x86 devices
-- **universal**: Compatible across all supported architectures
-EOT
+          {
+            printf '%s\n\n' "$CHANGELOG_NOTES"
+            printf '### Commits\n\n'
+            printf '%s\n\n' "$COMMITS_LIST"
+            printf 'Download the compatible version for your device from the assets below.\n\n'
+            printf -- '---\n'
+            printf '**Architecture Downloads:**\n'
+            printf -- '- **arm64-v8a**: Modern 64-bit Android devices\n'
+          } > release-notes.md
 
           APK_FILES=$(find app/build/outputs/apk/release -name "*.apk")
 
