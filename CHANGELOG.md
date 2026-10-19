@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.5] - 2026-10-19
+
+### Added
+- **Staged Cleanup Queue & Review Sheet**: Stage deletions from the treemap instead of deleting immediately, then inspect, unmark, pick a deletion mode, and commit the batch from a dedicated Material 3 review sheet.
+- **Safe Deletion Boundaries**: `DeletionSafetyGuard` blocks volume roots, system partitions, framework containers, and starred files before any disk deletion runs in `FileMaintenanceEngine`.
+- **Fused Droplet Navigation Bar**: Reworked bottom pill with discovery on one side and navigation on the other, sliding active indicator, predictive-back interpolation, and live staged-cleanup counters.
+- **Non-Blocking Scan Banner & ETA**: Background scanning banner replaces the blocking scan dialog, backed by a spike-free EWMA time-remaining estimate.
+- **M3 Canvas Treemap Toggle**: Experimental flat Material 3 canvas renderer behind a settings toggle with an italic corner ribbon.
+- **Unit Tests**: Coverage for the scan ETA estimator, nav pill offsets, deletion safety boundaries, and cleanup queue models.
+
+### Changed
+- **Treemap Rendering**: Decomposed `TreemapCanvas` into layout, color, and renderer components, restored the 2D cushion gradient, and wrapped the radial gradient into a progressive bottom blur.
+- **Selection Bars**: Unified treemap selection bars into a shared `SelectionActionBar`.
+- **Overflow Menu**: Migrated to Material 3 Expressive with normalized icon sizing.
+- **Motion**: Remaining animations moved to `motionScheme` springs.
+
+### Fixed
+- **Icons**: Mapped Material Symbol names that previously fell back to a generic file icon.
+- **Navigation Pill**: Pill stays visible when idle and the bottom blur is progressive rather than hard-edged.
+
+### Performance
+- **Treemap**: Cached tile brushes and byte-size bitmaps, plus a spatial hit index for taps.
+- **Scanner**: Bounded storage tree node count, dropped the string intern pool, throttled progress publishing, and moved aggregation off the main thread.
+- **UI**: Tree walks and preference reads moved off the main thread, with fewer per-node allocations in tree aggregation and duplicate search.
+
+### Build
+- Release ABI split restricted to `arm64-v8a`; universal, 32-bit ARM, and x86_64 APKs are no longer published.
+- Enabled `android.enableR8.fullMode`.
+- Pinned AndroidX Compose UI to `1.13.0-alpha03`.
+
+---
+
 ## [1.0.4] - 2026-09-23
 
 ### Added
