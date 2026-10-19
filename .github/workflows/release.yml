@@ -95,8 +95,7 @@ jobs:
 
           gh release create "$TAG_NAME" $APK_FILES \
             --title "$RELEASE_TITLE" \
-            --notes-file release-notes.md \
-            --prerelease
+            --notes-file release-notes.md
 
       - name: Delete prod branch
         env:

@@ -62,7 +62,7 @@ commit range — when a section is wrong, fix `CHANGELOG.md` and re-run, never h
 | --- | --- |
 | Tag | `v<versionName>-beta`, or `v<versionName>-beta-<short hash>` if that tag already exists |
 | Title | `AndDirStat v<versionName> (Beta)`, or `AndDirStat v<versionName> (Beta) (<short hash>)` for a re-tag |
-| Flag | Marked pre-release, never the "latest" release |
+| Flag | Published as a normal release (`gh release create` without `--prerelease`). GitHub assigns "Latest" to the newest one. |
 | Body | Template below |
 
 ### Body template
