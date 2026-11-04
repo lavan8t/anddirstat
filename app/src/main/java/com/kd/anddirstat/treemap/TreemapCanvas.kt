@@ -75,6 +75,7 @@ fun TreemapCanvas(
     isLandscape: Boolean = false,
     onNodeSelected: (CompactNode, String, Offset?, androidx.compose.ui.geometry.Rect?, androidx.compose.ui.graphics.Color?) -> Unit = { _, _, _, _, _ -> },
     onDismissPopup: () -> Unit = {},
+    onToggleSelectNode: ((CompactNode, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -421,7 +422,11 @@ fun TreemapCanvas(
                         if (!hadMultiTouch && !hasMovedOutOfInitialTile && elapsed < longPressActivationTimeout) {
                             if (initialTile != null) {
                                 triggerCrispHaptic(context)
-                                selectTile(initialTile, downPos)
+                                if (selectedNodes.isNotEmpty() && onToggleSelectNode != null) {
+                                    onToggleSelectNode(initialTile.node, initialTile.path)
+                                } else {
+                                    selectTile(initialTile, downPos)
+                                }
                             } else {
                                 onDismissPopup()
                             }

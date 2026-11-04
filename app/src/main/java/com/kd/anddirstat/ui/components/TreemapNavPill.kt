@@ -11,9 +11,12 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -384,7 +387,10 @@ fun TreemapNavPill(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
-                            .clickable {
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onBack()
                             }
@@ -430,15 +436,14 @@ fun TreemapNavPill(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = if (hasLegacySelection) Arrangement.Center else Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left Pill: Treemap, Explorer, Usage. While items are selected it takes the
         // full row width so the count and total size occupy the gap the Discover
         // pill leaves behind.
         Surface(
-            modifier = Modifier
-                .weight(1f, fill = hasLegacySelection)
+            modifier = (if (hasLegacySelection) Modifier.fillMaxWidth().padding(horizontal = 8.dp) else Modifier)
                 .then(
                     if (dropletActive) {
                         Modifier.graphicsLayer {
@@ -489,7 +494,10 @@ fun TreemapNavPill(
                                         .size(34.dp)
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                        .clickable {
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onClearStaged()
                                         },
@@ -520,7 +528,10 @@ fun TreemapNavPill(
                                     .height(34.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .clickable {
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onOpenReviewSheet()
                                     }
@@ -631,7 +642,10 @@ fun TreemapNavPill(
                                     modifier = Modifier
                                         .size(width = slotWidth, height = slotHeight)
                                         .clip(CircleShape)
-                                        .clickable {
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onNavigate(item.destination)
                                         },
@@ -652,7 +666,7 @@ fun TreemapNavPill(
             }
         }
 
-        // Right Pill: Discover
+        // Right Pill: Material 3 Expressive Extended FAB for Search
         val isDiscover = currentDestination == AppDestinations.DISCOVER
         val discoverBg by animateColorAsState(
             targetValue = if (isDiscover) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
@@ -667,30 +681,52 @@ fun TreemapNavPill(
 
         AnimatedVisibility(
             visible = !hasLegacySelection,
-            enter = fadeIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)),
-            exit = fadeOut(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
+            enter = fadeIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)) +
+                    scaleIn(initialScale = 0.85f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)),
+            exit = fadeOut(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)) +
+                   scaleOut(targetScale = 0.85f, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
         ) {
-        AppTooltip(text = "Discover") {
-            Surface(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onNavigate(AppDestinations.DISCOVER)
-                },
-                shape = CircleShape,
-                color = discoverBg,
-                shadowElevation = 8.dp,
-                tonalElevation = 6.dp
-            ) {
-                Box(
+            AppTooltip(text = "Search") {
+                Surface(
+                    shape = CircleShape,
+                    color = discoverBg,
+                    shadowElevation = 8.dp,
+                    tonalElevation = 6.dp,
                     modifier = Modifier
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
-                        .size(48.dp, 42.dp),
-                    contentAlignment = Alignment.Center
+                        .height(58.dp)
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onNavigate(AppDestinations.DISCOVER)
+                        }
                 ) {
-                    MaterialSymbol(name = "search", active = isDiscover, size = 22.dp, tint = discoverTint)
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .fillMaxHeight(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        MaterialSymbol(
+                            name = "search",
+                            active = isDiscover,
+                            size = 22.dp,
+                            tint = discoverTint
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Search",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = discoverTint,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
-        }
         }
     }
 }

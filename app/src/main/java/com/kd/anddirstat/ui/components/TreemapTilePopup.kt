@@ -95,8 +95,8 @@ fun TreemapTilePopup(
     touchOffset: Offset,
     visible: Boolean,
     onDismiss: () -> Unit,
-    stagedQueue: Map<CompactNode, StagedQueueItem>,
-    onToggleStaged: (CompactNode, String, Long, Boolean, String?) -> Unit,
+    stagedQueue: Map<CompactNode, StagedQueueItem> = emptyMap(),
+    onToggleStaged: ((CompactNode, String, Long, Boolean, String?) -> Unit)? = null,
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onOpenFile: ((File) -> Unit)? = null,
@@ -188,30 +188,55 @@ fun TreemapTilePopup(
         )
     }
 
-    val startRect = tileRect ?: Rect(
-        clickPos.x - 24f,
-        clickPos.y - 24f,
-        clickPos.x + 24f,
-        clickPos.y + 24f
-    )
+    val stableStartRect = remember(node, tileRect) {
+        tileRect ?: Rect(
+            clickPos.x - 24f,
+            clickPos.y - 24f,
+            clickPos.x + 24f,
+            clickPos.y + 24f
+        )
+    }
+    val stableTileColor = remember(node, tileColor) {
+        tileColor ?: Color(0xFF2C3E50)
+    }
+    val popupBgColor = stableTileColor
+
     val targetRect = Rect(targetLeftPx, targetTopPx, targetLeftPx + targetWidthPx, targetTopPx + targetHeightPx)
 
     val progress = remember { Animatable(0f) }
+    var isDismissing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(visible, node, path) {
-        if (visible) {
-            progress.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = 0.85f,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            )
-        } else {
+    fun triggerDismiss() {
+        if (isDismissing) return
+        isDismissing = true
+        scope.launch {
             progress.animateTo(
                 targetValue = 0f,
                 animationSpec = spring(
-                    dampingRatio = 0.85f,
+                    dampingRatio = 0.88f,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+            onDismiss()
+        }
+    }
+
+    LaunchedEffect(visible, node, path) {
+        if (visible) {
+            isDismissing = false
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.82f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        } else if (!isDismissing) {
+            isDismissing = true
+            progress.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = 0.88f,
                     stiffness = Spring.StiffnessMedium
                 )
             )
@@ -222,44 +247,41 @@ fun TreemapTilePopup(
     if (progress.value <= 0.001f && !visible) return
 
     val p = progress.value
-    val curLeft = startRect.left + (targetRect.left - startRect.left) * p
-    val curTop = startRect.top + (targetRect.top - startRect.top) * p
-    val curWidth = startRect.width + (targetRect.width - startRect.width) * p
-    val curHeight = startRect.height + (targetRect.height - startRect.height) * p
+    val curLeft = stableStartRect.left + (targetRect.left - stableStartRect.left) * p
+    val curTop = stableStartRect.top + (targetRect.top - stableStartRect.top) * p
+    val curWidth = stableStartRect.width + (targetRect.width - stableStartRect.width) * p
+    val curHeight = stableStartRect.height + (targetRect.height - stableStartRect.height) * p
 
     val startCorner = 4.dp
-    val endCorner = 24.dp
+    val endCorner = 28.dp
     val curCorner = lerp(startCorner, endCorner, p)
+    val curElevation = lerp(0.dp, 12.dp, p)
 
-    val initialColor = tileColor ?: MaterialTheme.colorScheme.primaryContainer
-    val targetBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    val curBgColor = lerp(initialColor, targetBgColor, p.coerceIn(0f, 1f))
-    val curElevation = lerp(0.dp, 8.dp, p)
+    // Dynamic contrast on tile color
+    val luminance = 0.2126f * popupBgColor.red + 0.7152f * popupBgColor.green + 0.0722f * popupBgColor.blue
+    val isLight = luminance > 0.45f
+    val contentColor = if (isLight) Color(0xFF14171A) else Color(0xFFFFFFFF)
+    val contentVariantColor = if (isLight) Color(0xFF3C434A) else Color(0xFFF1F3F5).copy(alpha = 0.85f)
+    val controlBg = if (isLight) Color.Black.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.18f)
 
-    // Fast exit / smooth enter alpha for popup content
-    val contentAlpha = ((p - 0.22f) / 0.78f).coerceIn(0f, 1f)
+    // Seamless exit / smooth enter alpha for popup content
+    val contentAlpha = if (isDismissing || !visible) {
+        ((p - 0.65f) / 0.35f).coerceIn(0f, 1f)
+    } else {
+        ((p - 0.28f) / 0.72f).coerceIn(0f, 1f)
+    }
 
     // Swipe to dismiss tracking
     var swipeOffsetX by remember(node) { mutableFloatStateOf(0f) }
     var swipeOffsetY by remember(node) { mutableFloatStateOf(0f) }
     val dismissThreshold = with(density) { 56.dp.toPx() }
 
-    fun triggerDismiss() {
-        scope.launch {
-            progress.animateTo(
-                targetValue = 0f,
-                animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMedium)
-            )
-            onDismiss()
-        }
-    }
-
     Box(modifier = modifier.fillMaxSize()) {
         // Scrim background
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = p * 0.40f))
+                .background(Color.Black.copy(alpha = (p * 0.40f).coerceIn(0f, 0.40f)))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -272,13 +294,10 @@ fun TreemapTilePopup(
         // Morphing Container
         Surface(
             shape = RoundedCornerShape(curCorner),
-            color = curBgColor,
-            tonalElevation = 6.dp,
+            color = popupBgColor,
+            tonalElevation = 0.dp,
             shadowElevation = curElevation,
-            border = BorderStroke(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = (p * 0.40f).coerceIn(0f, 0.40f))
-            ),
+            border = null,
             modifier = Modifier
                 .offset {
                     IntOffset(
@@ -347,7 +366,7 @@ fun TreemapTilePopup(
                             } else {
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    color = controlBg,
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -355,7 +374,7 @@ fun TreemapTilePopup(
                                             name = symbolName,
                                             active = true,
                                             size = 20.dp,
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            tint = contentColor
                                         )
                                     }
                                 }
@@ -364,13 +383,13 @@ fun TreemapTilePopup(
                             val ext = if (node.isDirectory) "Folder" else node.name.substringAfterLast('.', "").uppercase().take(5).ifEmpty { "File" }
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.secondaryContainer
+                                color = controlBg
                             ) {
                                 Text(
                                     text = ext,
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    color = contentColor,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
@@ -378,56 +397,62 @@ fun TreemapTilePopup(
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            val isStaged = stagedQueue.containsKey(node)
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onToggleStaged(node, path, node.size, isApp, pkgName)
-                                },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                MaterialSymbol(
-                                    name = if (isStaged) "check_box" else "add_to_photos",
-                                    active = isStaged,
-                                    size = 18.dp,
-                                    tint = if (isStaged) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
                             if (!isSpecial) {
-                                IconButton(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        isStarred = FavoritesManager.toggleStar(context, path)
-                                        AppNotifier.notify(if (isStarred) "Starred & protected" else "Unstarred")
-                                        if (onToggleStar != null) onToggleStar(path)
-                                    },
+                                Surface(
+                                    shape = CircleShape,
+                                    color = controlBg,
                                     modifier = Modifier.size(32.dp)
                                 ) {
-                                    MaterialSymbol(
-                                        name = if (isStarred) "star" else "star_outline",
-                                        active = isStarred,
-                                        size = 18.dp,
-                                        tint = if (isStarred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                isStarred = FavoritesManager.toggleStar(context, path)
+                                                AppNotifier.notify(if (isStarred) "Starred & protected" else "Unstarred")
+                                                if (onToggleStar != null) onToggleStar(path)
+                                            }
+                                    ) {
+                                        MaterialSymbol(
+                                            name = if (isStarred) "star" else "star_outline",
+                                            active = isStarred,
+                                            size = 18.dp,
+                                            tint = if (isStarred) Color(0xFFFFD700) else contentColor
+                                        )
+                                    }
                                 }
                             }
 
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    triggerDismiss()
-                                },
+                            Surface(
+                                shape = CircleShape,
+                                color = controlBg,
                                 modifier = Modifier.size(32.dp)
                             ) {
-                                MaterialSymbol(
-                                    name = "close",
-                                    active = true,
-                                    size = 18.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            triggerDismiss()
+                                        }
+                                ) {
+                                    MaterialSymbol(
+                                        name = "close",
+                                        active = true,
+                                        size = 18.dp,
+                                        tint = contentColor
+                                    )
+                                }
                             }
                         }
                     }
@@ -438,7 +463,7 @@ fun TreemapTilePopup(
                             text = FileUtils.cleanDisplayName(node.name),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = contentColor,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -449,7 +474,7 @@ fun TreemapTilePopup(
                             Text(
                                 text = "App ${FileUtils.formatFileSize(appBreakdown.first)} • Data ${FileUtils.formatFileSize(appBreakdown.second)} • Cache ${FileUtils.formatFileSize(appBreakdown.third)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = contentVariantColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -457,7 +482,7 @@ fun TreemapTilePopup(
                             Text(
                                 text = "${FileUtils.formatFileSize(node.size)} • $folderName",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = contentVariantColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -470,124 +495,197 @@ fun TreemapTilePopup(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Left: Select / Deselect
+                        // Left: New Expressive Select Implementation
                         if (!isSpecial) {
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onToggleSelect()
-                                    triggerDismiss()
-                                },
-                                label = {
-                                    Text(
-                                        text = if (isSelected) "Selected" else "Select",
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                },
-                                leadingIcon = {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) contentColor else controlBg,
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clip(CircleShape)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onToggleSelect()
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
                                     MaterialSymbol(
                                         name = if (isSelected) "check_circle" else "radio_button_unchecked",
                                         active = isSelected,
-                                        size = 16.dp,
-                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        size = 18.dp,
+                                        tint = if (isSelected) popupBgColor else contentColor
                                     )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isSelected) "Selected" else "Select",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isSelected) popupBgColor else contentColor
+                                    )
+                                }
+                            }
                         } else {
                             Text(
                                 text = "Total: ${FileUtils.formatFileSize(node.size)}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = contentVariantColor
                             )
                         }
 
                         // Right: Open / Info / Delete
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             if (isApp && pkgName != null) {
                                 if (onOpenApp != null) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onOpenApp(pkgName)
-                                            triggerDismiss()
-                                        },
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = controlBg,
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        MaterialSymbol("open_in_new", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    onOpenApp(pkgName)
+                                                    triggerDismiss()
+                                                }
+                                        ) {
+                                            MaterialSymbol("open_in_new", active = true, size = 18.dp, tint = contentColor)
+                                        }
                                     }
                                 }
                                 if (onOpenAppInfo != null) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onOpenAppInfo(pkgName)
-                                            triggerDismiss()
-                                        },
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = controlBg,
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        MaterialSymbol("info", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    onOpenAppInfo(pkgName)
+                                                    triggerDismiss()
+                                                }
+                                        ) {
+                                            MaterialSymbol("info", active = true, size = 18.dp, tint = contentColor)
+                                        }
                                     }
                                 }
                                 if (onUninstallApp != null) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            onUninstallApp(pkgName)
-                                            triggerDismiss()
-                                        },
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = controlBg,
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.error)
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    onUninstallApp(pkgName)
+                                                    triggerDismiss()
+                                                }
+                                        ) {
+                                            MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.error)
+                                        }
                                     }
                                 }
                             } else {
                                 if (!node.isDirectory && realFile != null && onOpenFile != null) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onOpenFile(realFile)
-                                            triggerDismiss()
-                                        },
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = controlBg,
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        MaterialSymbol("open_in_new", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    onOpenFile(realFile)
+                                                    triggerDismiss()
+                                                }
+                                        ) {
+                                            MaterialSymbol("open_in_new", active = true, size = 18.dp, tint = contentColor)
+                                        }
                                     }
                                 }
                                 if (!isSpecial && onNavigateToExplorer != null) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onNavigateToExplorer(path)
-                                            triggerDismiss()
-                                        },
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = controlBg,
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        MaterialSymbol("folder_open", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    onNavigateToExplorer(path)
+                                                    triggerDismiss()
+                                                }
+                                        ) {
+                                            MaterialSymbol("folder_open", active = true, size = 18.dp, tint = contentColor)
+                                        }
                                     }
                                 }
                                 if (!isSpecial) {
-                                    IconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            triggerDismiss()
-                                            onRequestDelete()
-                                        },
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = controlBg,
                                         modifier = Modifier.size(34.dp)
                                     ) {
-                                        MaterialSymbol(
-                                            name = "delete",
-                                            active = true,
-                                            size = 18.dp,
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    triggerDismiss()
+                                                    onRequestDelete()
+                                                }
+                                        ) {
+                                            MaterialSymbol(
+                                                name = "delete",
+                                                active = true,
+                                                size = 18.dp,
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
                                 }
                             }

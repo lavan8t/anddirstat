@@ -840,6 +840,15 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                 selectedTileRect = null
                                 selectedTileColor = null
                             },
+                            onToggleSelectNode = { node, path ->
+                                setTreeSelection(
+                                    if (selectedTreeNodes.containsKey(node)) {
+                                        selectedTreeNodes - node
+                                    } else {
+                                        selectedTreeNodes + (node to path)
+                                    }
+                                )
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
 
