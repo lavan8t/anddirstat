@@ -18,6 +18,9 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
+import com.kd.anddirstat.viewmodel.StorageTreeViewModel
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -153,6 +156,8 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
+    private val viewModel: StorageTreeViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -164,7 +169,7 @@ class MainActivity : ComponentActivity() {
             overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.slide_in_left, R.anim.slide_out_right)
         }
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        setContent { MainApp() }
+        setContent { MainApp(viewModel) }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -211,7 +216,7 @@ private fun ScanProgressBanner(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainApp() {
+fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -256,11 +261,22 @@ fun MainApp() {
         var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", false)) }
         var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", false)) }
 
-        var rawScannedNode by remember { mutableStateOf<CompactNode?>(null) }
-        var deviceTotalBytes by remember { mutableLongStateOf(0L) }
-        var rootNode by remember { mutableStateOf<CompactNode?>(null) }
-        var extensionStats by remember { mutableStateOf<List<ExtensionStat>>(emptyList()) }
-        var topFiles by remember { mutableStateOf<List<TopFileEntry>>(emptyList()) }
+        val treeState by viewModel.uiState.collectAsState()
+        val rawScannedNode = treeState.rawScannedNode
+        val deviceTotalBytes = treeState.deviceTotalBytes
+        val rootNode = treeState.rootNode
+        val extensionStats = treeState.extensionStats
+        val topFiles = treeState.topFiles
+        val isLoading = treeState.isLoading || (hasStoragePermission && rootNode == null)
+        val isBackgroundScanning = treeState.isBackgroundScanning
+        val scanProgress = remember(treeState.scanPhase, treeState.scanDetail, treeState.scanProgress) {
+            ScanProgress().apply {
+                phase = treeState.scanPhase
+                detail = treeState.scanDetail
+                percent = treeState.scanProgress
+            }
+        }
+
         var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
         var selectedPath by remember { mutableStateOf<String?>(null) }
         var lastTouchDown by remember { mutableStateOf(Offset.Zero) }
@@ -279,10 +295,6 @@ fun MainApp() {
         val isPopupVisible = selectedNode != null && selectedPath != null
         var explorerTargetPath by remember { mutableStateOf<String?>(null) }
         var nodeToDelete by remember { mutableStateOf<Pair<CompactNode, String>?>(null) }
-        var isLoading by remember { mutableStateOf(hasStoragePermission && rootNode == null) }
-        var scanJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-        var isBackgroundScanning by remember { mutableStateOf(false) }
-        val scanProgress = remember { ScanProgress() }
 
         var stagedQueue by remember { mutableStateOf<Map<CompactNode, StagedQueueItem>>(emptyMap()) }
         var showCleanupReviewSheet by remember { mutableStateOf(false) }
@@ -336,13 +348,8 @@ fun MainApp() {
             isDiscoverSearchActive = active
         }
 
-        fun updateFilter(fs: Boolean = showFreeSpace, sa: Boolean = showSystemApps, hf: Boolean = showHiddenFiles, so: Boolean = showSystemOS) {
-            showFreeSpace = fs; showSystemApps = sa; showHiddenFiles = hf; showSystemOS = so
-            val raw = rawScannedNode ?: return
-            val filtered = StorageFilterHelper.filterStorageTree(raw, fs, sa, hf, so, deviceTotalBytes)
-            rootNode = filtered
-            extensionStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
-            topFiles = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+        fun updateFilter(fs: Boolean? = null, sa: Boolean? = null, hf: Boolean? = null, so: Boolean? = null) {
+            viewModel.updateFilter(prefs, fs, sa, hf, so)
             clearTreeSelection()
             if (selectedNode != null) { selectedNode = null; selectedPath = null }
         }
@@ -354,9 +361,7 @@ fun MainApp() {
                     "pure_black" -> pureBlack = prefs.getBoolean("pure_black", false)
                     "dynamic_theme" -> dynamicTheme = prefs.getBoolean("dynamic_theme", Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                     "accent_color" -> accentColor = AccentColor.entries.firstOrNull { it.key == prefs.getString("accent_color", AccentColor.GREEN.key) } ?: AccentColor.GREEN
-                    "show_hidden_files" -> updateFilter(hf = prefs.getBoolean("show_hidden_files", true))
-                    "show_free_space" -> updateFilter(fs = prefs.getBoolean("show_free_space", true))
-                    "show_system_apps" -> updateFilter(sa = prefs.getBoolean("show_system_apps", true))
+                    "show_hidden_files", "show_free_space", "show_system_apps", "show_system_os" -> updateFilter()
                 }
             }
             prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -381,94 +386,12 @@ fun MainApp() {
             if (!hasStoragePermission || (volumesToScan.isEmpty() && !effectiveScanApps)) return
             activeVolume = if (volumesToScan.size == 1) volumesToScan.first() else null
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-
-            val hasTree = rootNode != null
-            if (hasTree) {
-                isBackgroundScanning = true
-                isLoading = false
-            } else {
-                isLoading = true
-                isBackgroundScanning = false
-            }
-
-            scanProgress.phase = SCAN_PHASE_START; scanProgress.detail = SCAN_DETAIL_START
-            scanProgress.percent = 0
-            AppNotifier.updateProgress(context, title = SCAN_PHASE_START, detail = SCAN_DETAIL_START, indeterminate = true, type = "scan")
-            scanJob?.cancel()
-            scanJob = scope.launch {
-                showFreeSpace = prefs.getBoolean("show_free_space", true)
-                showSystemApps = prefs.getBoolean("show_system_apps", true)
-                showHiddenFiles = prefs.getBoolean("show_hidden_files", false)
-                showSystemOS = prefs.getBoolean("show_system_os", false)
-                val scanner = StorageScanner(context)
-                var lastPublishMs = 0L
-                val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = effectiveScanApps) { phase, detail, progress, max ->
-                    // The scanner ticks every ~30 directories; coalesce to 4Hz so a scan no longer
-                    // costs hundreds of notify() binder calls and UI recompositions.
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - lastPublishMs >= SCAN_PUBLISH_INTERVAL_MS) {
-                        lastPublishMs = now
-                        scanProgress.phase = phase; scanProgress.detail = detail; scanProgress.percent = progress
-                        AppNotifier.updateProgress(context, title = phase, detail = detail, progress = progress, max = max, indeterminate = false, type = "scan")
-                    }
-                }
-                rawScannedNode = scanned; deviceTotalBytes = scanned.size
-                // The scanner caps reported progress at 99, so the completion state is published
-                // explicitly instead of leaving the last throttled tick on screen.
-                scanProgress.phase = SCAN_PHASE_FINALIZING; scanProgress.detail = SCAN_DETAIL_FINALIZING
-                scanProgress.percent = 100
-                AppNotifier.updateProgress(context, title = SCAN_PHASE_FINALIZING, detail = SCAN_DETAIL_FINALIZING, progress = 100, max = 100, indeterminate = false, type = "scan")
-
-                val filtered = withContext(Dispatchers.Default) {
-                    val f = StorageFilterHelper.filterStorageTree(scanned, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, scanned.size)
-                    if (f != null) {
-                        val statsJob = async { StorageFilterHelper.aggregateExtensionStats(f) }
-                        val topJob = async { StorageFilterHelper.aggregateTopFiles(f) }
-                        extensionStats = statsJob.await()
-                        topFiles = topJob.await()
-                    } else {
-                        extensionStats = emptyList()
-                        topFiles = emptyList()
-                    }
-                    f
-                }
-                rootNode = filtered
-                selectedNode = null; selectedPath = null
-                isLoading = false
-                isBackgroundScanning = false
-                AppNotifier.finishActivity(context)
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
-                launch(Dispatchers.IO) {
-                    StorageTrendManager.recordSnapshot(context, scanned.size, deviceTotalBytes)
-                    scanned.children?.firstOrNull { it.name == "Apps & System Packages" }?.children?.forEach { appNode ->
-                        val pkg = FileUtils.extractPackageName(appNode)
-                        // peek() keeps warm-up from repeating PackageManager IPC + pixel loops per scan
-                        if (pkg != null && AppIconCache.peek(pkg) == null) AppIconCache.get(context, pkg)
-                    }
-                }
-            }
+            viewModel.performScan(context, volumesToScan, scanApps, prefs)
         }
 
         fun removeDeletedNodes(deletedNodes: Set<CompactNode>) {
-            if (deletedNodes.isEmpty()) return
-            val currentRaw = rawScannedNode ?: return
-            scope.launch(Dispatchers.Default) {
-                val updatedRaw = StorageFilterHelper.pruneNodes(currentRaw, deletedNodes)
-                rawScannedNode = updatedRaw; deviceTotalBytes = updatedRaw.size
-                val filtered = StorageFilterHelper.filterStorageTree(updatedRaw, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, updatedRaw.size)
-                val newStats = async { if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList() }
-                val newTopFiles = async { if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList() }
-                val computedStats = newStats.await()
-                val computedTopFiles = newTopFiles.await()
-                withContext(Dispatchers.Main) {
-                    rootNode = filtered
-                    extensionStats = computedStats
-                    topFiles = computedTopFiles
-                    if (selectedNode != null && deletedNodes.contains(selectedNode)) { selectedNode = null; selectedPath = null }
-                }
-                withContext(Dispatchers.IO) { try { TreeCacheManager.saveTree(context, updatedRaw) } catch (_: Exception) {} }
-            }
+            viewModel.removeDeletedNodes(context, deletedNodes, prefs)
+            if (selectedNode != null && deletedNodes.contains(selectedNode)) { selectedNode = null; selectedPath = null }
         }
 
         fun requestScan() {
@@ -496,27 +419,7 @@ fun MainApp() {
         LaunchedEffect(hasStoragePermission, hasUsageAccess, usageAccessDismissed) {
             if (hasStoragePermission && (hasUsageAccess || usageAccessDismissed) && rootNode == null) {
                 val vols = FileUtils.getAvailableStorageVolumes(context)
-                val cached = withContext(Dispatchers.IO) { try { TreeCacheManager.loadTree(context) } catch (_: Exception) { null } }
-                if (cached != null) {
-                    isLoading = true; scanProgress.phase = "Restoring storage map..."; scanProgress.detail = "Loading saved data..."
-                    rawScannedNode = cached; deviceTotalBytes = cached.size
-                    val filtered = withContext(Dispatchers.Default) {
-                        StorageFilterHelper.filterStorageTree(cached, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, cached.size)
-                    }
-                    rootNode = filtered
-                    if (filtered != null) {
-                        withContext(Dispatchers.Default) {
-                            val statsJob = async { StorageFilterHelper.aggregateExtensionStats(filtered) }
-                            val topJob = async { StorageFilterHelper.aggregateTopFiles(filtered) }
-                            extensionStats = statsJob.await()
-                            topFiles = topJob.await()
-                        }
-                    } else {
-                        extensionStats = emptyList()
-                        topFiles = emptyList()
-                    }
-                    isLoading = false
-                } else if (vols.isNotEmpty()) performScan(vols) else { isLoading = false; requestScan() }
+                viewModel.restoreOrScan(context, vols, scanAppsSelected, prefs)
             }
         }
 
@@ -885,9 +788,7 @@ fun MainApp() {
                                 progress = scanProgress,
                                 visible = isBackgroundScanning,
                                 onCancelScan = {
-                                    scanJob?.cancel()
-                                    scanJob = null
-                                    isBackgroundScanning = false
+                                    viewModel.cancelScan()
                                     AppNotifier.finishActivity(context)
                                 },
                                 modifier = Modifier
