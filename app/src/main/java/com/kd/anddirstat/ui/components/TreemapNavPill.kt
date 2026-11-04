@@ -429,7 +429,7 @@ fun TreemapNavPill(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -439,12 +439,6 @@ fun TreemapNavPill(
         Surface(
             modifier = Modifier
                 .weight(1f, fill = hasLegacySelection)
-                .animateContentSize(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    )
-                )
                 .then(
                     if (dropletActive) {
                         Modifier.graphicsLayer {
@@ -463,7 +457,14 @@ fun TreemapNavPill(
             tonalElevation = 6.dp
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                    .animateContentSize(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        )
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 AnimatedVisibility(
@@ -671,16 +672,14 @@ fun TreemapNavPill(
         ) {
         AppTooltip(text = "Discover") {
             Surface(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onNavigate(AppDestinations.DISCOVER)
+                },
                 shape = CircleShape,
                 color = discoverBg,
                 shadowElevation = 8.dp,
-                tonalElevation = 6.dp,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onNavigate(AppDestinations.DISCOVER)
-                    }
+                tonalElevation = 6.dp
             ) {
                 Box(
                     modifier = Modifier

@@ -485,6 +485,99 @@ fun TreemapCanvas(
                 }
         )
 
+        // Dynamic ambient blur radiating outward from treemap perimeter, moving seamlessly with the canvas
+        if (precalculatedTiles.value.isNotEmpty()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(18.dp)
+            ) {
+                val curScale = currentScaleState.value
+                val curOff = currentOffsetState.value
+                val ext = 14.dp.toPx()
+                val eps = 4f
+                val rightBound = canvasSize.width.toFloat() - rightSpacePx
+                val bottomBound = canvasSize.height.toFloat() - bottomSpacePx
+
+                for (tile in precalculatedTiles.value) {
+                    val isTop = tile.top <= topSpacePx + eps
+                    val isBottom = tile.top + tile.height >= bottomBound - eps
+                    val isLeft = tile.left <= leftSpacePx + eps
+                    val isRight = tile.left + tile.width >= rightBound - eps
+
+                    if (!isTop && !isBottom && !isLeft && !isRight) continue
+
+                    val sLeft = tile.left * curScale + curOff.x
+                    val sTop = tile.top * curScale + curOff.y
+                    val sW = tile.width * curScale
+                    val sH = tile.height * curScale
+
+                    if (sLeft + sW < -ext || sLeft > size.width + ext ||
+                        sTop + sH < -ext || sTop > size.height + ext) continue
+
+                    val color = tile.baseColor
+
+                    if (isTop) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft, sTop - ext),
+                            size = Size(maxOf(1f, sW), ext + 4f)
+                        )
+                    }
+                    if (isBottom) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft, sTop + sH - 4f),
+                            size = Size(maxOf(1f, sW), ext + 4f)
+                        )
+                    }
+                    if (isLeft) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft - ext, sTop),
+                            size = Size(ext + 4f, maxOf(1f, sH))
+                        )
+                    }
+                    if (isRight) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft + sW - 4f, sTop),
+                            size = Size(ext + 4f, maxOf(1f, sH))
+                        )
+                    }
+                    // Corners
+                    if (isTop && isLeft) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft - ext, sTop - ext),
+                            size = Size(ext + 4f, ext + 4f)
+                        )
+                    }
+                    if (isTop && isRight) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft + sW - 4f, sTop - ext),
+                            size = Size(ext + 4f, ext + 4f)
+                        )
+                    }
+                    if (isBottom && isLeft) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft - ext, sTop + sH - 4f),
+                            size = Size(ext + 4f, ext + 4f)
+                        )
+                    }
+                    if (isBottom && isRight) {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(sLeft + sW - 4f, sTop + sH - 4f),
+                            size = Size(ext + 4f, ext + 4f)
+                        )
+                    }
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -579,160 +672,6 @@ fun TreemapCanvas(
                             size = Size(inW, inH),
                             style = Stroke(width = selectionBorderWidth)
                         )
-                    }
-                }
-            }
-        }
-
-        // Ambient blur zone: Top edge extension
-        if (topSpaceDp > 0.dp) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(topSpaceDp)
-                    .clipToBounds()
-            ) {
-                if (precalculatedTiles.value.isNotEmpty()) {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(28.dp)
-                    ) {
-                        val curScale = currentScaleState.value
-                        val curOff = currentOffsetState.value
-                        val eps = 8f
-                        for (tile in precalculatedTiles.value) {
-                            val tLeft = tile.left * curScale + curOff.x
-                            val tTop = tile.top * curScale + curOff.y
-                            val tWidth = tile.width * curScale
-                            val tHeight = tile.height * curScale
-
-                            if (tLeft + tWidth < 0f || tLeft > size.width) continue
-                            if (tTop <= topSpacePx + eps && tTop + tHeight >= topSpacePx - eps) {
-                                drawRect(
-                                    color = tile.baseColor,
-                                    topLeft = Offset(tLeft, 0f),
-                                    size = Size(maxOf(1f, tWidth), size.height)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Ambient blur zone: Bottom edge extension
-        if (bottomSpaceDp > 0.dp) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(bottomSpaceDp)
-                    .clipToBounds()
-            ) {
-                if (precalculatedTiles.value.isNotEmpty()) {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(28.dp)
-                    ) {
-                        val curScale = currentScaleState.value
-                        val curOff = currentOffsetState.value
-                        val bottomBoundary = canvasSize.height.toFloat() - bottomSpacePx
-                        val eps = 8f
-                        for (tile in precalculatedTiles.value) {
-                            val tLeft = tile.left * curScale + curOff.x
-                            val tTop = tile.top * curScale + curOff.y
-                            val tWidth = tile.width * curScale
-                            val tHeight = tile.height * curScale
-
-                            if (tLeft + tWidth < 0f || tLeft > size.width) continue
-                            if (tTop <= bottomBoundary + eps && tTop + tHeight >= bottomBoundary - eps) {
-                                drawRect(
-                                    color = tile.baseColor,
-                                    topLeft = Offset(tLeft, 0f),
-                                    size = Size(maxOf(1f, tWidth), size.height)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Ambient blur zone: Left edge extension
-        if (leftSpaceDp > 0.dp) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .fillMaxHeight()
-                    .width(leftSpaceDp)
-                    .clipToBounds()
-            ) {
-                if (precalculatedTiles.value.isNotEmpty()) {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(20.dp)
-                    ) {
-                        val curScale = currentScaleState.value
-                        val curOff = currentOffsetState.value
-                        val eps = 8f
-                        for (tile in precalculatedTiles.value) {
-                            val tLeft = tile.left * curScale + curOff.x
-                            val tTop = tile.top * curScale + curOff.y
-                            val tWidth = tile.width * curScale
-                            val tHeight = tile.height * curScale
-
-                            if (tTop + tHeight < 0f || tTop > size.height) continue
-                            if (tLeft <= leftSpacePx + eps && tLeft + tWidth >= leftSpacePx - eps) {
-                                drawRect(
-                                    color = tile.baseColor,
-                                    topLeft = Offset(0f, tTop),
-                                    size = Size(size.width, maxOf(1f, tHeight))
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Ambient blur zone: Right edge extension
-        if (rightSpaceDp > 0.dp) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(rightSpaceDp)
-                    .clipToBounds()
-            ) {
-                if (precalculatedTiles.value.isNotEmpty()) {
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(20.dp)
-                    ) {
-                        val curScale = currentScaleState.value
-                        val curOff = currentOffsetState.value
-                        val rightBoundary = canvasSize.width.toFloat() - rightSpacePx
-                        val eps = 8f
-                        for (tile in precalculatedTiles.value) {
-                            val tLeft = tile.left * curScale + curOff.x
-                            val tTop = tile.top * curScale + curOff.y
-                            val tWidth = tile.width * curScale
-                            val tHeight = tile.height * curScale
-
-                            if (tTop + tHeight < 0f || tTop > size.height) continue
-                            if (tLeft <= rightBoundary + eps && tLeft + tWidth >= rightBoundary - eps) {
-                                drawRect(
-                                    color = tile.baseColor,
-                                    topLeft = Offset(0f, tTop),
-                                    size = Size(size.width, maxOf(1f, tHeight))
-                                )
-                            }
-                        }
                     }
                 }
             }
