@@ -82,7 +82,11 @@ private val NAV_ITEMS = listOf(
     NavItemData("Discover", "search", AppDestinations.DISCOVER)
 )
 
-private val PORTRAIT_NAV_ITEMS = NAV_ITEMS.take(3)
+private val PORTRAIT_NAV_ITEMS = listOf(
+    NavItemData("Files", "folder", AppDestinations.EXPLORER),
+    NavItemData("Usage", "pie_chart", AppDestinations.TYPES),
+    NavItemData("Search", "search", AppDestinations.DISCOVER)
+)
 
 /**
  * Landscape Nameless Navigation Rail with AndDirStat Branded Logo Header.
@@ -436,12 +440,11 @@ fun TreemapNavPill(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
-        horizontalArrangement = if (hasLegacySelection) Arrangement.Center else Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Pill: Treemap, Explorer, Usage. While items are selected it takes the
-        // full row width so the count and total size occupy the gap the Discover
-        // pill leaves behind.
+        // Single combined pill: Files, Usage, Search. While items are selected it expands
+        // to show the selection count and action buttons.
         Surface(
             modifier = (if (hasLegacySelection) Modifier.fillMaxWidth().padding(horizontal = 8.dp) else Modifier)
                 .then(
@@ -662,69 +665,6 @@ fun TreemapNavPill(
                         }
                     }
                 }
-                }
-            }
-        }
-
-        // Right Pill: Material 3 Expressive Extended FAB for Search
-        val isDiscover = currentDestination == AppDestinations.DISCOVER
-        val discoverBg by animateColorAsState(
-            targetValue = if (isDiscover) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-            label = "discoverBg"
-        )
-        val discoverTint by animateColorAsState(
-            targetValue = if (isDiscover) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
-            label = "discoverTint"
-        )
-
-        AnimatedVisibility(
-            visible = !hasLegacySelection,
-            enter = fadeIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)) +
-                    scaleIn(initialScale = 0.85f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)),
-            exit = fadeOut(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)) +
-                   scaleOut(targetScale = 0.85f, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
-        ) {
-            AppTooltip(text = "Search") {
-                Surface(
-                    shape = CircleShape,
-                    color = discoverBg,
-                    shadowElevation = 8.dp,
-                    tonalElevation = 6.dp,
-                    modifier = Modifier
-                        .height(58.dp)
-                        .clip(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onNavigate(AppDestinations.DISCOVER)
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(horizontal = 20.dp)
-                            .fillMaxHeight(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        MaterialSymbol(
-                            name = "search",
-                            active = isDiscover,
-                            size = 22.dp,
-                            tint = discoverTint
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Search",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = discoverTint,
-                            maxLines = 1
-                        )
-                    }
                 }
             }
         }

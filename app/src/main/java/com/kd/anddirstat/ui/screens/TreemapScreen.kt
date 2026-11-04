@@ -1,18 +1,8 @@
 package com.kd.anddirstat.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -23,14 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +28,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.ActionDropdownMenu
@@ -59,7 +44,6 @@ fun TreemapScreen(
     selectedPath: String?,
     selectedTreeNodes: Map<CompactNode, String>,
     resetZoomKey: Int,
-    isZoomed: Boolean = false,
     isDark: Boolean,
     pureBlack: Boolean,
     isLandscape: Boolean,
@@ -70,7 +54,6 @@ fun TreemapScreen(
     showFreeSpace: Boolean,
     showHiddenFiles: Boolean,
     onZoomChanged: (Boolean) -> Unit = {},
-    onResetZoom: () -> Unit,
     onNodeSelected: (CompactNode, String, Offset?) -> Unit,
     onNavigate: (String) -> Unit,
     onRescanClick: () -> Unit,
@@ -133,44 +116,6 @@ fun TreemapScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Reset zoom button with Expressive motion physics
-                    AnimatedVisibility(
-                        visible = isZoomed,
-                        enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                                scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) +
-                                slideInHorizontally(animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) { it / 2 },
-                        exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                               scaleOut(targetScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                               slideOutHorizontally(animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) { it / 2 }
-                    ) {
-                        AssistChip(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onResetZoom()
-                            },
-                            label = {
-                                Text(
-                                    text = "Reset",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            leadingIcon = {
-                                MaterialSymbol(
-                                    name = "refresh",
-                                    active = false,
-                                    size = 18.dp,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                labelColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            shape = CircleShape
-                        )
-                    }
-
                     Box {
                         IconButton(
                             onClick = {

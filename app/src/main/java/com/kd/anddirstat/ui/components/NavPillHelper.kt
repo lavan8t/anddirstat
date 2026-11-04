@@ -6,9 +6,9 @@ object NavPillHelper {
 
     fun getDestinationIndex(destination: String): Int {
         return when (destination) {
-            AppDestinations.TREE -> 0
-            AppDestinations.EXPLORER -> 1
-            AppDestinations.TYPES -> 2
+            AppDestinations.EXPLORER -> 0
+            AppDestinations.TYPES -> 1
+            AppDestinations.DISCOVER -> 2
             else -> -1
         }
     }

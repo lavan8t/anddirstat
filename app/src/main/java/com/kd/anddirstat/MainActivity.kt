@@ -528,7 +528,6 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             selectedPath = selectedPath,
                             selectedTreeNodes = selectedTreeNodes,
                             resetZoomKey = resetZoomKey,
-                            isZoomed = isTreemapZoomed,
                             isDark = isDark,
                             pureBlack = pureBlack,
                             isLandscape = isLandscape,
@@ -539,7 +538,6 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             showFreeSpace = showFreeSpace,
                             showHiddenFiles = showHiddenFiles,
                             onZoomChanged = { isTreemapZoomed = it },
-                            onResetZoom = { resetZoomKey++; isTreemapZoomed = false },
                             onNodeSelected = { node, path, touchOffset -> selectedNode = node; selectedPath = path; selectedTouchOffset = touchOffset ?: lastTouchDown },
                             onNavigate = {
                                 if (it == AppDestinations.TREE) {
@@ -915,6 +913,8 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                                     if (dest == AppDestinations.TREE) {
                                                         resetZoomKey++
                                                         isTreemapZoomed = false
+                                                    } else {
+                                                        navController.popBackStack(AppDestinations.TREE, inclusive = false)
                                                     }
                                                 } else {
                                                     navController.navigate(dest) {
