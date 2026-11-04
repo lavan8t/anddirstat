@@ -92,41 +92,47 @@ fun TreemapScreen(
     var showFilterMenu by remember { mutableStateOf(false) }
     var showActionMenu by remember { mutableStateOf(false) }
 
-    // Floating Material 3 Expressive top app bar
+    // Floating Material 3 Expressive top actions pill
     val topBar = @Composable {
-        Surface(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = if (isLandscape) maxOf(cutoutStart, 16.dp) else 16.dp, vertical = 8.dp)
+                .padding(
+                    start = if (isLandscape) maxOf(cutoutStart, 16.dp) else 16.dp,
+                    end = 16.dp,
+                    top = 8.dp
+                )
                 .statusBarsPadding(),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
-            tonalElevation = 3.dp,
-            shadowElevation = 4.dp
+            horizontalArrangement = if (detectedVolumes.size > 1) Arrangement.SpaceBetween else Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                if (detectedVolumes.size > 1) {
+            if (detectedVolumes.size > 1) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
+                ) {
                     DriveSelectorCompactChip(
                         detectedVolumes = detectedVolumes,
                         activeVolume = activeVolume,
                         onSelectVolume = onSelectVolume,
                         onOpenCustomDialog = onOpenCustomDriveDialog
                     )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
                 }
+            }
 
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp
+            ) {
                 Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-
                     // Reset zoom button with Expressive motion physics
                     AnimatedVisibility(
                         visible = isZoomed,

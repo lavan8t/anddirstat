@@ -370,7 +370,7 @@ fun TreemapNavPill(
             modifier = modifier,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
-            shadowElevation = 0.dp,
+            shadowElevation = 8.dp,
             tonalElevation = 6.dp
         ) {
             Row(
@@ -459,7 +459,7 @@ fun TreemapNavPill(
                 ),
             shape = if (hasSelection) RoundedCornerShape(dropletCorner) else CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
-            shadowElevation = 0.dp,
+            shadowElevation = 8.dp,
             tonalElevation = 6.dp
         ) {
             Column(
@@ -673,7 +673,7 @@ fun TreemapNavPill(
             Surface(
                 shape = CircleShape,
                 color = discoverBg,
-                shadowElevation = 0.dp,
+                shadowElevation = 8.dp,
                 tonalElevation = 6.dp,
                 modifier = Modifier
                     .clip(CircleShape)

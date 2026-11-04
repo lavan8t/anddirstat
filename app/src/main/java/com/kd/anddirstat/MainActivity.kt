@@ -673,7 +673,7 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                 slideInHorizontally(
                                     initialOffsetX = { fullWidth -> fullWidth },
                                     animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        dampingRatio = 0.8f,
                                         stiffness = Spring.StiffnessMediumLow
                                     )
                                 )
@@ -682,7 +682,7 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                 slideOutHorizontally(
                                     targetOffsetX = { fullWidth -> -fullWidth / 3 },
                                     animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        dampingRatio = 0.8f,
                                         stiffness = Spring.StiffnessMediumLow
                                     )
                                 )
