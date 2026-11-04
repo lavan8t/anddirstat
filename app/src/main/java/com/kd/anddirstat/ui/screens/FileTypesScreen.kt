@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import com.kd.anddirstat.GoogleSansFlexFontFamily
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.ExtensionStat
+import com.kd.anddirstat.model.FileCategory
 import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
@@ -112,11 +113,6 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
     var otherBytes = 0L
     var freeSpaceBytes = 0L
 
-    val videoExts = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v")
-    val imageExts = setOf("jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico")
-    val audioExts = setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid")
-    val docExts = setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub")
-
     val stack = ArrayDeque<Triple<CompactNode, Boolean, Boolean>>()
     stack.add(Triple(rootNode, false, false))
 
@@ -153,10 +149,10 @@ fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): Stor
             val ext = if (dotIdx > 0 && dotIdx < name.length - 1) name.substring(dotIdx + 1).lowercase() else ""
 
             when {
-                ext in videoExts -> videoBytes += node.size
-                ext in imageExts -> imageBytes += node.size
-                ext in audioExts -> audioBytes += node.size
-                ext in docExts -> docBytes += node.size
+                ext in FileCategory.VIDEO.extensions -> videoBytes += node.size
+                ext in FileCategory.IMAGE.extensions -> imageBytes += node.size
+                ext in FileCategory.AUDIO.extensions -> audioBytes += node.size
+                ext in FileCategory.DOCUMENT.extensions -> docBytes += node.size
                 isInsideAndroid -> systemOsBytes += node.size
                 else -> otherBytes += node.size
             }
@@ -249,13 +245,13 @@ fun FileTypesView(
         }
     }
 
-    val videoExts = remember { setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v", "mpg", "mpeg", "vob") }
-    val imageExts = remember { setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "raw", "svg", "gif", "bmp", "ico", "dng", "cr2", "nef") }
-    val audioExts = remember { setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid", "midi", "alac", "amr") }
-    val docExts = remember { setOf("pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub", "mobi", "log", "rtf", "html", "htm", "json", "xml", "md", "yaml", "yml") }
-    val appExts = remember { setOf("apk", "xapk", "apks", "aab", "obb") }
-    val archiveExts = remember { setOf("zip", "rar", "7z", "tar", "gz", "iso", "bin", "img", "dmg", "xz", "bz2", "tgz") }
-    val binExts = remember { setOf("[trashed]", "trashed") }
+    val videoExts = FileCategory.VIDEO.extensions
+    val imageExts = FileCategory.IMAGE.extensions
+    val audioExts = FileCategory.AUDIO.extensions
+    val docExts = FileCategory.DOCUMENT.extensions
+    val appExts = FileCategory.APP.extensions
+    val archiveExts = FileCategory.ARCHIVE.extensions
+    val binExts = FileCategory.TRASHED.extensions
 
     val appsNode = remember(rootNode) {
         val stack = ArrayDeque<CompactNode>()

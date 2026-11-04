@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.kd.anddirstat.model.CompactNode
+import com.kd.anddirstat.model.FileCategory
 import java.io.File
 import java.util.Locale
 import kotlin.math.abs
@@ -559,30 +560,36 @@ object FileUtils {
             name == "[recycle bin]" || name == "recycle bin" -> "delete"
             name == "apps & system packages" || isAppNode -> "apps"
             node.isDirectory -> if (node.children?.isNotEmpty() == true) "folder_open" else "folder"
-            name.endsWith(".apk") || name.endsWith(".apks") || name.endsWith(".xapk") || name.endsWith(".apkm") || name.endsWith(".obb") || name.endsWith(".aab") -> "android"
-            name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") || name.endsWith(".tar") || name.endsWith(".gz") || name.endsWith(".bz2") || name.endsWith(".xz") || name.endsWith(".iso") || name.endsWith(".tgz") -> "folder_zip"
-            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".heic") || name.endsWith(".gif") || name.endsWith(".svg") || name.endsWith(".bmp") || name.endsWith(".ico") || name.endsWith(".dng") || name.endsWith(".raw") -> "image"
-            name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi") || name.endsWith(".mov") || name.endsWith(".webm") || name.endsWith(".3gp") || name.endsWith(".ts") || name.endsWith(".wmv") || name.endsWith(".m4v") || name.endsWith(".flv") -> "movie"
-            name.endsWith(".mp3") || name.endsWith(".flac") || name.endsWith(".wav") || name.endsWith(".m4a") || name.endsWith(".ogg") || name.endsWith(".opus") || name.endsWith(".aac") || name.endsWith(".wma") || name.endsWith(".mid") -> "music_note"
-            name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".txt") || name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".ppt") || name.endsWith(".pptx") || name.endsWith(".csv") || name.endsWith(".epub") -> "description"
-            name.endsWith(".html") || name.endsWith(".xml") || name.endsWith(".json") || name.endsWith(".js") || name.endsWith(".css") || name.endsWith(".ts") || name.endsWith(".kt") || name.endsWith(".java") || name.endsWith(".py") || name.endsWith(".sh") -> "code"
-            else -> "draft"
+            else -> {
+                val dotIdx = name.lastIndexOf('.')
+                val ext = if (dotIdx in 0 until name.length - 1) name.substring(dotIdx + 1) else ""
+                when {
+                    ext in FileCategory.CODE_EXTENSIONS -> "code"
+                    ext in FileCategory.APP.extensions -> "android"
+                    ext in FileCategory.ARCHIVE.extensions -> "folder_zip"
+                    ext in FileCategory.IMAGE.extensions -> "image"
+                    ext in FileCategory.VIDEO.extensions -> "movie"
+                    ext in FileCategory.AUDIO.extensions -> "music_note"
+                    ext in FileCategory.DOCUMENT.extensions -> "description"
+                    else -> "draft"
+                }
+            }
         }
     }
 
     fun getExtensionSymbolName(extension: String): String {
         val ext = extension.lowercase().removePrefix(".")
-        return when (ext) {
-            "trashed", "recycle bin", "[recycle bin]" -> "delete"
-            "installed apps", "[installed apps]", "apps", "[apps]" -> "apps"
-            "temporary system files", "[temporary system files]", "temp files" -> "cached"
-            "apk", "apks", "xapk", "apkm", "obb", "aab" -> "android"
-            "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" -> "movie"
-            "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" -> "music_note"
-            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico", "dng" -> "image"
-            "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" -> "description"
-            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "tgz", "dmg", "bin" -> "folder_zip"
-            "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py", "sh" -> "code"
+        return when {
+            ext == "trashed" || ext == "recycle bin" || ext == "[recycle bin]" -> "delete"
+            ext == "installed apps" || ext == "[installed apps]" || ext == "apps" || ext == "[apps]" -> "apps"
+            ext == "temporary system files" || ext == "[temporary system files]" || ext == "temp files" -> "cached"
+            ext in FileCategory.CODE_EXTENSIONS -> "code"
+            ext in FileCategory.APP.extensions -> "android"
+            ext in FileCategory.VIDEO.extensions -> "movie"
+            ext in FileCategory.AUDIO.extensions -> "music_note"
+            ext in FileCategory.IMAGE.extensions -> "image"
+            ext in FileCategory.DOCUMENT.extensions -> "description"
+            ext in FileCategory.ARCHIVE.extensions -> "folder_zip"
             else -> "draft"
         }
     }
@@ -608,26 +615,22 @@ object FileUtils {
 
     fun getFileTypeIconColor(extension: String, isDark: Boolean): Color {
         val ext = extension.lowercase().removePrefix(".")
-        return when (ext) {
-            "trashed", "recycle bin", "[recycle bin]" ->
-                if (isDark) Color(0xFFFF3366) else Color(0xFFE11D48)
-            "mp4", "mkv", "avi", "mov", "webm", "flv", "3gp", "ts", "wmv", "m4v" ->
-                if (isDark) Color(0xFF60A5FA) else Color(0xFF1D4ED8)
-            "mp3", "flac", "wav", "m4a", "ogg", "aac", "opus", "wma", "mid" ->
-                if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
-            "jpg", "jpeg", "png", "webp", "heic", "raw", "svg", "gif", "bmp", "ico", "dng" ->
-                if (isDark) Color(0xFF34D399) else Color(0xFF059669)
-            "apk", "apks", "xapk", "apkm", "obb", "aab" ->
-                if (isDark) Color(0xFF4ADE80) else Color(0xFF16A34A)
-            "pdf", "doc", "docx", "txt", "xlsx", "xls", "ppt", "pptx", "csv", "epub" ->
-                if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
-            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "bin", "dmg", "tgz" ->
-                if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706)
-            "so", "dex", "jar", "class", "exe", "dll" ->
-                if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
-            "html", "xml", "json", "js", "css", "ts", "kt", "java", "c", "cpp", "py", "sh" ->
-                if (isDark) Color(0xFFFCD34D) else Color(0xFFB45309)
-            else -> {
+        if (ext in FileCategory.BINARY_EXTENSIONS) {
+            return if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
+        }
+        if (ext in FileCategory.CODE_EXTENSIONS) {
+            return if (isDark) Color(0xFFFCD34D) else Color(0xFFB45309)
+        }
+        val cat = FileCategory.fromExtension(ext)
+        return when (cat) {
+            FileCategory.TRASHED -> if (isDark) Color(0xFFFF3366) else Color(0xFFE11D48)
+            FileCategory.VIDEO -> if (isDark) Color(0xFF60A5FA) else Color(0xFF1D4ED8)
+            FileCategory.AUDIO -> if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
+            FileCategory.IMAGE -> if (isDark) Color(0xFF34D399) else Color(0xFF059669)
+            FileCategory.APP -> if (isDark) Color(0xFF4ADE80) else Color(0xFF16A34A)
+            FileCategory.DOCUMENT -> if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+            FileCategory.ARCHIVE -> if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706)
+            FileCategory.OTHER -> {
                 if (ext.isEmpty()) {
                     if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
                 } else {

@@ -2,16 +2,10 @@ package com.kd.anddirstat.scanner
 
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.ExtensionStat
+import com.kd.anddirstat.model.FileCategory
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.treemap.getNodeColor
 import com.kd.anddirstat.util.FileUtils
-
-private val VIDEO_EXTENSIONS = setOf(".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".3gp", ".ts", ".wmv", ".m4v")
-private val AUDIO_EXTENSIONS = setOf(".mp3", ".flac", ".wav", ".m4a", ".ogg", ".aac", ".opus", ".wma", ".mid")
-private val IMAGE_EXTENSIONS = setOf(".jpg", ".jpeg", ".png", ".webp", ".heic", ".raw", ".svg", ".gif", ".bmp", ".ico")
-private val PACKAGE_EXTENSIONS = setOf(".apk", ".apks", ".xapk", ".apkm", ".obb", ".aab")
-private val DOCUMENT_EXTENSIONS = setOf(".pdf", ".doc", ".docx", ".txt", ".xlsx", ".xls", ".ppt", ".pptx", ".csv", ".epub")
-private val ARCHIVE_EXTENSIONS = setOf(".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso")
 
 private const val RECYCLE_BIN_MARKER = "[Recycle Bin]"
 
@@ -221,13 +215,7 @@ object StorageFilterHelper {
                 ext == "[trashed]" || ext == "[Recycle Bin]" || ext == ".trashed" || ext == "Recycle Bin" -> "Recycle Bin"
                 ext == "Cache" -> "App Cache"
                 ext == "Data" -> "App Data"
-                ext in VIDEO_EXTENSIONS -> "Video"
-                ext in AUDIO_EXTENSIONS -> "Audio"
-                ext in IMAGE_EXTENSIONS -> "Image"
-                ext in PACKAGE_EXTENSIONS -> "App Package"
-                ext in DOCUMENT_EXTENSIONS -> "Document"
-                ext in ARCHIVE_EXTENSIONS -> "Archive"
-                else -> "Other"
+                else -> FileCategory.fromExtension(ext).statCategory
             }
             ExtensionStat(
                 extension = ext,
