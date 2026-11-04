@@ -25,6 +25,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateIntOffsetAsState
@@ -127,6 +128,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.kd.anddirstat.cleanup.CleanupQueueHelper
 import com.kd.anddirstat.cleanup.StagedQueueItem
 import com.kd.anddirstat.ui.components.CleanupQueueReviewSheet
+import com.kd.anddirstat.ui.components.PredictiveSlideBackContainer
 import com.kd.anddirstat.ui.components.ScanningBanner
 import com.kd.anddirstat.ui.components.TreeDeleteDialog
 import com.kd.anddirstat.ui.components.TreemapNavPill
@@ -142,6 +144,7 @@ import com.kd.anddirstat.ui.screens.SettingsScreen
 import com.kd.anddirstat.ui.screens.TreemapScreen
 import com.kd.anddirstat.ui.screens.cleaners.*
 import com.kd.anddirstat.treemap.TreemapBitmapCache
+import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
 import com.kd.anddirstat.util.FileUtils
@@ -425,13 +428,12 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
 
         val treeSelectionActive = selectedTreeNodes.isNotEmpty()
         val discoverSelectionActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()
-        // One derived target for the four back handlers: the branch order makes them mutually
-        // exclusive by construction instead of relying on four overlapping guards.
+        // One derived target for back handlers: the branch order makes them mutually
+        // exclusive by construction instead of relying on overlapping guards.
         val backTarget = when {
             selectedNode != null -> BackTarget.NODE_POPUP
             treeSelectionActive && currentRoute == AppDestinations.TREE -> BackTarget.TREE_SELECTION
             discoverSelectionActive && currentRoute == AppDestinations.DISCOVER -> BackTarget.DISCOVER_SEARCH
-            !treeSelectionActive && !discoverSelectionActive && currentRoute != AppDestinations.TREE -> BackTarget.NAV_PILL
             else -> BackTarget.NONE
         }
 
@@ -443,19 +445,6 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
         }
         PredictiveBackHandler(enabled = backTarget == BackTarget.DISCOVER_SEARCH) { progress ->
             try { progress.collect {}; clearDiscoverSelection() } catch (_: CancellationException) {}
-        }
-        PredictiveBackHandler(enabled = backTarget == BackTarget.NAV_PILL) { progress ->
-            try {
-                isPillBackActive = true
-                progress.collect { backEvent ->
-                    pillBackProgress = backEvent.progress
-                }
-                navController.popBackStack()
-            } catch (_: CancellationException) {
-            } finally {
-                isPillBackActive = false
-                pillBackProgress = 0f
-            }
         }
 
         val destIndexMap = remember { mapOf(AppDestinations.TREE to 0, AppDestinations.EXPLORER to 1, AppDestinations.TYPES to 2, AppDestinations.DISCOVER to 3) }
@@ -518,285 +507,414 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                         clearDiscoverSelection()
                     }
 
-                    val navHostContent = @Composable {
-                        val spatialSpec = ExpressiveMotionTokens.SpatialSpring
-                        val effectsSpec = ExpressiveMotionTokens.EffectsSpring
-                        NavHost(
-                            navController = navController,
-                            startDestination = AppDestinations.TREE,
+                    val homeContent: @Composable () -> Unit = {
+                        TreemapScreen(
+                            rootNode = rootNode!!,
+                            selectedNode = selectedNode,
+                            selectedPath = selectedPath,
+                            selectedTreeNodes = selectedTreeNodes,
+                            resetZoomKey = resetZoomKey,
+                            isZoomed = isTreemapZoomed,
+                            isDark = isDark,
+                            pureBlack = pureBlack,
+                            isLandscape = isLandscape,
+                            detectedVolumes = detectedVolumes,
+                            activeVolume = activeVolume,
+                            showSystemOS = showSystemOS,
+                            showSystemApps = showSystemApps,
+                            showFreeSpace = showFreeSpace,
+                            showHiddenFiles = showHiddenFiles,
+                            onZoomChanged = { isTreemapZoomed = it },
+                            onResetZoom = { resetZoomKey++; isTreemapZoomed = false },
+                            onNodeSelected = { node, path, touchOffset -> selectedNode = node; selectedPath = path; selectedTouchOffset = touchOffset ?: lastTouchDown },
+                            onNavigate = {
+                                if (it == AppDestinations.TREE) {
+                                    resetZoomKey++
+                                    isTreemapZoomed = false
+                                } else {
+                                    navController.navigate(it)
+                                }
+                            },
+                            onRescanClick = { requestScan() },
+                            onSettingsClick = { navController.navigate(AppDestinations.SETTINGS) },
+                            onSelectVolume = { vol -> activeVolume = vol; selectedVolumeIds = setOf(vol.id); performScan(listOf(vol), scanApps = vol.isPrimary) },
+                            onOpenCustomDriveDialog = { showVolumeSelectionDialog = true },
+                            onToggleShowSystemOS = { updateFilter(so = it); prefs.edit().putBoolean("show_system_os", it).apply() },
+                            onToggleShowSystemApps = { updateFilter(sa = it); prefs.edit().putBoolean("show_system_apps", it).apply() },
+                            onToggleShowFreeSpace = { updateFilter(fs = it); prefs.edit().putBoolean("show_free_space", it).apply() },
+                            onToggleShowHiddenFiles = { updateFilter(hf = it); prefs.edit().putBoolean("show_hidden_files", it).apply() },
+                            onClearSelection = { clearTreeSelection() },
+                            onRequestDeleteSelected = { showTreeDeleteDialog = true },
+                            onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null }
+                        )
+                    }
+
+                    val explorerContent: @Composable () -> Unit = {
+                        Surface(
                             modifier = Modifier.fillMaxSize(),
-                            enterTransition = {
-                                val isFwd = (destIndexMap[targetState.destination.route] ?: 99) >= (destIndexMap[initialState.destination.route] ?: -1)
-                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
-                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
-                            },
-                            exitTransition = {
-                                val isFwd = (destIndexMap[targetState.destination.route] ?: 99) >= (destIndexMap[initialState.destination.route] ?: -1)
-                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
-                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
-                            },
-                            popEnterTransition = {
-                                val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: 99)
-                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
-                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
-                            },
-                            popExitTransition = {
-                                val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: 99)
-                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
-                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
-                            }
+                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
                         ) {
-                            composable(AppDestinations.TREE) {
-                                TreemapScreen(
-                                    rootNode = rootNode!!,
-                                    selectedNode = selectedNode,
-                                    selectedPath = selectedPath,
-                                    selectedTreeNodes = selectedTreeNodes,
-                                    resetZoomKey = resetZoomKey,
-                                    isZoomed = isTreemapZoomed,
-                                    isDark = isDark,
-                                    pureBlack = pureBlack,
-                                    isLandscape = isLandscape,
-                                    detectedVolumes = detectedVolumes,
-                                    activeVolume = activeVolume,
-                                    showSystemOS = showSystemOS,
-                                    showSystemApps = showSystemApps,
-                                    showFreeSpace = showFreeSpace,
-                                    showHiddenFiles = showHiddenFiles,
-                                    onZoomChanged = { isTreemapZoomed = it },
-                                    onResetZoom = { resetZoomKey++; isTreemapZoomed = false },
-                                    onNodeSelected = { node, path, touchOffset -> selectedNode = node; selectedPath = path; selectedTouchOffset = touchOffset ?: lastTouchDown },
-                                    onNavigate = {
-                                        if (it == AppDestinations.TREE) {
-                                            resetZoomKey++
-                                            isTreemapZoomed = false
-                                        } else {
-                                            navController.navigate(it)
-                                        }
-                                    },
-                                    onRescanClick = { requestScan() },
-                                    onSettingsClick = { navController.navigate(AppDestinations.SETTINGS) },
-                                    onSelectVolume = { vol -> activeVolume = vol; selectedVolumeIds = setOf(vol.id); performScan(listOf(vol), scanApps = vol.isPrimary) },
-                                    onOpenCustomDriveDialog = { showVolumeSelectionDialog = true },
-                                    onToggleShowSystemOS = { updateFilter(so = it); prefs.edit().putBoolean("show_system_os", it).apply() },
-                                    onToggleShowSystemApps = { updateFilter(sa = it); prefs.edit().putBoolean("show_system_apps", it).apply() },
-                                    onToggleShowFreeSpace = { updateFilter(fs = it); prefs.edit().putBoolean("show_free_space", it).apply() },
-                                    onToggleShowHiddenFiles = { updateFilter(hf = it); prefs.edit().putBoolean("show_hidden_files", it).apply() },
-                                    onClearSelection = { clearTreeSelection() },
-                                    onRequestDeleteSelected = { showTreeDeleteDialog = true },
-                                    onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null }
-                                )
-                            }
-
-                            composable(AppDestinations.EXPLORER) {
-                                Surface(
-                                    modifier = Modifier.fillMaxSize(),
-                                    color = MaterialTheme.colorScheme.surface
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .statusBarsPadding()
-                                    ) {
-                                        ExplorerView(
-                                            rootNode = (rawScannedNode ?: rootNode)!!,
-                                            onNodeClick = { child, childPath ->
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                selectedNode = child
-                                                selectedPath = childPath
-                                                selectedTouchOffset = lastTouchDown
-                                            },
-                                            onNodesDeleted = { removeDeletedNodes(it) },
-                                            onRefresh = { performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
-                                            onNavigateTo = { navController.navigate(it) },
-                                            onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null },
-                                            targetPath = explorerTargetPath,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-                            }
-
-                            composable(AppDestinations.TYPES) {
-                                Surface(
-                                    modifier = Modifier.fillMaxSize(),
-                                    color = MaterialTheme.colorScheme.surface
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .statusBarsPadding()
-                                    ) {
-                                        FileTypesView(
-                                            rootNode = (rawScannedNode ?: rootNode)!!,
-                                            stats = extensionStats,
-                                            totalDeviceSize = deviceTotalBytes,
-                                            onNodeClick = { node, path ->
-                                                selectedNode = node
-                                                selectedPath = path
-                                                selectedTouchOffset = lastTouchDown
-                                            },
-                                            onNavigateTo = { navController.navigate(it) },
-                                            onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-                            }
-
-                            composable(AppDestinations.DISCOVER) {
-                                Scaffold(
-                                    modifier = Modifier.fillMaxSize().padding(start = if (isLandscape) WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(LocalLayoutDirection.current) else 0.dp),
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBars,
-                                    topBar = {
-                                        DiscoverSearchTopAppBar(
-                                            query = discoverSearchQuery,
-                                            isSearchActive = isDiscoverSearchActive,
-                                            isLandscape = isLandscape,
-                                            haptic = haptic,
-                                            onQueryChange = {
-                                                setDiscoverSelection(it, if (it.isNotBlank()) true else isDiscoverSearchActive)
-                                                if (it.isNotBlank()) {
-                                                    FavoritesManager.addRecentSearch(context, it)
-                                                }
-                                            },
-                                            onSearchActiveChange = { setDiscoverSelection(discoverSearchQuery, it) },
-                                            onBack = { navController.popBackStack() }
-                                        )
-                                    }
-                                ) { discPadding ->
-                                    Box(modifier = Modifier.fillMaxSize().padding(top = discPadding.calculateTopPadding(), bottom = discPadding.calculateBottomPadding())) {
-                                        DiscoverView(
-                                            rootNode = (rawScannedNode ?: rootNode)!!,
-                                            topFiles = topFiles,
-                                            searchQuery = discoverSearchQuery,
-                                            isSearchActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty(),
-                                            onSearchQueryChange = { setDiscoverSelection(it, isDiscoverSearchActive) },
-                                            onNodeClick = { node, path ->
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                val realFile = FileUtils.resolveActualFile(path, context)
-                                                if (realFile != null && realFile.exists() && !node.isDirectory) FileUtils.openFile(context, realFile)
-                                            },
-                                            onNodesDeleted = { removeDeletedNodes(it) },
-                                            onRefresh = { performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
-                                            onNavigateTo = { navController.navigate(it) },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-                            }
-
-                            composable(AppDestinations.SETTINGS) { SettingsScreen(onBack = { navController.popBackStack() }) }
-                            composable(AppDestinations.CLEANER_DUPLICATES) { DuplicatesCleanerView(onBack = { navController.popBackStack() }) }
-                            composable(AppDestinations.CLEANER_EMPTY_FOLDERS) { EmptyFoldersCleanerView(onBack = { navController.popBackStack() }) }
-                            composable(AppDestinations.CLEANER_SCREENSHOTS) { ScreenshotsCleanerView(onBack = { navController.popBackStack() }) }
-                            composable(AppDestinations.CLEANER_RECYCLE_BIN) { RecycleBinCleanerView(onBack = { navController.popBackStack() }) }
-                            composable(AppDestinations.STARRED) { StarredFilesScreen(onBack = { navController.popBackStack() }) }
-                            composable(AppDestinations.LARGEST_FILES) {
-                                LargestFilesScreen(
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .statusBarsPadding()
+                            ) {
+                                ExplorerView(
                                     rootNode = (rawScannedNode ?: rootNode)!!,
-                                    topFiles = topFiles,
-                                    onBack = { navController.popBackStack() },
-                                    onNodeClick = { node, path ->
+                                    onNodeClick = { child, childPath ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        val realFile = FileUtils.resolveActualFile(path, context)
-                                        if (realFile != null && realFile.exists() && !node.isDirectory) FileUtils.openFile(context, realFile)
-                                    }
+                                        selectedNode = child
+                                        selectedPath = childPath
+                                        selectedTouchOffset = lastTouchDown
+                                    },
+                                    onNodesDeleted = { removeDeletedNodes(it) },
+                                    onRefresh = { performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
+                                    onNavigateTo = { navController.navigate(it) },
+                                    onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null },
+                                    targetPath = explorerTargetPath,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
                         }
                     }
 
-                    if (isLandscape && showNavPill) {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            TreemapNavRail(
-                                currentDestination = currentRoute,
-                                onNavigate = { dest ->
-                                    if (dest == currentRoute) {
-                                        if (dest == AppDestinations.TREE) {
-                                            resetZoomKey++
-                                            isTreemapZoomed = false
-                                        }
-                                    } else {
-                                        navController.navigate(dest) {
-                                            popUpTo(AppDestinations.TREE) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                },
-                                selectedTreeNodes = selectedTreeNodes,
-                                stagedQueueCount = stagedQueue.size,
-                                stagedReclaimableBytes = stagedReclaimableBytes,
-                                onOpenReviewSheet = { showCleanupReviewSheet = true },
-                                onClearStaged = { stagedQueue = emptyMap() },
-                                onClearSelection = { clearTreeSelection() },
-                                onDeleteSelected = { showTreeDeleteDialog = true }
-                            )
-
-                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                navHostContent()
+                    val typesContent: @Composable () -> Unit = {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .statusBarsPadding()
+                            ) {
+                                FileTypesView(
+                                    rootNode = (rawScannedNode ?: rootNode)!!,
+                                    stats = extensionStats,
+                                    totalDeviceSize = deviceTotalBytes,
+                                    onNodeClick = { node, path ->
+                                        selectedNode = node
+                                        selectedPath = path
+                                        selectedTouchOffset = lastTouchDown
+                                    },
+                                    onNavigateTo = { navController.navigate(it) },
+                                    onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null },
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            navHostContent()
+                    }
 
-                            if (showNavPill) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .navigationBarsPadding()
-                                        .padding(bottom = 14.dp)
-                                ) {
-                                    TreemapNavPill(
-                                        isLandscape = isLandscape,
-                                        currentDestination = currentRoute,
-                                        onBack = { navController.popBackStack() },
-                                        stagedQueueCount = stagedQueue.size,
-                                        stagedReclaimableBytes = stagedReclaimableBytes,
-                                        onOpenReviewSheet = { showCleanupReviewSheet = true },
-                                        onClearStaged = { stagedQueue = emptyMap() },
-                                        selectedTreeNodes = selectedTreeNodes,
-                                        onClearSelection = { clearTreeSelection() },
-                                        onDeleteSelected = { showTreeDeleteDialog = true },
-                                        predictiveBackProgress = pillBackProgress,
-                                        isPredictiveBackActive = isPillBackActive,
-                                        predictiveBackTargetDestination = AppDestinations.TREE,
-                                        onNavigate = { dest ->
-                                            if (dest == currentRoute) {
-                                                if (dest == AppDestinations.TREE) {
-                                                    resetZoomKey++
-                                                    isTreemapZoomed = false
-                                                }
-                                            } else {
-                                                navController.navigate(dest) {
-                                                    popUpTo(AppDestinations.TREE) {
-                                                        saveState = true
-                                                    }
-                                                    launchSingleTop = true
-                                                    restoreState = true
-                                                }
-                                            }
+                    val discoverContent: @Composable (triggerBack: (() -> Unit)?) -> Unit = { triggerBack ->
+                        Scaffold(
+                            modifier = Modifier.fillMaxSize().padding(start = if (isLandscape) WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(LocalLayoutDirection.current) else 0.dp),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+                            contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBars,
+                            topBar = {
+                                DiscoverSearchTopAppBar(
+                                    query = discoverSearchQuery,
+                                    isSearchActive = isDiscoverSearchActive,
+                                    isLandscape = isLandscape,
+                                    haptic = haptic,
+                                    onQueryChange = {
+                                        setDiscoverSelection(it, if (it.isNotBlank()) true else isDiscoverSearchActive)
+                                        if (it.isNotBlank()) {
+                                            FavoritesManager.addRecentSearch(context, it)
                                         }
+                                    },
+                                    onSearchActiveChange = { setDiscoverSelection(discoverSearchQuery, it) },
+                                    onBack = {
+                                        if (triggerBack != null) triggerBack() else navController.popBackStack()
+                                    }
+                                )
+                            }
+                        ) { discPadding ->
+                            Box(modifier = Modifier.fillMaxSize().padding(top = discPadding.calculateTopPadding(), bottom = discPadding.calculateBottomPadding())) {
+                                DiscoverView(
+                                    rootNode = (rawScannedNode ?: rootNode)!!,
+                                    topFiles = topFiles,
+                                    searchQuery = discoverSearchQuery,
+                                    isSearchActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty(),
+                                    onSearchQueryChange = { setDiscoverSelection(it, isDiscoverSearchActive) },
+                                    onNodeClick = { node, path ->
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        val realFile = FileUtils.resolveActualFile(path, context)
+                                        if (realFile != null && realFile.exists() && !node.isDirectory) FileUtils.openFile(context, realFile)
+                                    },
+                                    onNodesDeleted = { removeDeletedNodes(it) },
+                                    onRefresh = { performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
+                                    onNavigateTo = { navController.navigate(it) },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+
+                    val navHostContent = @Composable {
+                        NavHost(
+                            navController = navController,
+                            startDestination = AppDestinations.TREE,
+                            modifier = Modifier.fillMaxSize(),
+                            enterTransition = {
+                                slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
                                     )
+                                )
+                            },
+                            exitTransition = {
+                                slideOutHorizontally(
+                                    targetOffsetX = { fullWidth -> -fullWidth / 3 },
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                )
+                            },
+                            popEnterTransition = {
+                                EnterTransition.None
+                            },
+                            popExitTransition = {
+                                ExitTransition.None
+                            }
+                        ) {
+                            composable(AppDestinations.TREE) {
+                                homeContent()
+                            }
+
+                            composable(AppDestinations.EXPLORER) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = homeContent
+                                ) { triggerBack ->
+                                    explorerContent()
                                 }
                             }
 
-                            ScanProgressBanner(
-                                progress = scanProgress,
-                                visible = isBackgroundScanning,
-                                onCancelScan = {
-                                    viewModel.cancelScan()
-                                    AppNotifier.finishActivity(context)
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .statusBarsPadding()
-                            )
+                            composable(AppDestinations.TYPES) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = homeContent
+                                ) { triggerBack ->
+                                    typesContent()
+                                }
+                            }
+
+                            composable(AppDestinations.DISCOVER) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = homeContent,
+                                    enabled = !isDiscoverSearchActive && discoverSearchQuery.isEmpty()
+                                ) { triggerBack ->
+                                    discoverContent(triggerBack)
+                                }
+                            }
+
+                            composable(AppDestinations.SETTINGS) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = homeContent
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        SettingsScreen(onBack = triggerBack)
+                                    }
+                                }
+                            }
+
+                            composable(AppDestinations.CLEANER_DUPLICATES) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = { discoverContent(null) }
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        DuplicatesCleanerView(onBack = triggerBack)
+                                    }
+                                }
+                            }
+
+                            composable(AppDestinations.CLEANER_EMPTY_FOLDERS) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = { discoverContent(null) }
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        EmptyFoldersCleanerView(onBack = triggerBack)
+                                    }
+                                }
+                            }
+
+                            composable(AppDestinations.CLEANER_SCREENSHOTS) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = { discoverContent(null) }
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        ScreenshotsCleanerView(onBack = triggerBack)
+                                    }
+                                }
+                            }
+
+                            composable(AppDestinations.CLEANER_RECYCLE_BIN) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = { discoverContent(null) }
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        RecycleBinCleanerView(onBack = triggerBack)
+                                    }
+                                }
+                            }
+
+                            composable(AppDestinations.STARRED) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = homeContent
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        StarredFilesScreen(onBack = triggerBack)
+                                    }
+                                }
+                            }
+
+                            composable(AppDestinations.LARGEST_FILES) {
+                                PredictiveSlideBackContainer(
+                                    onBackPressed = { navController.popBackStack() },
+                                    backgroundContent = { discoverContent(null) }
+                                ) { triggerBack ->
+                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                        LargestFilesScreen(
+                                            rootNode = (rawScannedNode ?: rootNode)!!,
+                                            topFiles = topFiles,
+                                            onBack = triggerBack,
+                                            onNodeClick = { node, path ->
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                val realFile = FileUtils.resolveActualFile(path, context)
+                                                if (realFile != null && realFile.exists() && !node.isDirectory) FileUtils.openFile(context, realFile)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        TreemapCanvas(
+                            rootNode = rootNode!!,
+                            rootPath = activeVolume?.path?.absolutePath ?: rootNode!!.name,
+                            selectedNode = selectedNode,
+                            selectedNodes = selectedTreeNodes.keys,
+                            resetKey = resetZoomKey,
+                            isDark = isDark,
+                            pureBlack = pureBlack,
+                            isInteractive = (currentRoute == AppDestinations.TREE),
+                            onZoomChanged = { isTreemapZoomed = it },
+                            isLandscape = isLandscape,
+                            onNodeSelected = { node, path, touchOffset ->
+                                selectedNode = node
+                                selectedPath = path
+                                selectedTouchOffset = touchOffset ?: lastTouchDown
+                            },
+                            onDismissPopup = {
+                                selectedNode = null
+                                selectedPath = null
+                                selectedTouchOffset = null
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        if (isLandscape && showNavPill) {
+                            Row(modifier = Modifier.fillMaxSize()) {
+                                TreemapNavRail(
+                                    currentDestination = currentRoute,
+                                    onNavigate = { dest ->
+                                        if (dest == currentRoute) {
+                                            if (dest == AppDestinations.TREE) {
+                                                resetZoomKey++
+                                                isTreemapZoomed = false
+                                            }
+                                        } else {
+                                            navController.navigate(dest) {
+                                                popUpTo(AppDestinations.TREE) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        }
+                                    },
+                                    selectedTreeNodes = selectedTreeNodes,
+                                    stagedQueueCount = stagedQueue.size,
+                                    stagedReclaimableBytes = stagedReclaimableBytes,
+                                    onOpenReviewSheet = { showCleanupReviewSheet = true },
+                                    onClearStaged = { stagedQueue = emptyMap() },
+                                    onClearSelection = { clearTreeSelection() },
+                                    onDeleteSelected = { showTreeDeleteDialog = true }
+                                )
+
+                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                    navHostContent()
+                                }
+                            }
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                navHostContent()
+
+                                if (showNavPill) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .navigationBarsPadding()
+                                            .padding(bottom = 14.dp)
+                                    ) {
+                                        TreemapNavPill(
+                                            isLandscape = isLandscape,
+                                            currentDestination = currentRoute,
+                                            onBack = { navController.popBackStack() },
+                                            stagedQueueCount = stagedQueue.size,
+                                            stagedReclaimableBytes = stagedReclaimableBytes,
+                                            onOpenReviewSheet = { showCleanupReviewSheet = true },
+                                            onClearStaged = { stagedQueue = emptyMap() },
+                                            selectedTreeNodes = selectedTreeNodes,
+                                            onClearSelection = { clearTreeSelection() },
+                                            onDeleteSelected = { showTreeDeleteDialog = true },
+                                            predictiveBackProgress = pillBackProgress,
+                                            isPredictiveBackActive = isPillBackActive,
+                                            predictiveBackTargetDestination = AppDestinations.TREE,
+                                            onNavigate = { dest ->
+                                                if (dest == currentRoute) {
+                                                    if (dest == AppDestinations.TREE) {
+                                                        resetZoomKey++
+                                                        isTreemapZoomed = false
+                                                    }
+                                                } else {
+                                                    navController.navigate(dest) {
+                                                        popUpTo(AppDestinations.TREE) {
+                                                            saveState = true
+                                                        }
+                                                        launchSingleTop = true
+                                                        restoreState = true
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+
+                                ScanProgressBanner(
+                                    progress = scanProgress,
+                                    visible = isBackgroundScanning,
+                                    onCancelScan = {
+                                        viewModel.cancelScan()
+                                        AppNotifier.finishActivity(context)
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .statusBarsPadding()
+                                )
+                            }
                         }
                     }
                 }

@@ -1,7 +1,5 @@
 package com.kd.anddirstat.ui.screens
 
-import android.content.Context
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -11,27 +9,27 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,30 +38,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.model.CompactNode
-import com.kd.anddirstat.treemap.TreemapCanvas
-import com.kd.anddirstat.treemap.computeTreemapTiles
-import com.kd.anddirstat.ui.components.AnimatedAppTitle
-import com.kd.anddirstat.ui.components.AppIconCache
-import com.kd.anddirstat.ui.components.DriveSelectorCompactChip
 import com.kd.anddirstat.ui.components.ActionDropdownMenu
+import com.kd.anddirstat.ui.components.DriveSelectorCompactChip
 import com.kd.anddirstat.ui.components.FilterDropdownMenu
 import com.kd.anddirstat.ui.components.MaterialSymbol
-import com.kd.anddirstat.ui.components.UnifiedDropdownMenu
 import com.kd.anddirstat.util.StorageVolumeInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,85 +86,83 @@ fun TreemapScreen(
     onDismissPopup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val layoutDirection = LocalLayoutDirection.current
     val cutoutStart = WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(layoutDirection)
     var showFilterMenu by remember { mutableStateOf(false) }
     var showActionMenu by remember { mutableStateOf(false) }
 
-    val baseBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
-
+    // Floating Material 3 Expressive top app bar
     val topBar = @Composable {
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .clipToBounds()
+                .padding(horizontal = if (isLandscape) maxOf(cutoutStart, 16.dp) else 16.dp, vertical = 8.dp)
+                .statusBarsPadding(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+            tonalElevation = 3.dp,
+            shadowElevation = 4.dp
         ) {
-            // Custom Treemap App Bar Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = if (isLandscape) maxOf(cutoutStart, 16.dp) else 16.dp, end = 8.dp)
-                    .height(48.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    AnimatedAppTitle(fontSize = 19.sp)
+                if (detectedVolumes.size > 1) {
+                    DriveSelectorCompactChip(
+                        detectedVolumes = detectedVolumes,
+                        activeVolume = activeVolume,
+                        onSelectVolume = onSelectVolume,
+                        onOpenCustomDialog = onOpenCustomDriveDialog
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (detectedVolumes.size > 1) {
-                        DriveSelectorCompactChip(
-                            detectedVolumes = detectedVolumes,
-                            activeVolume = activeVolume,
-                            onSelectVolume = onSelectVolume,
-                            onOpenCustomDialog = onOpenCustomDriveDialog
-                        )
-                    }
 
-                    // Reset zoom button in top right before 3-dot
+                    // Reset zoom button with Expressive motion physics
                     AnimatedVisibility(
                         visible = isZoomed,
                         enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                                scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) +
-                                slideInHorizontally(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy)) { it / 2 },
+                                scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) +
+                                slideInHorizontally(animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) { it / 2 },
                         exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
                                scaleOut(targetScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                               slideOutHorizontally(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy)) { it / 2 }
+                               slideOutHorizontally(animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) { it / 2 }
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onResetZoom()
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            MaterialSymbol(
-                                name = "refresh",
-                                active = false,
-                                size = 18.dp,
-                                tint = if (isDark) Color.White else Color(0xFF1E293B)
-                            )
-                            Text(
-                                text = "Zoom",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Normal,
-                                color = if (isDark) Color.White else Color(0xFF1E293B)
-                            )
-                        }
+                        AssistChip(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onResetZoom()
+                            },
+                            label = {
+                                Text(
+                                    text = "Reset",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            leadingIcon = {
+                                MaterialSymbol(
+                                    name = "refresh",
+                                    active = false,
+                                    size = 18.dp,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                labelColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = CircleShape
+                        )
                     }
 
                     Box {
@@ -194,7 +177,7 @@ fun TreemapScreen(
                                 name = "filter_list",
                                 active = true,
                                 size = 20.dp,
-                                tint = if (isDark) Color.White else Color(0xFF1E293B)
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
@@ -224,7 +207,7 @@ fun TreemapScreen(
                                 name = "more_vert",
                                 active = true,
                                 size = 20.dp,
-                                tint = if (isDark) Color.White else Color(0xFF1E293B)
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
@@ -240,27 +223,8 @@ fun TreemapScreen(
         }
     }
 
-    val canvasContent = @Composable {
-        Box(modifier = Modifier.fillMaxSize()) {
-            TreemapCanvas(
-                rootNode = rootNode,
-                rootPath = rootNode.name,
-                selectedNode = selectedNode,
-                selectedNodes = selectedTreeNodes.keys,
-                resetKey = resetZoomKey,
-                isDark = isDark,
-                pureBlack = pureBlack,
-                onZoomChanged = onZoomChanged,
-                isLandscape = isLandscape,
-                onNodeSelected = onNodeSelected,
-                onDismissPopup = onDismissPopup,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    }
-
-    Box(modifier = modifier.fillMaxSize().background(baseBg)) {
-        canvasContent()
+    // Transparent container allowing the persistent background TreemapCanvas in MainActivity to shine through
+    Box(modifier = modifier.fillMaxSize()) {
         topBar()
     }
 }

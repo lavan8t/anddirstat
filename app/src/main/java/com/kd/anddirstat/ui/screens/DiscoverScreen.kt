@@ -2,6 +2,7 @@ package com.kd.anddirstat.ui.screens
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -252,7 +253,7 @@ fun DiscoverView(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface),
+                .background(Color.Transparent),
             contentPadding = PaddingValues(bottom = 116.dp)
         ) {
             if (isSearchActive || searchQuery.isNotBlank()) {

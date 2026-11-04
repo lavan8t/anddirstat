@@ -305,7 +305,7 @@ fun ExplorerView(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
+                .background(Color.Transparent)
         ) {
             Row(
                 modifier = Modifier

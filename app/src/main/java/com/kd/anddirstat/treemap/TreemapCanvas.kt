@@ -7,95 +7,51 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.LruCache
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateIntOffsetAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.animate
-import androidx.compose.ui.util.lerp
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.blur.BlurRadiusSpec
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.AppIconCache
-import com.kd.anddirstat.ui.components.AppIconView
-import com.kd.anddirstat.ui.components.MaterialSymbol
-import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FileUtils
-import kotlin.math.abs
-
-private val CanvasBgColor = Color(0xFF08090E)
-private val SelectionBorderColor = Color.White
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun TreemapCanvas(
@@ -107,6 +63,7 @@ fun TreemapCanvas(
     externalScale: Float? = null,
     isDark: Boolean = true,
     pureBlack: Boolean = false,
+    isInteractive: Boolean = true,
     onScaleChanged: ((Float) -> Unit)? = null,
     onZoomChanged: ((Boolean) -> Unit)? = null,
     onZoomFocusChanged: ((Float) -> Unit)? = null,
@@ -116,20 +73,6 @@ fun TreemapCanvas(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val density = LocalDensity.current
-
-    val statusBarTopDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topSpaceDp = if (isLandscape) 48.dp else statusBarTopDp + 48.dp
-    val topSpacePx = remember(density, topSpaceDp) {
-        with(density) { topSpaceDp.toPx() }
-    }
-
-    val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val bottomSpaceDp = if (isLandscape) 0.dp else navBarBottomDp + 64.dp
-    val bottomSpacePx = remember(density, bottomSpaceDp) {
-        with(density) { bottomSpaceDp.toPx() }
-    }
-
     val displayMetrics = remember { context.resources.displayMetrics }
     var canvasSize by remember { mutableStateOf(IntSize(displayMetrics.widthPixels, displayMetrics.heightPixels)) }
     val shadingMode = remember { FileUtils.getTreemapShadingMode(context) }
@@ -142,11 +85,10 @@ fun TreemapCanvas(
             val newScale = externalScale.coerceIn(1f, 10f)
             scale = newScale
             val viewW = canvasSize.width.toFloat()
-            val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
-            val centerY = topSpacePx + usableH / 2f
+            val viewH = canvasSize.height.toFloat()
             offset = Offset(
                 (viewW / 2f) * (1f - newScale),
-                centerY * (1f - newScale)
+                (viewH / 2f) * (1f - newScale)
             )
             onScaleChanged?.invoke(newScale)
             onZoomChanged?.invoke(newScale > 1.02f)
@@ -156,41 +98,26 @@ fun TreemapCanvas(
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
-    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx.toInt()}_${bottomSpacePx.toInt()}"
+    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}"
     val precalculatedTiles = remember { mutableStateOf<List<TreemapTile>>(emptyList()) }
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
 
-    LaunchedEffect(cacheKey, rootNode, rootPath, isDark, topSpacePx, bottomSpacePx) {
+    LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
         val usableW = canvasSize.width.toFloat().coerceAtLeast(100f)
-        val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
+        val usableH = canvasSize.height.toFloat().coerceAtLeast(100f)
         if (usableW > 0 && usableH > 0) {
             val tiles = withContext(Dispatchers.Default) {
-                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark, topSpacePx)
+                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark, 0f)
             }
             precalculatedTiles.value = tiles
             quadtree.value = if (tiles.isEmpty()) null else {
-                val qt = TreemapQuadtree(0f, topSpacePx, usableW, topSpacePx + usableH)
+                val qt = TreemapQuadtree(0f, 0f, usableW, usableH)
                 qt.insertAll(tiles)
                 qt
             }
         } else {
             precalculatedTiles.value = emptyList()
             quadtree.value = null
-        }
-    }
-
-    val topTiles = remember(precalculatedTiles.value, topSpacePx) {
-        if (topSpacePx <= 0f) emptyList()
-        else {
-            precalculatedTiles.value.filter { it.top <= topSpacePx + 16f }
-        }
-    }
-
-    val bottomTiles = remember(precalculatedTiles.value, bottomSpacePx, canvasSize.height, topSpacePx) {
-        if (bottomSpacePx <= 0f) emptyList()
-        else {
-            val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
-            precalculatedTiles.value.filter { it.top + it.height >= topSpacePx + usableH - 16f }
         }
     }
 
@@ -205,6 +132,7 @@ fun TreemapCanvas(
     val glRenderer = remember { TreemapGLRenderer(context) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
 
+    // Material 3 Expressive motion physics: damping ratio 0.82f, stiffness MediumLow
     LaunchedEffect(resetKey) {
         if (resetKey > 0) {
             val startScale = scale
@@ -214,8 +142,8 @@ fun TreemapCanvas(
                     initialValue = 0f,
                     targetValue = 1f,
                     animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
+                        dampingRatio = 0.82f,
+                        stiffness = Spring.StiffnessMediumLow
                     )
                 ) { progress, _ ->
                     val s = lerp(startScale, 1f, progress)
@@ -241,7 +169,7 @@ fun TreemapCanvas(
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> glSurfaceViewRef?.onResume()
@@ -260,7 +188,9 @@ fun TreemapCanvas(
         precalculatedTiles.value.filter { it.pkgName != null }
     }
 
-    val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
+    // Material 3 color tokens: zero hardcoded colors
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val canvasBg = if (pureBlack && isDark) Color.Black else surfaceColor
 
     LaunchedEffect(canvasBg, shadingMode) {
         glRenderer.setClearColor(canvasBg.red, canvasBg.green, canvasBg.blue, canvasBg.alpha)
@@ -297,8 +227,8 @@ fun TreemapCanvas(
     val selectionScale by animateFloatAsState(
         targetValue = if (hasSelection) 1f else 0.92f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMediumLow
         ),
         label = "selectionScale"
     )
@@ -311,14 +241,169 @@ fun TreemapCanvas(
     val selectionBorderWidth by animateFloatAsState(
         targetValue = targetStrokeWidth,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMediumLow
         ),
         label = "selectionBorderWidth"
     )
 
     var glidingTile by remember { mutableStateOf<TreemapTile?>(null) }
     var glidingTouchPos by remember { mutableStateOf<Offset?>(null) }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+    val gestureModifier = if (isInteractive) {
+        Modifier.pointerInput(precalculatedTiles.value, quadtree.value) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val downTime = System.currentTimeMillis()
+                val downPos = down.position
+
+                fun getTileAt(touchOffset: Offset): TreemapTile? {
+                    val curScale = currentScaleState.value
+                    val curOff = currentOffsetState.value
+                    val touchX = (touchOffset.x - curOff.x) / curScale
+                    val touchY = (touchOffset.y - curOff.y) / curScale
+                    val qt = quadtree.value
+                    return if (qt != null) {
+                        qt.queryVisible(touchX, touchY, touchX, touchY).lastOrNull()
+                    } else {
+                        precalculatedTiles.value.findLast {
+                            touchX >= it.left && touchX <= it.left + it.width &&
+                            touchY >= it.top && touchY <= it.top + it.height
+                        }
+                    }
+                }
+
+                val initialTile = getTileAt(downPos)
+                var tooltipActive = false
+                var hadMultiTouch = false
+                var hasMovedOutOfInitialTile = false
+                val longPressActivationTimeout = 220L
+
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressedChanges = event.changes.filter { it.pressed }
+                    val totalPointers = event.changes.size
+                    val pressedPointers = pressedChanges.size
+
+                    if (pressedPointers >= 2) {
+                        // Strictly Two-Finger Zoom and Pan
+                        hadMultiTouch = true
+                        tooltipActive = false
+                        onDismissPopup()
+                        if (glidingTile != null) {
+                            glidingTile = null
+                            glidingTouchPos = null
+                        }
+
+                        val p0 = pressedChanges[0]
+                        val p1 = pressedChanges[1]
+
+                        val currCentroid = (p0.position + p1.position) / 2f
+                        val prevCentroid = (p0.previousPosition + p1.previousPosition) / 2f
+                        val panDelta = currCentroid - prevCentroid
+
+                        val currDist = (p0.position - p1.position).getDistance()
+                        val prevDist = (p0.previousPosition - p1.previousPosition).getDistance()
+                        val zoomRatio = if (prevDist > 1f) currDist / prevDist else 1f
+
+                        val oldScale = scale
+                        val newScale = (oldScale * zoomRatio).coerceIn(1f, 30f)
+                        scale = newScale
+                        onScaleChanged?.invoke(newScale)
+                        val wasZoomed = oldScale > 1.02f
+                        val isZoomedNow = newScale > 1.02f
+                        if (wasZoomed != isZoomedNow) {
+                            onZoomChanged?.invoke(isZoomedNow)
+                        }
+
+                        if (newScale <= 1.001f) {
+                            offset = Offset.Zero
+                        } else {
+                            val focal = currCentroid - offset
+                            val newOffset = currCentroid - focal * (newScale / oldScale) + panDelta
+
+                            val viewW = canvasSize.width.toFloat()
+                            val viewH = canvasSize.height.toFloat()
+                            val maxOffsetX = 0f
+                            val minOffsetX = viewW - viewW * newScale
+                            val maxOffsetY = 0f
+                            val minOffsetY = viewH - viewH * newScale
+
+                            offset = Offset(
+                                newOffset.x.coerceIn(minOffsetX, maxOffsetX),
+                                newOffset.y.coerceIn(minOffsetY, maxOffsetY)
+                            )
+
+                            if (viewW > 0f && newScale > 1.02f) {
+                                val focusXRatio = ((-offset.x + viewW / 2f) / (viewW * newScale)).coerceIn(0f, 1f)
+                                onZoomFocusChanged?.invoke(focusXRatio)
+                            } else {
+                                onZoomFocusChanged?.invoke(0.5f)
+                            }
+                        }
+
+                        glRenderer.setScaleAndOffset(scale, offset)
+                        glSurfaceViewRef?.requestRender()
+
+                        event.changes.forEach { it.consume() }
+                    } else if (totalPointers > 1) {
+                        hadMultiTouch = true
+                        tooltipActive = false
+                        if (glidingTile != null) {
+                            glidingTile = null
+                            glidingTouchPos = null
+                        }
+                    }
+
+                    if (pressedPointers == 0) {
+                        val elapsed = System.currentTimeMillis() - downTime
+                        tooltipActive = false
+                        glidingTile = null
+                        glidingTouchPos = null
+
+                        if (!hadMultiTouch && !hasMovedOutOfInitialTile && elapsed < longPressActivationTimeout) {
+                            if (initialTile != null) {
+                                triggerCrispHaptic(context)
+                                onNodeSelected(initialTile.node, initialTile.path, downPos)
+                            } else {
+                                onDismissPopup()
+                            }
+                        }
+                        break
+                    } else if (pressedPointers == 1 && !hadMultiTouch && totalPointers == 1) {
+                        val change = pressedChanges.first()
+                        val now = System.currentTimeMillis()
+                        val elapsedSinceDown = now - downTime
+                        val curTile = getTileAt(change.position)
+
+                        if (!tooltipActive) {
+                            if (curTile != initialTile) {
+                                hasMovedOutOfInitialTile = true
+                            }
+
+                            if (elapsedSinceDown >= longPressActivationTimeout && !hasMovedOutOfInitialTile && curTile == initialTile && initialTile != null) {
+                                tooltipActive = true
+                                glidingTile = initialTile
+                                triggerCrispHaptic(context)
+                                onNodeSelected(initialTile.node, initialTile.path, change.position)
+                            }
+                        } else {
+                            if (curTile != null && curTile != glidingTile) {
+                                triggerCrispHaptic(context)
+                                glidingTile = curTile
+                                onNodeSelected(curTile.node, curTile.path, change.position)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Modifier
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
@@ -349,157 +434,7 @@ fun TreemapCanvas(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(precalculatedTiles.value, quadtree.value) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val downTime = System.currentTimeMillis()
-                        val downPos = down.position
-
-                        fun getTileAt(touchOffset: Offset): TreemapTile? {
-                            val curScale = currentScaleState.value
-                            val curOff = currentOffsetState.value
-                            val touchX = (touchOffset.x - curOff.x) / curScale
-                            val touchY = (touchOffset.y - curOff.y) / curScale
-                            val qt = quadtree.value
-                            return if (qt != null) {
-                                qt.queryVisible(touchX, touchY, touchX, touchY).lastOrNull()
-                            } else {
-                                precalculatedTiles.value.findLast {
-                                    touchX >= it.left && touchX <= it.left + it.width &&
-                                    touchY >= it.top && touchY <= it.top + it.height
-                                }
-                            }
-                        }
-
-                        val initialTile = getTileAt(downPos)
-                        var tooltipActive = false
-                        var holdStartTime = 0L
-                        var hadMultiTouch = false
-                        var hasMovedOutOfInitialTile = false
-                        var bottomSheetOpened = false
-                        val longPressActivationTimeout = 220L
-                        val continuousHoldTimeout = 800L
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val pressedChanges = event.changes.filter { it.pressed }
-                            val totalPointers = event.changes.size
-                            val pressedPointers = pressedChanges.size
-
-                            if (pressedPointers >= 2) {
-                                // Strictly Two-Finger Zoom and Pan — One-finger panning is disabled
-                                hadMultiTouch = true
-                                tooltipActive = false
-                                onDismissPopup()
-                                if (glidingTile != null) {
-                                    glidingTile = null
-                                    glidingTouchPos = null
-                                }
-
-                                val p0 = pressedChanges[0]
-                                val p1 = pressedChanges[1]
-
-                                val currCentroid = (p0.position + p1.position) / 2f
-                                val prevCentroid = (p0.previousPosition + p1.previousPosition) / 2f
-                                val panDelta = currCentroid - prevCentroid
-
-                                val currDist = (p0.position - p1.position).getDistance()
-                                val prevDist = (p0.previousPosition - p1.previousPosition).getDistance()
-                                val zoomRatio = if (prevDist > 1f) currDist / prevDist else 1f
-
-                                val oldScale = scale
-                                val newScale = (oldScale * zoomRatio).coerceIn(1f, 30f)
-                                scale = newScale
-                                onScaleChanged?.invoke(newScale)
-                                val wasZoomed = oldScale > 1.02f
-                                val isZoomedNow = newScale > 1.02f
-                                if (wasZoomed != isZoomedNow) {
-                                    onZoomChanged?.invoke(isZoomedNow)
-                                }
-
-                                if (newScale <= 1.001f) {
-                                    offset = Offset.Zero
-                                } else {
-                                    val focal = currCentroid - offset
-                                    val newOffset = currCentroid - focal * (newScale / oldScale) + panDelta
-
-                                    val viewW = canvasSize.width.toFloat()
-                                    val viewH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
-                                    val maxOffsetX = 0f
-                                    val minOffsetX = viewW - viewW * newScale
-                                    val maxOffsetY = topSpacePx * (1f - newScale)
-                                    val minOffsetY = (topSpacePx + viewH) - (topSpacePx + viewH) * newScale
-
-                                    offset = Offset(
-                                        newOffset.x.coerceIn(minOffsetX, maxOffsetX),
-                                        newOffset.y.coerceIn(minOffsetY, maxOffsetY)
-                                    )
-
-                                    if (viewW > 0f && newScale > 1.02f) {
-                                        val focusXRatio = ((-offset.x + viewW / 2f) / (viewW * newScale)).coerceIn(0f, 1f)
-                                        onZoomFocusChanged?.invoke(focusXRatio)
-                                    } else {
-                                        onZoomFocusChanged?.invoke(0.5f)
-                                    }
-                                }
-
-                                glRenderer.setScaleAndOffset(scale, offset)
-                                glSurfaceViewRef?.requestRender()
-
-                                event.changes.forEach { it.consume() }
-                            } else if (totalPointers > 1) {
-                                hadMultiTouch = true
-                                tooltipActive = false
-                                if (glidingTile != null) {
-                                    glidingTile = null
-                                    glidingTouchPos = null
-                                }
-                            }
-
-                            if (pressedPointers == 0) {
-                                val elapsed = System.currentTimeMillis() - downTime
-                                tooltipActive = false
-                                glidingTile = null
-                                glidingTouchPos = null
-
-                                if (!hadMultiTouch && !hasMovedOutOfInitialTile && elapsed < longPressActivationTimeout) {
-                                    if (initialTile != null) {
-                                        triggerCrispHaptic(context)
-                                        onNodeSelected(initialTile.node, initialTile.path, downPos)
-                                    } else {
-                                        onDismissPopup()
-                                    }
-                                }
-                                break
-                            } else if (pressedPointers == 1 && !hadMultiTouch && totalPointers == 1) {
-                                val change = pressedChanges.first()
-                                val now = System.currentTimeMillis()
-                                val elapsedSinceDown = now - downTime
-                                val curTile = getTileAt(change.position)
-
-                                if (!tooltipActive) {
-                                    if (curTile != initialTile) {
-                                        hasMovedOutOfInitialTile = true
-                                    }
-
-                                    if (elapsedSinceDown >= longPressActivationTimeout && !hasMovedOutOfInitialTile && curTile == initialTile && initialTile != null) {
-                                        tooltipActive = true
-                                        glidingTile = initialTile
-                                        triggerCrispHaptic(context)
-                                        onNodeSelected(initialTile.node, initialTile.path, change.position)
-                                    }
-                                } else {
-                                    // Glide mode: immediately select and open popup for hovered tile
-                                    if (curTile != null && curTile != glidingTile) {
-                                        triggerCrispHaptic(context)
-                                        glidingTile = curTile
-                                        onNodeSelected(curTile.node, curTile.path, change.position)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                .then(gestureModifier)
         ) {
             val sel = selectedTile ?: lastSelectedTile
             val hasSelectionBorder = (sel != null && selectionBorderWidth > 0.05f)
@@ -518,6 +453,7 @@ fun TreemapCanvas(
                             val sW = tile.width * curScale
                             val sH = tile.height * curScale
                             if (sLeft + sW < 0f || sLeft > size.width || sTop + sH < 0f || sTop > size.height) continue
+
                             if (sW >= 24f && sH >= 24f) {
                                 val bmp = AppIconCache.get(context, tile.pkgName!!)
                                 if (bmp != null) {
@@ -550,12 +486,12 @@ fun TreemapCanvas(
                             val halfStroke = strokeW / 2f
 
                             drawRect(
-                                color = Color(0x6600E676),
+                                color = primaryColor.copy(alpha = 0.35f),
                                 topLeft = Offset(sLeft, sTop),
                                 size = Size(drawW, drawH)
                             )
                             drawRect(
-                                color = Color(0xFF00E676),
+                                color = primaryColor,
                                 topLeft = Offset(sLeft + halfStroke, sTop + halfStroke),
                                 size = Size(maxOf(1f, drawW - strokeW), maxOf(1f, drawH - strokeW)),
                                 style = Stroke(width = strokeW)
@@ -584,7 +520,7 @@ fun TreemapCanvas(
                         val inH = maxOf(1f, scaledH - selectionBorderWidth)
 
                         drawRect(
-                            color = SelectionBorderColor,
+                            color = onSurfaceColor,
                             topLeft = Offset(inLeft, inTop),
                             size = Size(inW, inH),
                             style = Stroke(width = selectionBorderWidth)
@@ -594,149 +530,42 @@ fun TreemapCanvas(
             }
         }
 
-        // Top ambient zone: progressive Gaussian blur extending treemap colors behind transparent top bar
-        if (topSpaceDp > 0.dp) {
+        // Status bar subtle scrim for icon legibility
+        val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        if (statusBarHeight > 0.dp) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(topSpaceDp)
-                    .clipToBounds()
-            ) {
-                if (topTiles.isNotEmpty()) {
-                    val drawTopColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
-                        val curScale = currentScaleState.value
-                        val curOff = currentOffsetState.value
-                        for (tile in topTiles) {
-                            val tLeft = tile.left * curScale + curOff.x
-                            val tWidth = maxOf(1f, tile.width * curScale)
-                            if (tLeft + tWidth < 0f || tLeft > size.width) continue
-                            val dom = tile.pkgName?.let { AppIconCache.getDominantColor(it) }
-                            val colors = if (dom == null || dom == tile.baseColor) tile.gradientColors else shadeColors(dom, isDark)
-                            if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
-                                val brush = tile.cushionBrush
-                                drawContext.canvas.save()
-                                drawContext.transform.translate(tLeft, 0f)
-                                drawContext.transform.scale(tWidth, size.height, pivot = Offset.Zero)
-                                drawRect(brush = brush, topLeft = Offset.Zero, size = Size(1f, 1f))
-                                drawContext.canvas.restore()
-                            } else {
-                                drawRect(
-                                    color = colors[1],
-                                    topLeft = Offset(tLeft, 0f),
-                                    size = Size(tWidth, size.height)
-                                )
-                            }
-                        }
-                    }
-
-                    val topBlurModifier = remember {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            Modifier.blur(BlurRadiusSpec.verticalGradient(36.dp, 0.dp))
-                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            Modifier.blur(20.dp)
-                        } else {
-                            Modifier
-                        }
-                    }
-
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(topBlurModifier),
-                        onDraw = drawTopColumns
-                    )
-
-                    // Subtle top scrim gradient for crisp status bar legibility
-                    val topScrimHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(topScrimHeight)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        (if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)).copy(alpha = 0.35f),
-                                        Color.Transparent
-                                    )
-                                )
+                    .height(statusBarHeight + 12.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                surfaceColor.copy(alpha = 0.40f),
+                                Color.Transparent
                             )
+                        )
                     )
-                }
-            }
+            )
         }
 
-        // Bottom ambient zone: progressive Gaussian blur extending treemap colors under nav-pill
-        if (!isLandscape && bottomSpaceDp > 0.dp) {
+        // Navigation bar subtle scrim for gesture bar legibility
+        val navBarHeight = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        if (navBarHeight > 0.dp && !isLandscape) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(bottomSpaceDp)
-                    .clipToBounds()
-            ) {
-                if (bottomTiles.isNotEmpty()) {
-                    val drawBottomColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
-                        val curScale = currentScaleState.value
-                        val curOff = currentOffsetState.value
-                        for (tile in bottomTiles) {
-                            val tLeft = tile.left * curScale + curOff.x
-                            val tWidth = maxOf(1f, tile.width * curScale)
-                            if (tLeft + tWidth < 0f || tLeft > size.width) continue
-                            val dom = tile.pkgName?.let { AppIconCache.getDominantColor(it) }
-                            val colors = if (dom == null || dom == tile.baseColor) tile.gradientColors else shadeColors(dom, isDark)
-                            if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
-                                val brush = tile.cushionBrush
-                                drawContext.canvas.save()
-                                drawContext.transform.translate(tLeft, 0f)
-                                drawContext.transform.scale(tWidth, size.height, pivot = Offset.Zero)
-                                drawRect(brush = brush, topLeft = Offset.Zero, size = Size(1f, 1f))
-                                drawContext.canvas.restore()
-                            } else {
-                                drawRect(
-                                    color = colors[1],
-                                    topLeft = Offset(tLeft, 0f),
-                                    size = Size(tWidth, size.height)
-                                )
-                            }
-                        }
-                    }
-
-                    val bottomBlurModifier = remember {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            Modifier.blur(BlurRadiusSpec.verticalGradient(0.dp, 36.dp))
-                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            Modifier.blur(20.dp)
-                        } else {
-                            Modifier
-                        }
-                    }
-
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(bottomBlurModifier),
-                        onDraw = drawBottomColumns
-                    )
-
-                    // Subtle bottom scrim gradient for gesture bar legibility
-                    val bottomScrimHeight = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 8.dp
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(bottomScrimHeight)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        (if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)).copy(alpha = 0.40f)
-                                    )
-                                )
+                    .height(navBarHeight + 16.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                surfaceColor.copy(alpha = 0.45f)
                             )
+                        )
                     )
-                }
-            }
+            )
         }
     }
 }

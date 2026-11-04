@@ -523,7 +523,7 @@ fun FileTypesView(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(Color.Transparent)
     ) {
         Row(
             modifier = Modifier

@@ -105,7 +105,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(Color.Transparent)
             .statusBarsPadding()
             .padding(start = cutoutStart)
     ) {
@@ -193,7 +193,7 @@ fun SettingsView(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface),
+            .background(Color.Transparent),
         contentPadding = PaddingValues(top = 16.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
