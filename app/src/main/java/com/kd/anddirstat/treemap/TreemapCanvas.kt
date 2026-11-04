@@ -242,6 +242,16 @@ fun TreemapCanvas(
 
     val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
+    val quadtree = remember(precalculatedTiles, canvasSize) {
+        if (precalculatedTiles.isEmpty() || canvasSize.width <= 0 || canvasSize.height <= 0) {
+            null
+        } else {
+            val qt = TreemapQuadtree(0f, 0f, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+            qt.insertAll(precalculatedTiles)
+            qt
+        }
+    }
+
     var glidingTile by remember { mutableStateOf<TreemapTile?>(null) }
     var glidingTouchPos by remember { mutableStateOf<Offset?>(null) }
 
@@ -256,7 +266,7 @@ fun TreemapCanvas(
                         canvasSize = newSize
                     }
                 }
-                .pointerInput(precalculatedTiles) {
+                .pointerInput(precalculatedTiles, quadtree) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val downTime = System.currentTimeMillis()
@@ -267,9 +277,14 @@ fun TreemapCanvas(
                             val curOff = currentOffsetState.value
                             val touchX = (touchOffset.x - curOff.x) / curScale
                             val touchY = (touchOffset.y - curOff.y) / curScale
-                            return precalculatedTiles.findLast {
-                                touchX >= it.left && touchX <= it.left + it.width &&
-                                touchY >= it.top && touchY <= it.top + it.height
+                            val qt = quadtree
+                            return if (qt != null) {
+                                qt.queryVisible(touchX, touchY, touchX, touchY).lastOrNull()
+                            } else {
+                                precalculatedTiles.findLast {
+                                    touchX >= it.left && touchX <= it.left + it.width &&
+                                    touchY >= it.top && touchY <= it.top + it.height
+                                }
                             }
                         }
 
@@ -435,12 +450,23 @@ fun TreemapCanvas(
                         )
                     }
                 } else {
-                    // Direct full GPU hardware vector rendering on zoom and pan with frustum culling
+                    // Direct full GPU hardware vector rendering on zoom and pan with Quadtree spatial culling
                     val viewW = size.width
                     val viewH = size.height
-                    val numTiles = precalculatedTiles.size
+                    val qt = quadtree
+                    val drawTiles = if (qt != null && (currentScale > 1.05f || currentOffset != Offset.Zero)) {
+                        val vLeft = (-currentOffset.x / currentScale).coerceAtLeast(0f)
+                        val vTop = (-currentOffset.y / currentScale).coerceAtLeast(0f)
+                        val vRight = ((viewW - currentOffset.x) / currentScale).coerceAtMost(canvasSize.width.toFloat())
+                        val vBottom = ((viewH - currentOffset.y) / currentScale).coerceAtMost(canvasSize.height.toFloat())
+                        qt.queryVisible(vLeft, vTop, vRight, vBottom)
+                    } else {
+                        precalculatedTiles
+                    }
+
+                    val numTiles = drawTiles.size
                     for (i in 0 until numTiles) {
-                        val tile = precalculatedTiles[i]
+                        val tile = drawTiles[i]
 
                         val sLeft = tile.left * currentScale + currentOffset.x
                         val sTop = tile.top * currentScale + currentOffset.y
