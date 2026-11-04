@@ -277,11 +277,10 @@ fun TreemapTilePopup(
     val dismissThreshold = with(density) { 56.dp.toPx() }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Scrim background
+        // Transparent dismiss backdrop (no black overlay)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = (p * 0.40f).coerceIn(0f, 0.40f)))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null

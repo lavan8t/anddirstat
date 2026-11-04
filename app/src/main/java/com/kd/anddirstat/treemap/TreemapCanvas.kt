@@ -308,41 +308,10 @@ fun TreemapCanvas(
         glSurfaceViewRef?.requestRender()
     }
 
-    var lastSelectedTile by remember { mutableStateOf<TreemapTile?>(null) }
-    if (selectedTile != null) {
-        lastSelectedTile = selectedTile
-    }
-
-    val hasSelection = selectedNode != null && selectedTile != null
-
-    val selectionScale by animateFloatAsState(
-        targetValue = if (hasSelection) 1f else 0.92f,
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "selectionScale"
-    )
-
-    val targetStrokeWidth = if (selectedTile != null) {
-        val minDim = minOf(selectedTile.width * scale, selectedTile.height * scale)
-        if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 3.0f
-    } else 0f
-
-    val selectionBorderWidth by animateFloatAsState(
-        targetValue = targetStrokeWidth,
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "selectionBorderWidth"
-    )
-
     var glidingTile by remember { mutableStateOf<TreemapTile?>(null) }
     var glidingTouchPos by remember { mutableStateOf<Offset?>(null) }
 
     val primaryColor = MaterialTheme.colorScheme.primary
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
     val gestureModifier = if (isInteractive) {
         Modifier.pointerInput(precalculatedTiles.value, quadtree.value) {
@@ -641,12 +610,10 @@ fun TreemapCanvas(
                 .fillMaxSize()
                 .then(gestureModifier)
         ) {
-            val sel = selectedTile ?: lastSelectedTile
-            val hasSelectionBorder = (sel != null && selectionBorderWidth > 0.05f)
             val hasMarkedNodes = selectedNodes.isNotEmpty()
             val hasAppIcons = appTiles.isNotEmpty()
 
-            if (hasSelectionBorder || hasMarkedNodes || hasAppIcons) {
+            if (hasMarkedNodes || hasAppIcons) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val curScale = currentScaleState.value
                     val curOff = currentOffsetState.value
@@ -702,34 +669,6 @@ fun TreemapCanvas(
                                 style = Stroke(width = strokeW)
                             )
                         }
-                    }
-
-                    if (sel != null && selectionBorderWidth > 0.05f) {
-                        val selLeft = sel.left * curScale + curOff.x
-                        val selTop = sel.top * curScale + curOff.y
-                        val selW = sel.width * curScale
-                        val selH = sel.height * curScale
-
-                        val centerX = selLeft + selW / 2f
-                        val centerY = selTop + selH / 2f
-                        val scaledW = selW * selectionScale
-                        val scaledH = selH * selectionScale
-
-                        val sLeft = centerX - scaledW / 2f
-                        val sTop = centerY - scaledH / 2f
-
-                        val halfStroke = selectionBorderWidth / 2f
-                        val inLeft = sLeft + halfStroke
-                        val inTop = sTop + halfStroke
-                        val inW = maxOf(1f, scaledW - selectionBorderWidth)
-                        val inH = maxOf(1f, scaledH - selectionBorderWidth)
-
-                        drawRect(
-                            color = onSurfaceColor,
-                            topLeft = Offset(inLeft, inTop),
-                            size = Size(inW, inH),
-                            style = Stroke(width = selectionBorderWidth)
-                        )
                     }
                 }
             }
