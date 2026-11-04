@@ -50,31 +50,84 @@ fun LazyListScope.discoverToolsSection(
         ) {
             val isWide = maxWidth >= 600.dp
             if (isWide) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    DiscoverToolCard(
-                        title = "Screenshots Cleaner",
-                        icon = "screenshot_monitor",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f).height(108.dp),
-                        onClick = { onNavigateTo?.invoke(AppDestinations.CLEANER_SCREENSHOTS) }
-                    )
-                    DiscoverToolCard(
-                        title = "Empty Folders",
-                        icon = "folder_open",
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.weight(1f).height(108.dp),
-                        onClick = { onNavigateTo?.invoke(AppDestinations.CLEANER_EMPTY_FOLDERS) }
-                    )
-                    DiscoverToolCard(
-                        title = "Duplicates",
-                        icon = "content_copy",
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.weight(1f).height(108.dp),
-                        onClick = { onNavigateTo?.invoke(AppDestinations.CLEANER_DUPLICATES) }
-                    )
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        DiscoverToolCard(
+                            title = "Screenshots Cleaner",
+                            icon = "screenshot_monitor",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f).height(108.dp),
+                            onClick = { onNavigateTo?.invoke(AppDestinations.CLEANER_SCREENSHOTS) }
+                        )
+                        DiscoverToolCard(
+                            title = "Empty Folders",
+                            icon = "folder_open",
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f).height(108.dp),
+                            onClick = { onNavigateTo?.invoke(AppDestinations.CLEANER_EMPTY_FOLDERS) }
+                        )
+                        DiscoverToolCard(
+                            title = "Duplicates",
+                            icon = "content_copy",
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f).height(108.dp),
+                            onClick = { onNavigateTo?.invoke(AppDestinations.CLEANER_DUPLICATES) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Card(
+                        onClick = {
+                            onNavigateTo?.invoke(AppDestinations.TEST_TREEMAP)
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(72.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            MaterialSymbol(
+                                name = "speed",
+                                active = true,
+                                size = 28.dp,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "50K Items Treemap Test",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Stress test GPU rendering with 50,000 scattered files",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            MaterialSymbol(
+                                name = "chevron_right",
+                                active = true,
+                                size = 20.dp,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             } else {
                 Column {
@@ -134,6 +187,57 @@ fun LazyListScope.discoverToolsSection(
                                 )
                                 Text(
                                     text = "Find and remove duplicate files",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            MaterialSymbol(
+                                name = "chevron_right",
+                                active = true,
+                                size = 20.dp,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Card(
+                        onClick = {
+                            onNavigateTo?.invoke(AppDestinations.TEST_TREEMAP)
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(72.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            MaterialSymbol(
+                                name = "speed",
+                                active = true,
+                                size = 28.dp,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "50K Items Treemap Test",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Stress test GPU rendering with 50,000 scattered files",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,

@@ -36,6 +36,13 @@ class TreemapTile(
     val cushionBrush: Brush by lazy(LazyThreadSafetyMode.NONE) {
         Brush.radialGradient(gradientColors, center = Offset(0.38f, 0.35f), radius = 0.85f)
     }
+    val linearBrush: Brush by lazy(LazyThreadSafetyMode.NONE) {
+        Brush.linearGradient(
+            colors = gradientColors,
+            start = Offset(0f, 0f),
+            end = Offset(1f, 1f)
+        )
+    }
 }
 
 fun computeTreemapTiles(
@@ -63,6 +70,14 @@ fun computeTreemapTiles(
         val children = node.children
         val inApps = inAppsScope || node.name == "Apps & System Packages"
         val isApp = inApps && children?.any { it.name.startsWith("App Code") } == true
+
+        // LOD folding: if a directory contains many children that would resolve to sub-pixel or tiny tiles,
+        // fold the directory into a single boundary tile at current zoom/resolution level.
+        if (node !== rootNode && node.isDirectory && children != null && children.size > 8 && (area / children.size < 4.0f || area < 16.0f)) {
+            val baseColor = getNodeColor(node, isDark)
+            tiles.add(TreemapTile(node, currentPath, l, t, w, h, false, null, baseColor, shadeColors(baseColor, isDark)))
+            return
+        }
 
         if (children == null || children.isEmpty() || isApp) {
             val pkg = if (isApp) FileUtils.extractPackageName(node) else null

@@ -58,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -125,25 +124,37 @@ fun TreemapCanvas(
     val currentOffsetState = rememberUpdatedState(offset)
 
     val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_$isLandscape"
-    val precalculatedTiles = remember(cacheKey, bottomSpacePx) {
+    val precalculatedTiles = remember { mutableStateOf<List<TreemapTile>>(emptyList()) }
+    val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
+
+    LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
         val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
         if (canvasSize.width > 0 && usableH > 0) {
-            computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), usableH, isDark)
+            val tiles = withContext(Dispatchers.Default) {
+                computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), usableH, isDark)
+            }
+            precalculatedTiles.value = tiles
+            quadtree.value = if (tiles.isEmpty()) null else {
+                val qt = TreemapQuadtree(0f, 0f, canvasSize.width.toFloat(), usableH)
+                qt.insertAll(tiles)
+                qt
+            }
         } else {
-            emptyList()
+            precalculatedTiles.value = emptyList()
+            quadtree.value = null
         }
     }
 
-    val bottomTiles = remember(precalculatedTiles, bottomSpacePx, canvasSize.height) {
+    val bottomTiles = remember(precalculatedTiles.value, bottomSpacePx, canvasSize.height) {
         if (bottomSpacePx <= 0f) emptyList()
         else {
             val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
-            precalculatedTiles.filter { it.top + it.height >= usableH - 16f }
+            precalculatedTiles.value.filter { it.top + it.height >= usableH - 16f }
         }
     }
 
-    val nodeToTileMap = remember(precalculatedTiles) {
-        precalculatedTiles.associateBy { it.node }
+    val nodeToTileMap = remember(precalculatedTiles.value) {
+        precalculatedTiles.value.associateBy { it.node }
     }
 
     LaunchedEffect(resetKey) {
@@ -183,9 +194,9 @@ fun TreemapCanvas(
         initialValue = TreemapBitmapCache.get("${cacheKey}_$pureBlack"),
         key1 = cacheKey,
         key2 = pureBlack,
-        key3 = precalculatedTiles
+        key3 = precalculatedTiles.value
     ) {
-        if (canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.isNotEmpty()) {
+        if (canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.value.isNotEmpty()) {
             val bmpKey = "${cacheKey}_$pureBlack"
             val cachedBmp = TreemapBitmapCache.get(bmpKey)
             if (cachedBmp != null) {
@@ -194,7 +205,7 @@ fun TreemapCanvas(
                 val usableH = (canvasSize.height.toFloat() - bottomSpacePx).toInt().coerceAtLeast(100)
                 val bmp = withContext(Dispatchers.Default) {
                     renderTreemapToBitmap(
-                        tiles = precalculatedTiles,
+                        tiles = precalculatedTiles.value,
                         width = canvasSize.width,
                         height = usableH,
                         isDark = isDark,
@@ -242,16 +253,6 @@ fun TreemapCanvas(
 
     val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
-    val quadtree = remember(precalculatedTiles, canvasSize) {
-        if (precalculatedTiles.isEmpty() || canvasSize.width <= 0 || canvasSize.height <= 0) {
-            null
-        } else {
-            val qt = TreemapQuadtree(0f, 0f, canvasSize.width.toFloat(), canvasSize.height.toFloat())
-            qt.insertAll(precalculatedTiles)
-            qt
-        }
-    }
-
     var glidingTile by remember { mutableStateOf<TreemapTile?>(null) }
     var glidingTouchPos by remember { mutableStateOf<Offset?>(null) }
 
@@ -266,7 +267,7 @@ fun TreemapCanvas(
                         canvasSize = newSize
                     }
                 }
-                .pointerInput(precalculatedTiles, quadtree) {
+                .pointerInput(precalculatedTiles.value, quadtree.value) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val downTime = System.currentTimeMillis()
@@ -277,11 +278,11 @@ fun TreemapCanvas(
                             val curOff = currentOffsetState.value
                             val touchX = (touchOffset.x - curOff.x) / curScale
                             val touchY = (touchOffset.y - curOff.y) / curScale
-                            val qt = quadtree
+                            val qt = quadtree.value
                             return if (qt != null) {
                                 qt.queryVisible(touchX, touchY, touchX, touchY).lastOrNull()
                             } else {
-                                precalculatedTiles.findLast {
+                                precalculatedTiles.value.findLast {
                                     touchX >= it.left && touchX <= it.left + it.width &&
                                     touchY >= it.top && touchY <= it.top + it.height
                                 }
@@ -453,7 +454,7 @@ fun TreemapCanvas(
                     // Direct full GPU hardware vector rendering on zoom and pan with Quadtree spatial culling
                     val viewW = size.width
                     val viewH = size.height
-                    val qt = quadtree
+                    val qt = quadtree.value
                     val drawTiles = if (qt != null && (currentScale > 1.05f || currentOffset != Offset.Zero)) {
                         val vLeft = (-currentOffset.x / currentScale).coerceAtLeast(0f)
                         val vTop = (-currentOffset.y / currentScale).coerceAtLeast(0f)
@@ -461,7 +462,7 @@ fun TreemapCanvas(
                         val vBottom = ((viewH - currentOffset.y) / currentScale).coerceAtMost(canvasSize.height.toFloat())
                         qt.queryVisible(vLeft, vTop, vRight, vBottom)
                     } else {
-                        precalculatedTiles
+                        precalculatedTiles.value
                     }
 
                     val numTiles = drawTiles.size
@@ -501,62 +502,26 @@ fun TreemapCanvas(
                                 size = Size(drawW, drawH)
                             )
                         } else {
-                            val cHighlight = if (isDark) {
-                                Color(
-                                    red = (tileBaseColor.red * 1.65f + 0.25f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 1.65f + 0.25f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 1.65f + 0.25f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            } else {
-                                Color(
-                                    red = (tileBaseColor.red * 1.75f + 0.35f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 1.75f + 0.35f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 1.75f + 0.35f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            }
-                            val cShadow = if (isDark) {
-                                Color(
-                                    red = (tileBaseColor.red * 0.45f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 0.45f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 0.45f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            } else {
-                                Color(
-                                    red = (tileBaseColor.red * 0.40f).coerceIn(0f, 1f),
-                                    green = (tileBaseColor.green * 0.40f).coerceIn(0f, 1f),
-                                    blue = (tileBaseColor.blue * 0.40f).coerceIn(0f, 1f),
-                                    alpha = 1f
-                                )
-                            }
-
                             if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
                                 drawContext.canvas.save()
                                 drawContext.transform.translate(sLeft, sTop)
                                 drawContext.transform.scale(drawW, drawH, pivot = Offset.Zero)
                                 drawRect(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(cHighlight, tileBaseColor, cShadow),
-                                        center = Offset(0.38f, 0.35f),
-                                        radius = 0.85f
-                                    ),
+                                    brush = tile.cushionBrush,
                                     topLeft = Offset.Zero,
                                     size = Size(1f, 1f)
                                 )
                                 drawContext.canvas.restore()
                             } else {
-                                val brush = Brush.linearGradient(
-                                    colors = listOf(cHighlight, tileBaseColor, cShadow),
-                                    start = Offset(sLeft, sTop),
-                                    end = Offset(sLeft + drawW, sTop + drawH)
-                                )
+                                drawContext.canvas.save()
+                                drawContext.transform.translate(sLeft, sTop)
+                                drawContext.transform.scale(drawW, drawH, pivot = Offset.Zero)
                                 drawRect(
-                                    brush = brush,
-                                    topLeft = Offset(sLeft, sTop),
-                                    size = Size(drawW, drawH)
+                                    brush = tile.linearBrush,
+                                    topLeft = Offset.Zero,
+                                    size = Size(1f, 1f)
                                 )
+                                drawContext.canvas.restore()
                             }
                         }
 
@@ -580,7 +545,7 @@ fun TreemapCanvas(
                         }
 
                         if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
-                            val bmp = AppIconCache.get(context, tile.pkgName)
+                            val bmp = AppIconCache.peek(tile.pkgName) ?: AppIconCache.get(context, tile.pkgName)
                             if (bmp != null) {
                                 val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
                                 val iconX = sLeft + (sW - iconSize) / 2f
@@ -648,8 +613,7 @@ fun TreemapCanvas(
                             val dom = tile.pkgName?.let { AppIconCache.getDominantColor(it) }
                             val colors = if (dom == null || dom == tile.baseColor) tile.gradientColors else shadeColors(dom, isDark)
                             if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
-                                val brush = if (colors === tile.gradientColors) tile.cushionBrush
-                                else Brush.radialGradient(colors, center = Offset(0.38f, 0.35f), radius = 0.85f)
+                                val brush = tile.cushionBrush
                                 drawContext.canvas.save()
                                 drawContext.transform.translate(tLeft, 0f)
                                 drawContext.transform.scale(tWidth, size.height, pivot = Offset.Zero)
