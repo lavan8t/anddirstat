@@ -133,6 +133,7 @@ import com.kd.anddirstat.ui.components.ScanningBanner
 import com.kd.anddirstat.ui.components.TreeDeleteDialog
 import com.kd.anddirstat.ui.components.TreemapNavPill
 import com.kd.anddirstat.ui.components.TreemapNavRail
+import com.kd.anddirstat.ui.components.TreemapTilePopup
 import com.kd.anddirstat.ui.components.VolumeSelectionBottomSheet
 import com.kd.anddirstat.ui.screens.DiscoverView
 import com.kd.anddirstat.ui.screens.ExplorerView
@@ -284,15 +285,21 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
         var selectedPath by remember { mutableStateOf<String?>(null) }
         var lastTouchDown by remember { mutableStateOf(Offset.Zero) }
         var selectedTouchOffset by remember { mutableStateOf<Offset?>(null) }
+        var selectedTileRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var selectedTileColor by remember { mutableStateOf<Color?>(null) }
         var activePopupNode by remember { mutableStateOf<CompactNode?>(null) }
         var activePopupPath by remember { mutableStateOf<String?>(null) }
         var activePopupOffset by remember { mutableStateOf(Offset.Zero) }
+        var activePopupTileRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var activePopupTileColor by remember { mutableStateOf<Color?>(null) }
 
-        LaunchedEffect(selectedNode, selectedPath, selectedTouchOffset) {
+        LaunchedEffect(selectedNode, selectedPath, selectedTouchOffset, selectedTileRect, selectedTileColor) {
             if (selectedNode != null && selectedPath != null) {
                 activePopupNode = selectedNode
                 activePopupPath = selectedPath
                 activePopupOffset = selectedTouchOffset ?: lastTouchDown
+                activePopupTileRect = selectedTileRect
+                activePopupTileColor = selectedTileColor
             }
         }
         val isPopupVisible = selectedNode != null && selectedPath != null
@@ -438,7 +445,14 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
         }
 
         PredictiveBackHandler(enabled = backTarget == BackTarget.NODE_POPUP) { progress ->
-            try { progress.collect {}; selectedNode = null; selectedPath = null; selectedTouchOffset = null } catch (_: CancellationException) {}
+            try {
+                progress.collect {}
+                selectedNode = null
+                selectedPath = null
+                selectedTouchOffset = null
+                selectedTileRect = null
+                selectedTileColor = null
+            } catch (_: CancellationException) {}
         }
         PredictiveBackHandler(enabled = backTarget == BackTarget.TREE_SELECTION) { progress ->
             try { progress.collect {}; clearTreeSelection() } catch (_: CancellationException) {}
@@ -812,15 +826,19 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             isInteractive = (currentRoute == AppDestinations.TREE),
                             onZoomChanged = { isTreemapZoomed = it },
                             isLandscape = isLandscape,
-                            onNodeSelected = { node, path, touchOffset ->
+                            onNodeSelected = { node, path, touchOffset, tileRect, tileColor ->
                                 selectedNode = node
                                 selectedPath = path
                                 selectedTouchOffset = touchOffset ?: lastTouchDown
+                                selectedTileRect = tileRect
+                                selectedTileColor = tileColor
                             },
                             onDismissPopup = {
                                 selectedNode = null
                                 selectedPath = null
                                 selectedTouchOffset = null
+                                selectedTileRect = null
+                                selectedTileColor = null
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -996,562 +1014,77 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
             }
 
             if (activePopupNode != null && activePopupPath != null) {
-                val node = activePopupNode!!
-                val path = activePopupPath!!
-
-                val isApp = remember(node, path) {
-                    FileUtils.extractPackageName(node, path, context) != null ||
-                    node.children?.any { it.name.startsWith("App Code") } == true
-                }
-                val pkgName = remember(node, path) { FileUtils.extractPackageName(node, path, context) }
-                val isFreeSpace = node.name.equals("[free space]", ignoreCase = true) || node.name.equals("free space", ignoreCase = true)
-                val isSystemOS = node.name.equals("[system & os]", ignoreCase = true) || node.name.equals("system & os", ignoreCase = true)
-                val isSpecial = isFreeSpace || isSystemOS
-                val realFile = remember(node, path) {
-                    FileUtils.resolveActualFile(path, context) ?: FileUtils.resolveActualFile(node.name, context)
-                }
-                var isStarred by remember(path) { mutableStateOf(FavoritesManager.isStarred(context, path)) }
-                val isSelected = selectedTreeNodes.containsKey(node)
-                val appBreakdown = remember(node, pkgName, isApp) {
-                    if (isApp && pkgName != null) {
-                        var code = node.children?.firstOrNull { it.name.startsWith("App Code") }?.size ?: 0L
-                        var data = node.children?.firstOrNull { it.name == "Data" }?.size ?: 0L
-                        var cache = node.children?.firstOrNull { it.name == "Cache" }?.size ?: 0L
-
-                        if (code == 0L && data == 0L && cache == 0L) {
-                            try {
-                                val ssm = context.getSystemService(StorageStatsManager::class.java)
-                                val stats = ssm?.queryStatsForPackage(StorageManager.UUID_DEFAULT, pkgName, Process.myUserHandle())
-                                if (stats != null) {
-                                    code = stats.appBytes
-                                    cache = stats.cacheBytes
-                                    data = maxOf(0L, stats.dataBytes - cache)
-                                }
-                            } catch (_: Exception) {}
-                        }
-                        if (code == 0L && data == 0L && cache == 0L) {
-                            code = node.size
-                        }
-                        Triple(code, data, cache)
-                    } else null
-                }
-
-                val nameLower = remember(node.name) { node.name.lowercase() }
-                val isMedia = remember(nameLower) {
-                    nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi") ||
-                    nameLower.endsWith(".mov") || nameLower.endsWith(".webm") || nameLower.endsWith(".3gp") ||
-                    nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") ||
-                    nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".gif") ||
-                    nameLower.endsWith(".apk")
-                }
-                val folderName = remember(path) {
-                    val trimmed = path.trimEnd('/')
-                    val parts = trimmed.split('/')
-                    if (parts.size > 1) parts[parts.size - 2] else "Storage"
-                }
-                val accentColor = remember(node, pkgName, isApp, nameLower) {
-                    when {
-                        isApp && pkgName != null -> AppIconCache.getDominantColor(pkgName) ?: Color(0xFF6750A4)
-                        nameLower.endsWith(".apk") -> Color(0xFFE53935)
-                        nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".mov") || nameLower.endsWith(".avi") -> Color(0xFF3B82F6)
-                        nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") || nameLower.endsWith(".webp") || nameLower.endsWith(".gif") -> Color(0xFF10B981)
-                        nameLower.endsWith(".mp3") || nameLower.endsWith(".flac") || nameLower.endsWith(".wav") || nameLower.endsWith(".m4a") -> Color(0xFFF59E0B)
-                        nameLower.endsWith(".pdf") || nameLower.endsWith(".doc") || nameLower.endsWith(".docx") || nameLower.endsWith(".txt") -> Color(0xFFEC4899)
-                        nameLower.endsWith(".zip") || nameLower.endsWith(".tar") || nameLower.endsWith(".gz") || nameLower.endsWith(".rar") || nameLower.endsWith(".7z") -> Color(0xFF8B5CF6)
-                        node.isDirectory -> Color(0xFF38BDF8)
-                        else -> Color(0xFF6366F1)
-                    }
-                }
-                val symbolName = remember(node, isApp) { FileUtils.getNodeSymbolName(node, isApp) }
-
-                val density = LocalDensity.current
-                val displayMetrics = remember { context.resources.displayMetrics }
-                val screenWidth = displayMetrics.widthPixels
-                val screenHeight = displayMetrics.heightPixels
-
-                val menuWidthPx = with(density) { 276.dp.roundToPx() }
-                val menuHeightPx = with(density) { (if (isApp) 210.dp else 190.dp).roundToPx() }
-                val safeMargin = with(density) { 10.dp.roundToPx() }
-
-                val clickPos = if (selectedNode != null) (selectedTouchOffset ?: lastTouchDown) else activePopupOffset
-                val targetX = (clickPos.x.roundToInt() - menuWidthPx / 2)
-                    .coerceIn(safeMargin, (screenWidth - menuWidthPx - safeMargin).coerceAtLeast(safeMargin))
-                val targetY = if (clickPos.y > screenHeight * 0.55f) {
-                    (clickPos.y.roundToInt() - menuHeightPx - safeMargin)
-                        .coerceIn(safeMargin, (screenHeight - menuHeightPx - safeMargin).coerceAtLeast(safeMargin))
-                } else {
-                    (clickPos.y.roundToInt() + safeMargin)
-                        .coerceIn(safeMargin, (screenHeight - menuHeightPx - safeMargin).coerceAtLeast(safeMargin))
-                }
-
-                val animatedOffset by animateIntOffsetAsState(
-                    targetValue = IntOffset(targetX, targetY),
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    ),
-                    label = "popupSpringOffset"
-                )
-
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Box(
-                        modifier = Modifier.offset { animatedOffset }
-                    ) {
-                        AnimatedVisibility(
-                            visible = isPopupVisible,
-                            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                                    scaleIn(
-                                        initialScale = 0.82f,
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                            stiffness = Spring.StiffnessMedium
-                                        )
-                                    ),
-                            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
-                                   scaleOut(
-                                       targetScale = 0.82f,
-                                       animationSpec = spring(
-                                           dampingRatio = Spring.DampingRatioNoBouncy,
-                                           stiffness = Spring.StiffnessMedium
-                                       )
-                                   )
-                        ) {
-                            val swipeOffsetX = remember(activePopupNode) { mutableFloatStateOf(0f) }
-                            val swipeOffsetY = remember(activePopupNode) { mutableFloatStateOf(0f) }
-                            var swipeX by swipeOffsetX
-                            var swipeY by swipeOffsetY
-                            val dismissThreshold = with(density) { 56.dp.toPx() }
-
-                            Surface(
-                                shape = RoundedCornerShape(22.dp),
-                                color = Color(0xFF14161F),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-                                shadowElevation = 10.dp,
-                                modifier = Modifier
-                                    .widthIn(min = 250.dp, max = 280.dp)
-                                    .offset { IntOffset(swipeOffsetX.floatValue.roundToInt(), swipeOffsetY.floatValue.roundToInt()) }
-                                    .graphicsLayer {
-                                        val x = swipeOffsetX.floatValue
-                                        val y = swipeOffsetY.floatValue
-                                        val dist = kotlin.math.sqrt(x * x + y * y)
-                                        alpha = (1f - dist / (dismissThreshold * 3f)).coerceIn(0f, 1f)
-                                    }
-                                    .pointerInput(activePopupNode) {
-                                        detectDragGestures(
-                                            onDragEnd = {
-                                                val curX = swipeX
-                                                val curY = swipeY
-                                                val dist = kotlin.math.sqrt(curX * curX + curY * curY)
-                                                if (dist > dismissThreshold) {
-                                                    val targetDist = maxOf(screenWidth, screenHeight).toFloat()
-                                                    val dirX = if (dist > 0.001f) curX / dist else 1f
-                                                    val dirY = if (dist > 0.001f) curY / dist else 0f
-                                                    scope.launch {
-                                                        launch {
-                                                            animate(swipeX, dirX * targetDist, animationSpec = spring(stiffness = Spring.StiffnessMedium)) { value, _ -> swipeX = value }
-                                                        }
-                                                        launch {
-                                                            animate(swipeY, dirY * targetDist, animationSpec = spring(stiffness = Spring.StiffnessMedium)) { value, _ -> swipeY = value }
-                                                        }
-                                                        selectedNode = null
-                                                        selectedPath = null
-                                                        selectedTouchOffset = null
-                                                    }
-                                                } else {
-                                                    scope.launch {
-                                                        launch {
-                                                            animate(swipeX, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeX = value }
-                                                        }
-                                                        launch {
-                                                            animate(swipeY, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeY = value }
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            onDragCancel = {
-                                                scope.launch {
-                                                    launch { animate(swipeX, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeX = value } }
-                                                    launch { animate(swipeY, 0f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)) { value, _ -> swipeY = value } }
-                                                }
-                                            }
-                                        ) { change, dragAmount ->
-                                            change.consume()
-                                            swipeX += dragAmount.x
-                                            swipeY += dragAmount.y
-                                        }
-                                    }
-                            ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(22.dp))
-                            ) {
-                                // Full-cover preview background
-                                if (isMedia && realFile != null) {
-                                    MediaThumbnailView(
-                                        node = node,
-                                        path = path,
-                                        fallbackTint = accentColor,
-                                        modifier = Modifier.matchParentSize()
-                                    )
-                                } else if (isApp && pkgName != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .matchParentSize()
-                                            .background(
-                                                Brush.radialGradient(
-                                                    colors = listOf(
-                                                        accentColor.copy(alpha = 0.45f),
-                                                        Color(0xFF0F1118)
-                                                    ),
-                                                    radius = 400f
-                                                )
-                                            )
-                                    )
-                                    MaterialSymbol(
-                                        name = "apps",
-                                        active = true,
-                                        size = 110.dp,
-                                        tint = accentColor.copy(alpha = 0.12f),
-                                        modifier = Modifier
-                                            .align(Alignment.CenterEnd)
-                                            .padding(end = 8.dp)
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .matchParentSize()
-                                            .background(
-                                                Brush.linearGradient(
-                                                    colors = listOf(
-                                                        accentColor.copy(alpha = 0.35f),
-                                                        Color(0xFF0F1118)
-                                                    )
-                                                )
-                                            )
-                                    )
-                                    MaterialSymbol(
-                                        name = symbolName,
-                                        active = true,
-                                        size = 110.dp,
-                                        tint = accentColor.copy(alpha = 0.12f),
-                                        modifier = Modifier
-                                            .align(Alignment.CenterEnd)
-                                            .padding(end = 8.dp)
-                                    )
-                                }
-
-                                // Accent color vertical gradient overlay
-                                Box(
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                colors = listOf(
-                                                    accentColor.copy(alpha = 0.25f),
-                                                    Color.Black.copy(alpha = 0.60f),
-                                                    Color.Black.copy(alpha = 0.92f)
-                                                )
-                                            )
-                                        )
-                                )
-
-                                // Foreground details and action buttons directly over gradient (no solid background)
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                                ) {
-                                    // Top Row: App Icon / File Type Badge on left + Close Button on right
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        if (isApp && pkgName != null) {
-                                            AppIconView(
-                                                packageName = pkgName,
-                                                contentDescription = node.name,
-                                                modifier = Modifier
-                                                    .size(38.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                            )
-                                        } else {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier
-                                                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                            ) {
-                                                MaterialSymbol(
-                                                    name = symbolName,
-                                                    active = true,
-                                                    size = 16.dp,
-                                                    tint = accentColor
-                                                )
-                                                val ext = if (node.isDirectory) "Folder" else node.name.substringAfterLast('.', "").uppercase().take(5).ifEmpty { "File" }
-                                                Spacer(modifier = Modifier.width(5.dp))
-                                                Text(
-                                                    text = ext,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color.White
-                                                )
-                                            }
-                                        }
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            val isStaged = stagedQueue.containsKey(node)
-                                            IconButton(
-                                                onClick = {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    stagedQueue = CleanupQueueHelper.toggleItem(
-                                                        stagedQueue,
-                                                        StagedQueueItem(
-                                                            node = node,
-                                                            path = path,
-                                                            reclaimableBytes = node.size,
-                                                            isApp = isApp,
-                                                            pkgName = pkgName
-                                                        )
-                                                    )
-                                                },
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                MaterialSymbol(
-                                                    name = if (isStaged) "check_box" else "add_to_photos",
-                                                    active = isStaged,
-                                                    size = 18.dp,
-                                                    tint = if (isStaged) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.85f)
-                                                )
-                                            }
-
-                                            IconButton(
-                                                onClick = {
-                                                    selectedNode = null
-                                                    selectedPath = null
-                                                    selectedTouchOffset = null
-                                                },
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                MaterialSymbol(
-                                                    name = "close",
-                                                    active = true,
-                                                    size = 18.dp,
-                                                    tint = Color.White.copy(alpha = 0.85f)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // File / App Name
-                                    Text(
-                                        text = FileUtils.cleanDisplayName(node.name),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-
-                                    Spacer(modifier = Modifier.height(3.dp))
-
-                                    // Subtitle / Breakdown
-                                    if (isApp && appBreakdown != null) {
-                                        Text(
-                                            text = "App ${FileUtils.formatFileSize(appBreakdown.first)} • Data ${FileUtils.formatFileSize(appBreakdown.second)} • Cache ${FileUtils.formatFileSize(appBreakdown.third)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color.White.copy(alpha = 0.80f),
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "${FileUtils.formatFileSize(node.size)} • $folderName",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color.White.copy(alpha = 0.80f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    // Bottom Actions Row (Directly over gradient, no solid background)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Left: Select / Deselect or Total or Show in Folder
-                                        if (currentRoute == AppDestinations.TREE && !isSpecial) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .clickable {
-                                                        setTreeSelection(
-                                                            if (selectedTreeNodes.containsKey(node)) {
-                                                                selectedTreeNodes - node
-                                                            } else {
-                                                                selectedTreeNodes + (node to path)
-                                                            }
-                                                        )
-                                                        selectedNode = null
-                                                        selectedPath = null
-                                                        selectedTouchOffset = null
-                                                    }
-                                                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                                            ) {
-                                                MaterialSymbol(
-                                                    name = "check_circle",
-                                                    active = isSelected,
-                                                    size = 18.dp,
-                                                    tint = if (isSelected) accentColor else Color.White.copy(alpha = 0.75f)
-                                                )
-                                                Spacer(modifier = Modifier.width(5.dp))
-                                                Text(
-                                                    text = if (isSelected) "Deselect" else "Select",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = if (isSelected) accentColor else Color.White
-                                                )
-                                            }
-                                        } else if (isApp) {
-                                            Text(
-                                                text = "Total: ${FileUtils.formatFileSize(node.size)}",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = accentColor,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-                                            )
-                                        } else if (!isSpecial) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .clickable {
-                                                        val targetP = path
-                                                        selectedNode = null
-                                                        selectedPath = null
-                                                        selectedTouchOffset = null
-                                                        explorerTargetPath = targetP
-                                                        navController.navigate(AppDestinations.EXPLORER)
-                                                    }
-                                                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                                            ) {
-                                                MaterialSymbol(
-                                                    name = "folder_open",
-                                                    active = true,
-                                                    size = 18.dp,
-                                                    tint = accentColor
-                                                )
-                                                Spacer(modifier = Modifier.width(5.dp))
-                                                Text(
-                                                    text = "Folder",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = Color.White
-                                                )
-                                            }
-                                        } else {
-                                            Spacer(modifier = Modifier.width(1.dp))
-                                        }
-
-                                        // Right: Action Icons (Open, Info, Star, Delete)
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            if (isApp && pkgName != null) {
-                                                val launchIntent = remember(pkgName) { context.packageManager.getLaunchIntentForPackage(pkgName) }
-                                                if (launchIntent != null) {
-                                                    IconButton(
-                                                        onClick = {
-                                                            try { context.startActivity(launchIntent) } catch (_: Exception) {}
-                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                                        },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        MaterialSymbol("open_in_new", active = true, size = 19.dp, tint = Color.White)
-                                                    }
-                                                }
-                                                IconButton(
-                                                    onClick = {
-                                                        try {
-                                                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkgName")))
-                                                        } catch (_: Exception) {}
-                                                        selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                                    },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    MaterialSymbol("info", active = true, size = 19.dp, tint = Color.White)
-                                                }
-                                                IconButton(
-                                                    onClick = {
-                                                        FileUtils.uninstallApp(context, pkgName)
-                                                        selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                                    },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    MaterialSymbol("delete", active = true, size = 19.dp, tint = Color(0xFFFF6B6B))
-                                                }
-                                            } else {
-                                                if (!isSpecial && !node.isDirectory) {
-                                                    IconButton(
-                                                        onClick = {
-                                                            val targetFile = realFile ?: File(path)
-                                                            FileUtils.openFile(context, targetFile)
-                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                                        },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        MaterialSymbol("open_in_new", active = true, size = 19.dp, tint = Color.White)
-                                                    }
-                                                }
-                                                if (!isSpecial) {
-                                                    IconButton(
-                                                        onClick = {
-                                                            isStarred = FavoritesManager.toggleStar(context, path)
-                                                            AppNotifier.notify(if (isStarred) "Starred & protected" else "Unstarred")
-                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                                        },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        MaterialSymbol(
-                                                            name = if (isStarred) "star" else "star_outline",
-                                                            active = isStarred,
-                                                            size = 19.dp,
-                                                            tint = if (isStarred) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.85f)
-                                                        )
-                                                    }
-                                                    IconButton(
-                                                        onClick = {
-                                                            selectedNode = null; selectedPath = null; selectedTouchOffset = null
-                                                            nodeToDelete = node to path
-                                                        },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        MaterialSymbol("delete", active = true, size = 19.dp, tint = Color(0xFFFF6B6B))
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                TreemapTilePopup(
+                    node = activePopupNode!!,
+                    path = activePopupPath!!,
+                    tileRect = activePopupTileRect,
+                    tileColor = activePopupTileColor,
+                    touchOffset = activePopupOffset,
+                    visible = isPopupVisible,
+                    onDismiss = {
+                        selectedNode = null
+                        selectedPath = null
+                        selectedTouchOffset = null
+                        selectedTileRect = null
+                        selectedTileColor = null
+                        activePopupNode = null
+                        activePopupPath = null
+                        activePopupTileRect = null
+                        activePopupTileColor = null
+                    },
+                    stagedQueue = stagedQueue,
+                    onToggleStaged = { n, p, size, isApp, pkg ->
+                        stagedQueue = CleanupQueueHelper.toggleItem(
+                            stagedQueue,
+                            StagedQueueItem(
+                                node = n,
+                                path = p,
+                                reclaimableBytes = size,
+                                isApp = isApp,
+                                pkgName = pkg
+                            )
+                        )
+                    },
+                    isSelected = selectedTreeNodes.containsKey(activePopupNode),
+                    onToggleSelect = {
+                        val n = activePopupNode ?: return@TreemapTilePopup
+                        val p = activePopupPath ?: return@TreemapTilePopup
+                        setTreeSelection(
+                            if (selectedTreeNodes.containsKey(n)) {
+                                selectedTreeNodes - n
+                            } else {
+                                selectedTreeNodes + (n to p)
                             }
+                        )
+                    },
+                    onOpenFile = { file ->
+                        FileUtils.openFile(context, file)
+                    },
+                    onOpenApp = { pkg ->
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
+                        if (launchIntent != null) {
+                            try { context.startActivity(launchIntent) } catch (_: Exception) {}
                         }
+                    },
+                    onOpenAppInfo = { pkg ->
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+                        } catch (_: Exception) {}
+                    },
+                    onUninstallApp = { pkg ->
+                        FileUtils.uninstallApp(context, pkg)
+                    },
+                    onNavigateToExplorer = { p ->
+                        explorerTargetPath = p
+                        navController.navigate(AppDestinations.EXPLORER)
+                    },
+                    onRequestDelete = {
+                        val n = activePopupNode ?: return@TreemapTilePopup
+                        val p = activePopupPath ?: return@TreemapTilePopup
+                        nodeToDelete = n to p
                     }
-                }
+                )
             }
-        }
 
             if (nodeToDelete != null) {
                 val (delNode, delPath) = nodeToDelete!!

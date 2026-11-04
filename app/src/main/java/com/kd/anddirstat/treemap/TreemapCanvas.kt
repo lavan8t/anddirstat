@@ -42,6 +42,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -68,7 +72,7 @@ fun TreemapCanvas(
     onZoomChanged: ((Boolean) -> Unit)? = null,
     onZoomFocusChanged: ((Float) -> Unit)? = null,
     isLandscape: Boolean = false,
-    onNodeSelected: (CompactNode, String, Offset?) -> Unit,
+    onNodeSelected: (CompactNode, String, Offset?, androidx.compose.ui.geometry.Rect?, androidx.compose.ui.graphics.Color?) -> Unit = { _, _, _, _, _ -> },
     onDismissPopup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -98,26 +102,68 @@ fun TreemapCanvas(
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
-    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}"
+    val density = LocalDensity.current
+    val marginDp = 10.dp
+    val marginPx = with(density) { marginDp.toPx() }
+
+    val statusBarTopDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topSpaceDp = if (isLandscape) 48.dp else statusBarTopDp + 52.dp + marginDp
+    val topSpacePx = with(density) { topSpaceDp.toPx() }
+
+    val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomSpaceDp = if (isLandscape) 12.dp else navBarBottomDp + 64.dp + marginDp
+    val bottomSpacePx = with(density) { bottomSpaceDp.toPx() }
+
+    val leftSpaceDp = if (isLandscape) 84.dp else marginDp
+    val leftSpacePx = with(density) { leftSpaceDp.toPx() }
+
+    val rightSpaceDp = marginDp
+    val rightSpacePx = with(density) { rightSpaceDp.toPx() }
+
+    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx}_${bottomSpacePx}_${leftSpacePx}_${rightSpacePx}"
     val precalculatedTiles = remember { mutableStateOf<List<TreemapTile>>(emptyList()) }
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
 
     LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
-        val usableW = canvasSize.width.toFloat().coerceAtLeast(100f)
-        val usableH = canvasSize.height.toFloat().coerceAtLeast(100f)
+        val usableW = (canvasSize.width.toFloat() - leftSpacePx - rightSpacePx).coerceAtLeast(100f)
+        val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
         if (usableW > 0 && usableH > 0) {
             val tiles = withContext(Dispatchers.Default) {
-                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark, 0f)
+                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark, startY = topSpacePx, startX = leftSpacePx)
             }
             precalculatedTiles.value = tiles
             quadtree.value = if (tiles.isEmpty()) null else {
-                val qt = TreemapQuadtree(0f, 0f, usableW, usableH)
+                val qt = TreemapQuadtree(leftSpacePx, topSpacePx, leftSpacePx + usableW, topSpacePx + usableH)
                 qt.insertAll(tiles)
                 qt
             }
         } else {
             precalculatedTiles.value = emptyList()
             quadtree.value = null
+        }
+    }
+
+    val perimeterTiles = remember(precalculatedTiles.value, leftSpacePx, rightSpacePx, topSpacePx, bottomSpacePx, canvasSize) {
+        val tiles = precalculatedTiles.value
+        if (tiles.isEmpty()) emptyList() else {
+            val eps = 2.0f
+            val rightBound = canvasSize.width.toFloat() - rightSpacePx
+            val bottomBound = canvasSize.height.toFloat() - bottomSpacePx
+            tiles.filter { t ->
+                t.left <= leftSpacePx + eps ||
+                t.left + t.width >= rightBound - eps ||
+                t.top <= topSpacePx + eps ||
+                t.top + t.height >= bottomBound - eps
+            }
+        }
+    }
+
+    val blurRadiusPx = with(density) { 14.dp.toPx() }
+    val blurPaint = remember(blurRadiusPx) {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+            maskFilter = android.graphics.BlurMaskFilter(blurRadiusPx, android.graphics.BlurMaskFilter.Blur.NORMAL)
         }
     }
 
@@ -193,7 +239,7 @@ fun TreemapCanvas(
     val canvasBg = if (pureBlack && isDark) Color.Black else surfaceColor
 
     LaunchedEffect(canvasBg, shadingMode) {
-        glRenderer.setClearColor(canvasBg.red, canvasBg.green, canvasBg.blue, canvasBg.alpha)
+        glRenderer.setClearColor(0f, 0f, 0f, 0f)
         val modeInt = when (shadingMode) {
             FileUtils.TreemapShadingMode.SOLID -> 1
             FileUtils.TreemapShadingMode.LINEAR -> 2
@@ -358,6 +404,17 @@ fun TreemapCanvas(
                         }
                     }
 
+                    fun selectTile(tile: TreemapTile, touchPos: Offset?) {
+                        val curScale = currentScaleState.value
+                        val curOff = currentOffsetState.value
+                        val screenLeft = tile.left * curScale + curOff.x
+                        val screenTop = tile.top * curScale + curOff.y
+                        val screenW = tile.width * curScale
+                        val screenH = tile.height * curScale
+                        val tileRect = androidx.compose.ui.geometry.Rect(screenLeft, screenTop, screenLeft + screenW, screenTop + screenH)
+                        onNodeSelected(tile.node, tile.path, touchPos, tileRect, tile.baseColor)
+                    }
+
                     if (pressedPointers == 0) {
                         val elapsed = System.currentTimeMillis() - downTime
                         tooltipActive = false
@@ -367,7 +424,7 @@ fun TreemapCanvas(
                         if (!hadMultiTouch && !hasMovedOutOfInitialTile && elapsed < longPressActivationTimeout) {
                             if (initialTile != null) {
                                 triggerCrispHaptic(context)
-                                onNodeSelected(initialTile.node, initialTile.path, downPos)
+                                selectTile(initialTile, downPos)
                             } else {
                                 onDismissPopup()
                             }
@@ -388,13 +445,13 @@ fun TreemapCanvas(
                                 tooltipActive = true
                                 glidingTile = initialTile
                                 triggerCrispHaptic(context)
-                                onNodeSelected(initialTile.node, initialTile.path, change.position)
+                                selectTile(initialTile, change.position)
                             }
                         } else {
                             if (curTile != null && curTile != glidingTile) {
                                 triggerCrispHaptic(context)
                                 glidingTile = curTile
-                                onNodeSelected(curTile.node, curTile.path, change.position)
+                                selectTile(curTile, change.position)
                             }
                         }
                     }
@@ -405,7 +462,7 @@ fun TreemapCanvas(
         Modifier
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().background(canvasBg)) {
         AndroidView(
             factory = { ctx ->
                 GLSurfaceView(ctx).apply {
@@ -440,11 +497,74 @@ fun TreemapCanvas(
             val hasSelectionBorder = (sel != null && selectionBorderWidth > 0.05f)
             val hasMarkedNodes = selectedNodes.isNotEmpty()
             val hasAppIcons = appTiles.isNotEmpty()
+            val hasAmbientBlur = perimeterTiles.isNotEmpty()
 
-            if (hasSelectionBorder || hasMarkedNodes || hasAppIcons) {
+            if (hasSelectionBorder || hasMarkedNodes || hasAppIcons || hasAmbientBlur) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val curScale = currentScaleState.value
                     val curOff = currentOffsetState.value
+
+                    if (hasAmbientBlur) {
+                        val eps = 2.0f
+                        val rightBound = size.width - rightSpacePx
+                        val bottomBound = size.height - bottomSpacePx
+
+                        drawIntoCanvas { canvas ->
+                            val native = canvas.nativeCanvas
+                            for (tile in perimeterTiles) {
+                                val tLeft = tile.left * curScale + curOff.x
+                                val tTop = tile.top * curScale + curOff.y
+                                val tWidth = tile.width * curScale
+                                val tHeight = tile.height * curScale
+
+                                if (tLeft + tWidth < -blurRadiusPx || tLeft > size.width + blurRadiusPx ||
+                                    tTop + tHeight < -blurRadiusPx || tTop > size.height + blurRadiusPx) continue
+
+                                blurPaint.color = tile.baseColor.copy(alpha = 0.55f).toArgb()
+
+                                // Top edge extension into top margin
+                                if (tile.top <= topSpacePx + eps) {
+                                    native.drawRect(
+                                        tLeft,
+                                        tTop - blurRadiusPx * 0.6f,
+                                        tLeft + tWidth,
+                                        tTop + blurRadiusPx * 0.6f,
+                                        blurPaint
+                                    )
+                                }
+                                // Bottom edge extension into bottom margin
+                                if (tile.top + tile.height >= bottomBound - eps) {
+                                    native.drawRect(
+                                        tLeft,
+                                        tTop + tHeight - blurRadiusPx * 0.6f,
+                                        tLeft + tWidth,
+                                        tTop + tHeight + blurRadiusPx * 0.6f,
+                                        blurPaint
+                                    )
+                                }
+                                // Left edge extension into left margin
+                                if (tile.left <= leftSpacePx + eps) {
+                                    native.drawRect(
+                                        tLeft - blurRadiusPx * 0.6f,
+                                        tTop,
+                                        tLeft + blurRadiusPx * 0.6f,
+                                        tTop + tHeight,
+                                        blurPaint
+                                    )
+                                }
+                                // Right edge extension into right margin
+                                if (tile.left + tile.width >= rightBound - eps) {
+                                    native.drawRect(
+                                        tLeft + tWidth - blurRadiusPx * 0.6f,
+                                        tTop,
+                                        tLeft + tWidth + blurRadiusPx * 0.6f,
+                                        tTop + tHeight,
+                                        blurPaint
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     if (hasAppIcons) {
                         for (tile in appTiles) {

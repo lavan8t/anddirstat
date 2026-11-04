@@ -52,7 +52,8 @@ fun computeTreemapTiles(
     width: Float,
     height: Float,
     isDark: Boolean = true,
-    startY: Float = 0f
+    startY: Float = 0f,
+    startX: Float = 0f
 ): List<TreemapTile> {
     if (width <= 0f || height <= 0f || rootNode.size <= 0L) return emptyList()
 
@@ -98,7 +99,7 @@ fun computeTreemapTiles(
         }
     }
 
-    buildTiles(rootNode, rootPath, 0f, startY, width, height, false)
+    buildTiles(rootNode, rootPath, startX, startY, width, height, false)
     return tiles
 }
 
