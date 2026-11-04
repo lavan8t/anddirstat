@@ -94,8 +94,10 @@ import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
+import com.kd.anddirstat.ui.components.TreeDeleteDialog
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -564,125 +566,33 @@ fun ExplorerView(
         }
 
         if (showDeleteDialog && selectedRows.isNotEmpty()) {
-            val count = selectedRows.size
-            val totalBytes = selectedRows.keys.sumOf { it.size }
-            val hasApps = selectedRows.any { (node, path) -> FileUtils.extractPackageName(node, path, context) != null }
-            val allApps = selectedRows.all { (node, path) -> FileUtils.extractPackageName(node, path, context) != null }
-            val allAlreadyTrashed = selectedRows.all { (node, path) -> node.name.startsWith(".trashed") || path.contains(".trashed") || path.contains("[Recycle Bin]") }
-
-            AlertDialog(
-                onDismissRequest = { showDeleteDialog = false },
-                icon = {
-                    MaterialSymbol(
-                        name = "delete",
-                        active = true,
-                        size = 28.dp,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                },
-                title = {
-                    Text(
-                        text = when {
-                            allApps && count == 1 -> "Uninstall 1 app?"
-                            allApps -> "Uninstall $count apps?"
-                            hasApps -> "Delete / Uninstall $count items?"
-                            allAlreadyTrashed && count == 1 -> "Delete 1 item permanently?"
-                            allAlreadyTrashed -> "Delete $count items permanently?"
-                            count == 1 -> "Move 1 item to Recycle Bin?"
-                            else -> "Move $count items to Recycle Bin?"
-                        },
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    Text(
-                        text = when {
-                            allApps -> "$count applications will be uninstalled from device."
-                            allAlreadyTrashed -> "This action is permanent and cannot be undone.\n\n${FileUtils.formatFileSize(totalBytes)} will be freed permanently"
-                            else -> "Selected items will be moved to the Recycle Bin.\n\n${FileUtils.formatFileSize(totalBytes)} to be moved"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            showDeleteDialog = false
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val itemsToDelete = selectedRows.toList()
-                            val (starredItems, unstarredItems) = itemsToDelete.partition { (node, path) ->
-                                com.kd.anddirstat.util.FavoritesManager.isStarred(context, path)
+            TreeDeleteDialog(
+                selectedTreeNodes = selectedRows,
+                context = context,
+                onConfirmDelete = {
+                    showDeleteDialog = false
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    val itemsToDelete = selectedRows.toList()
+                    scope.launch {
+                        isDeleting = true
+                        val result = FileMaintenanceEngine.deleteTreeNodes(
+                            context = context,
+                            items = itemsToDelete,
+                            onProgress = { cur, tot, name, isTrash ->
+                                deleteCurrentCount = cur
+                                deleteTotalCount = tot
+                                deleteCurrentFileName = name
+                                deleteIsTrash = isTrash
                             }
-
-                            if (unstarredItems.isEmpty()) {
-                                com.kd.anddirstat.util.AppNotifier.notify("Cannot delete starred files. Unstar them manually first.")
-                                return@TextButton
-                            }
-
-                            scope.launch {
-                                isDeleting = true
-                                deleteTotalCount = unstarredItems.size
-                                deleteIsTrash = !allAlreadyTrashed
-                                var processedCount = 0
-                                val packagesToUninstall = mutableListOf<String>()
-
-                                withContext(Dispatchers.IO) {
-                                    unstarredItems.forEachIndexed { index, (node, path) ->
-                                        deleteCurrentCount = index + 1
-                                        deleteCurrentFileName = node.name
-                                        AppNotifier.updateProgress(
-                                            context = context,
-                                            title = if (allAlreadyTrashed) "Deleting permanently..." else "Moving to Recycle Bin...",
-                                            detail = "${index + 1} / ${unstarredItems.size}: ${node.name}",
-                                            progress = index + 1,
-                                            max = unstarredItems.size,
-                                            indeterminate = false,
-                                            type = "delete"
-                                        )
-                                        val pkg = FileUtils.extractPackageName(node, path, context)
-                                        if (pkg != null) {
-                                            packagesToUninstall.add(pkg)
-                                        } else {
-                                            try {
-                                                val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
-                                                if (f != null && f.exists()) {
-                                                    if (FileUtils.deleteOrTrashFile(f, context)) {
-                                                        processedCount++
-                                                    }
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-                                    }
-                                }
-
-                                if (packagesToUninstall.isNotEmpty()) {
-                                    FileUtils.uninstallApps(context, packagesToUninstall)
-                                }
-
-                                isDeleting = false
-                                selectedRows = emptyMap()
-                                val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
-                                val msg = if (starredItems.isNotEmpty()) "$baseMsg (Skipped ${starredItems.size} starred items)" else baseMsg
-                                com.kd.anddirstat.util.AppNotifier.finishActivity(context, msg)
-                                val deletedNodes = unstarredItems.map { it.first }.toSet()
-                                onNodesDeleted(deletedNodes)
-                            }
-                        }
-                    ) {
-                        Text(
-                            text = if (allApps) "Uninstall" else if (hasApps) "Delete / Uninstall" else if (allAlreadyTrashed) "Delete" else "Move to Bin",
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Bold
                         )
+                        isDeleting = false
+                        selectedRows = emptyMap()
+                        if (result.deletedNodes.isNotEmpty()) {
+                            onNodesDeleted(result.deletedNodes)
+                        }
                     }
                 },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = false }) {
-                        Text("Cancel")
-                    }
-                }
+                onDismiss = { showDeleteDialog = false }
             )
         }
 

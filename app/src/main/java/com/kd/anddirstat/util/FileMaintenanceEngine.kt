@@ -58,35 +58,54 @@ object FileMaintenanceEngine {
         BatchResult(deletedCount, starred.size)
     }
 
+    data class TreeDeleteResult(
+        val deletedCount: Int,
+        val deletedNodes: Set<com.kd.anddirstat.model.CompactNode>,
+        val skippedStarredCount: Int,
+        val blockedBySafetyCount: Int
+    )
+
     suspend fun deleteTreeNodes(
         context: Context,
         items: List<Pair<com.kd.anddirstat.model.CompactNode, String>>,
         onProgress: (current: Int, total: Int, name: String, isTrash: Boolean) -> Unit
-    ): Int = withContext(Dispatchers.IO) {
+    ): TreeDeleteResult = withContext(Dispatchers.IO) {
         val (starredItems, unstarredItems) = items.partition { (_, path) -> FavoritesManager.isStarred(context, path) }
         if (unstarredItems.isEmpty()) {
             AppNotifier.notify("Cannot delete starred files. Unstar them manually first.")
-            return@withContext 0
+            return@withContext TreeDeleteResult(0, emptySet(), starredItems.size, 0)
         }
         val (safeItems, blockedByGuard) = unstarredItems.partition { (node, path) ->
             DeletionSafetyGuard.isDeletionAllowed(node, path, context)
         }
         if (safeItems.isEmpty() && blockedByGuard.isNotEmpty()) {
             AppNotifier.notify("Deletion blocked: Protected system paths selected.")
-            return@withContext 0
+            return@withContext TreeDeleteResult(0, emptySet(), starredItems.size, blockedByGuard.size)
         }
         val allAlreadyTrashed = safeItems.all { (node, path) ->
             node.name.startsWith(".trashed") || path.contains(".trashed") || path.contains("[Recycle Bin]")
         }
         val isTrash = !allAlreadyTrashed
         var processedCount = 0
+        val deletedNodes = mutableSetOf<com.kd.anddirstat.model.CompactNode>()
         val packagesToUninstall = mutableListOf<String>()
 
         safeItems.forEachIndexed { index, (node, path) ->
             onProgress(index + 1, safeItems.size, node.name, isTrash)
+            AppNotifier.updateProgress(
+                context = context,
+                title = if (allAlreadyTrashed) "Deleting permanently..." else "Moving to Recycle Bin...",
+                detail = "${index + 1} / ${safeItems.size}: ${node.name}",
+                progress = index + 1,
+                max = safeItems.size,
+                indeterminate = false,
+                type = "delete"
+            )
             val pkg = FileUtils.extractPackageName(node, path, context)
             if (pkg != null) {
                 packagesToUninstall.add(pkg)
+                deletedNodes.add(node)
+                processedCount++
             } else {
                 try {
                     val f = FileUtils.resolveActualFile(path) ?: FileUtils.resolveActualFile(node.name)
@@ -94,6 +113,7 @@ object FileMaintenanceEngine {
                         val fLen = f.length()
                         if (FileUtils.deleteOrTrashFile(f, context)) {
                             processedCount++
+                            deletedNodes.add(node)
                             StorageTrendManager.recordFreedBytes(context, fLen)
                         }
                     }
@@ -102,8 +122,11 @@ object FileMaintenanceEngine {
         }
         if (packagesToUninstall.isNotEmpty()) FileUtils.uninstallApps(context, packagesToUninstall)
         val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
-        val msg = if (starredItems.isNotEmpty()) "$baseMsg (Skipped ${starredItems.size} starred items)" else baseMsg
-        AppNotifier.notify(msg)
-        processedCount
+        val extraNotes = mutableListOf<String>()
+        if (starredItems.isNotEmpty()) extraNotes.add("Skipped ${starredItems.size} starred")
+        if (blockedByGuard.isNotEmpty()) extraNotes.add("Skipped ${blockedByGuard.size} protected")
+        val msg = if (extraNotes.isNotEmpty()) "$baseMsg (${extraNotes.joinToString(", ")})" else baseMsg
+        AppNotifier.finishActivity(context, msg)
+        TreeDeleteResult(processedCount, deletedNodes, starredItems.size, blockedByGuard.size)
     }
 }
