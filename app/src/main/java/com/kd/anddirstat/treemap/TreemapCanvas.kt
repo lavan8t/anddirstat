@@ -147,8 +147,8 @@ fun TreemapCanvas(
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
 
     LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
-        val usableW = canvasSize.width.toFloat().coerceAtLeast(1000f)
-        val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(1000f)
+        val usableW = canvasSize.width.toFloat().coerceAtLeast(100f)
+        val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
         if (usableW > 0 && usableH > 0) {
             val tiles = withContext(Dispatchers.Default) {
                 computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark)
@@ -212,6 +212,26 @@ fun TreemapCanvas(
 
     val glRenderer = remember { TreemapGLRenderer(context) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> glSurfaceViewRef?.onResume()
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> glSurfaceViewRef?.onPause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            glSurfaceViewRef?.onPause()
+        }
+    }
+
+    val appTiles = remember(precalculatedTiles.value) {
+        precalculatedTiles.value.filter { it.pkgName != null }
+    }
 
     val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
 
@@ -396,6 +416,9 @@ fun TreemapCanvas(
                                     }
                                 }
 
+                                glRenderer.setScaleAndOffset(scale, offset)
+                                glSurfaceViewRef?.requestRender()
+
                                 event.changes.forEach { it.consume() }
                             } else if (totalPointers > 1) {
                                 hadMultiTouch = true
@@ -454,11 +477,35 @@ fun TreemapCanvas(
             val sel = selectedTile ?: lastSelectedTile
             val hasSelectionBorder = (sel != null && selectionBorderWidth > 0.05f)
             val hasMarkedNodes = selectedNodes.isNotEmpty()
+            val hasAppIcons = appTiles.isNotEmpty()
 
-            if (hasSelectionBorder || hasMarkedNodes) {
+            if (hasSelectionBorder || hasMarkedNodes || hasAppIcons) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val curScale = currentScaleState.value
                     val curOff = currentOffsetState.value
+
+                    if (hasAppIcons) {
+                        for (tile in appTiles) {
+                            val sLeft = tile.left * curScale + curOff.x
+                            val sTop = tile.top * curScale + curOff.y
+                            val sW = tile.width * curScale
+                            val sH = tile.height * curScale
+                            if (sLeft + sW < 0f || sLeft > size.width || sTop + sH < 0f || sTop > size.height) continue
+                            if (sW >= 24f && sH >= 24f) {
+                                val bmp = AppIconCache.get(context, tile.pkgName!!)
+                                if (bmp != null) {
+                                    val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
+                                    val iconX = sLeft + (sW - iconSize) / 2f
+                                    val iconY = sTop + (sH - iconSize) / 2f
+                                    drawImage(
+                                        image = bmp,
+                                        dstOffset = IntOffset(iconX.toInt(), iconY.toInt()),
+                                        dstSize = IntSize(iconSize.toInt(), iconSize.toInt())
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     if (hasMarkedNodes) {
                         for (node in selectedNodes) {

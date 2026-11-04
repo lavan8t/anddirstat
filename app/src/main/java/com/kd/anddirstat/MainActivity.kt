@@ -139,7 +139,6 @@ import com.kd.anddirstat.ui.screens.LargestFilesScreen
 import com.kd.anddirstat.ui.screens.LoadingScreen
 import com.kd.anddirstat.ui.screens.PermissionScreen
 import com.kd.anddirstat.ui.screens.SettingsScreen
-import com.kd.anddirstat.ui.screens.TestTreemapScreen
 import com.kd.anddirstat.ui.screens.TreemapScreen
 import com.kd.anddirstat.ui.screens.cleaners.*
 import com.kd.anddirstat.treemap.TreemapBitmapCache
@@ -704,14 +703,6 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                         val realFile = FileUtils.resolveActualFile(path, context)
                                         if (realFile != null && realFile.exists() && !node.isDirectory) FileUtils.openFile(context, realFile)
                                     }
-                                )
-                            }
-                            composable(AppDestinations.TEST_TREEMAP) {
-                                TestTreemapScreen(
-                                    onBack = { navController.popBackStack() },
-                                    isDark = isDark,
-                                    pureBlack = pureBlack,
-                                    isLandscape = isLandscape
                                 )
                             }
                         }
