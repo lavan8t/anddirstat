@@ -6,6 +6,8 @@ import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
@@ -139,12 +142,27 @@ val GoogleSansFlexTitleDirStatFamily = FontFamily(
 
 
 
+object ExpressiveMotionTokens {
+    val SpatialSpring = spring<IntOffset>(
+        dampingRatio = 0.82f,
+        stiffness = Spring.StiffnessMediumLow
+    )
+    val SpatialFloatSpring = spring<Float>(
+        dampingRatio = 0.82f,
+        stiffness = Spring.StiffnessMediumLow
+    )
+    val EffectsSpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMedium
+    )
+}
+
 val Material3Shapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 val Material3Typography = Typography(
@@ -313,8 +331,9 @@ fun AndDirStatTheme(
                 onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
                 outline = Color(dyn.outline().getArgb(dynamicScheme)),
                 outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
-                surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
+                surfaceContainerLowest = Color(dyn.surfaceContainerLowest().getArgb(dynamicScheme)),
                 surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
+                surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
                 surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
                 surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
                 inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
@@ -347,8 +366,9 @@ fun AndDirStatTheme(
                 onSurfaceVariant = Color(dyn.onSurfaceVariant().getArgb(dynamicScheme)),
                 outline = Color(dyn.outline().getArgb(dynamicScheme)),
                 outlineVariant = Color(dyn.outlineVariant().getArgb(dynamicScheme)),
-                surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
+                surfaceContainerLowest = Color(dyn.surfaceContainerLowest().getArgb(dynamicScheme)),
                 surfaceContainerLow = Color(dyn.surfaceContainerLow().getArgb(dynamicScheme)),
+                surfaceContainer = Color(dyn.surfaceContainer().getArgb(dynamicScheme)),
                 surfaceContainerHigh = Color(dyn.surfaceContainerHigh().getArgb(dynamicScheme)),
                 surfaceContainerHighest = Color(dyn.surfaceContainerHighest().getArgb(dynamicScheme)),
                 inverseSurface = Color(dyn.inverseSurface().getArgb(dynamicScheme)),
@@ -361,7 +381,8 @@ fun AndDirStatTheme(
     val colorScheme = if (isDark && pureBlack) {
         base.copy(
             background = Color.Black,
-            surface = Color.Black
+            surface = Color.Black,
+            surfaceContainerLowest = Color.Black
         )
     } else base
 

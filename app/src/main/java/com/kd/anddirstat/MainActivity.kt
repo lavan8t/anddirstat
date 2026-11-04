@@ -519,29 +519,31 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                     }
 
                     val navHostContent = @Composable {
+                        val spatialSpec = ExpressiveMotionTokens.SpatialSpring
+                        val effectsSpec = ExpressiveMotionTokens.EffectsSpring
                         NavHost(
                             navController = navController,
                             startDestination = AppDestinations.TREE,
                             modifier = Modifier.fillMaxSize(),
                             enterTransition = {
                                 val isFwd = (destIndexMap[targetState.destination.route] ?: 99) >= (destIndexMap[initialState.destination.route] ?: -1)
-                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
-                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = tween(240, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
+                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
                             },
                             exitTransition = {
                                 val isFwd = (destIndexMap[targetState.destination.route] ?: 99) >= (destIndexMap[initialState.destination.route] ?: -1)
-                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
-                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut(tween(150, easing = FastOutSlowInEasing))
+                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
+                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
                             },
                             popEnterTransition = {
                                 val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: 99)
-                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
-                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(200, easing = FastOutSlowInEasing))
+                                if (isLandscape) slideInVertically(initialOffsetY = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
+                                else slideInHorizontally(initialOffsetX = { if (isFwd) (it * 0.15f).toInt() else (-it * 0.10f).toInt() }, animationSpec = spatialSpec) + fadeIn(effectsSpec)
                             },
                             popExitTransition = {
                                 val isFwd = (destIndexMap[targetState.destination.route] ?: -1) > (destIndexMap[initialState.destination.route] ?: 99)
-                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeOut(tween(180, easing = FastOutSlowInEasing))
-                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeOut(tween(180, easing = FastOutSlowInEasing))
+                                if (isLandscape) slideOutVertically(targetOffsetY = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
+                                else slideOutHorizontally(targetOffsetX = { if (isFwd) (-it * 0.10f).toInt() else (it * 0.15f).toInt() }, animationSpec = spatialSpec) + fadeOut(effectsSpec)
                             }
                         ) {
                             composable(AppDestinations.TREE) {
