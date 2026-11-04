@@ -115,26 +115,7 @@ fun TreemapScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clipToBounds()
-                .background(baseBg)
         ) {
-            // Gradient overlay for smooth transition to treemap canvas
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                baseBg,
-                                baseBg.copy(alpha = 0.92f),
-                                baseBg.copy(alpha = 0.70f),
-                                baseBg.copy(alpha = 0.40f),
-                                baseBg.copy(alpha = 0.15f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
-
             // Custom Treemap App Bar Row
             Row(
                 modifier = Modifier
@@ -278,10 +259,8 @@ fun TreemapScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(modifier = modifier.fillMaxSize().background(baseBg)) {
+        canvasContent()
         topBar()
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            canvasContent()
-        }
     }
 }

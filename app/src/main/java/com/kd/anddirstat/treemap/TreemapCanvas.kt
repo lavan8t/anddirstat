@@ -52,7 +52,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -112,8 +117,16 @@ fun TreemapCanvas(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val bottomSpaceDp = if (isLandscape) 0.dp else 64.dp
-    val bottomSpacePx = remember(density, isLandscape) {
+
+    val statusBarTopDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topSpaceDp = if (isLandscape) 48.dp else statusBarTopDp + 48.dp
+    val topSpacePx = remember(density, topSpaceDp) {
+        with(density) { topSpaceDp.toPx() }
+    }
+
+    val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomSpaceDp = if (isLandscape) 0.dp else navBarBottomDp + 64.dp
+    val bottomSpacePx = remember(density, bottomSpaceDp) {
         with(density) { bottomSpaceDp.toPx() }
     }
 
@@ -129,10 +142,11 @@ fun TreemapCanvas(
             val newScale = externalScale.coerceIn(1f, 10f)
             scale = newScale
             val viewW = canvasSize.width.toFloat()
-            val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
+            val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
+            val centerY = topSpacePx + usableH / 2f
             offset = Offset(
                 (viewW / 2f) * (1f - newScale),
-                (usableH / 2f) * (1f - newScale)
+                centerY * (1f - newScale)
             )
             onScaleChanged?.invoke(newScale)
             onZoomChanged?.invoke(newScale > 1.02f)
@@ -142,20 +156,20 @@ fun TreemapCanvas(
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
-    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_$isLandscape"
+    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx.toInt()}_${bottomSpacePx.toInt()}"
     val precalculatedTiles = remember { mutableStateOf<List<TreemapTile>>(emptyList()) }
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
 
-    LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
+    LaunchedEffect(cacheKey, rootNode, rootPath, isDark, topSpacePx, bottomSpacePx) {
         val usableW = canvasSize.width.toFloat().coerceAtLeast(100f)
-        val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
+        val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
         if (usableW > 0 && usableH > 0) {
             val tiles = withContext(Dispatchers.Default) {
-                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark)
+                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark, topSpacePx)
             }
             precalculatedTiles.value = tiles
             quadtree.value = if (tiles.isEmpty()) null else {
-                val qt = TreemapQuadtree(0f, 0f, usableW, usableH)
+                val qt = TreemapQuadtree(0f, topSpacePx, usableW, topSpacePx + usableH)
                 qt.insertAll(tiles)
                 qt
             }
@@ -165,17 +179,31 @@ fun TreemapCanvas(
         }
     }
 
-    val bottomTiles = remember(precalculatedTiles.value, bottomSpacePx, canvasSize.height) {
+    val topTiles = remember(precalculatedTiles.value, topSpacePx) {
+        if (topSpacePx <= 0f) emptyList()
+        else {
+            precalculatedTiles.value.filter { it.top <= topSpacePx + 16f }
+        }
+    }
+
+    val bottomTiles = remember(precalculatedTiles.value, bottomSpacePx, canvasSize.height, topSpacePx) {
         if (bottomSpacePx <= 0f) emptyList()
         else {
-            val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
-            precalculatedTiles.value.filter { it.top + it.height >= usableH - 16f }
+            val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
+            precalculatedTiles.value.filter { it.top + it.height >= topSpacePx + usableH - 16f }
         }
     }
 
     val nodeToTileMap = remember(precalculatedTiles.value) {
         precalculatedTiles.value.associateBy { it.node }
     }
+
+    val selectedTile = remember(selectedNode, nodeToTileMap) {
+        if (selectedNode == null) null else nodeToTileMap[selectedNode]
+    }
+
+    val glRenderer = remember { TreemapGLRenderer(context) }
+    var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
 
     LaunchedEffect(resetKey) {
         if (resetKey > 0) {
@@ -190,28 +218,27 @@ fun TreemapCanvas(
                         stiffness = Spring.StiffnessMedium
                     )
                 ) { progress, _ ->
-                    scale = lerp(startScale, 1f, progress)
-                    offset = Offset(
+                    val s = lerp(startScale, 1f, progress)
+                    val off = Offset(
                         lerp(startOffset.x, 0f, progress),
                         lerp(startOffset.y, 0f, progress)
                     )
-                    onScaleChanged?.invoke(scale)
+                    scale = s
+                    offset = off
+                    glRenderer.setScaleAndOffset(s, off)
+                    glSurfaceViewRef?.requestRender()
+                    onScaleChanged?.invoke(s)
                 }
             }
             scale = 1f
             offset = Offset.Zero
+            glRenderer.setScaleAndOffset(1f, Offset.Zero)
+            glSurfaceViewRef?.requestRender()
             onScaleChanged?.invoke(1f)
             onZoomChanged?.invoke(false)
             onZoomFocusChanged?.invoke(0.5f)
         }
     }
-
-    val selectedTile = remember(selectedNode, nodeToTileMap) {
-        if (selectedNode == null) null else nodeToTileMap[selectedNode]
-    }
-
-    val glRenderer = remember { TreemapGLRenderer(context) }
-    var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
@@ -397,11 +424,11 @@ fun TreemapCanvas(
                                     val newOffset = currCentroid - focal * (newScale / oldScale) + panDelta
 
                                     val viewW = canvasSize.width.toFloat()
-                                    val viewH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
+                                    val viewH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(100f)
                                     val maxOffsetX = 0f
                                     val minOffsetX = viewW - viewW * newScale
-                                    val maxOffsetY = 0f
-                                    val minOffsetY = viewH - viewH * newScale
+                                    val maxOffsetY = topSpacePx * (1f - newScale)
+                                    val minOffsetY = (topSpacePx + viewH) - (topSpacePx + viewH) * newScale
 
                                     offset = Offset(
                                         newOffset.x.coerceIn(minOffsetX, maxOffsetX),
@@ -567,22 +594,23 @@ fun TreemapCanvas(
             }
         }
 
-        // Bottom nav-pill zone: true progressive Gaussian blur connecting seamlessly with treemap tiles
-        if (!isLandscape && bottomSpaceDp > 0.dp) {
+        // Top ambient zone: progressive Gaussian blur extending treemap colors behind transparent top bar
+        if (topSpaceDp > 0.dp) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(bottomSpaceDp)
+                    .height(topSpaceDp)
                     .clipToBounds()
             ) {
-                if (bottomTiles.isNotEmpty()) {
-                    val drawColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
+                if (topTiles.isNotEmpty()) {
+                    val drawTopColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
                         val curScale = currentScaleState.value
                         val curOff = currentOffsetState.value
-                        for (tile in bottomTiles) {
+                        for (tile in topTiles) {
                             val tLeft = tile.left * curScale + curOff.x
                             val tWidth = maxOf(1f, tile.width * curScale)
+                            if (tLeft + tWidth < 0f || tLeft > size.width) continue
                             val dom = tile.pkgName?.let { AppIconCache.getDominantColor(it) }
                             val colors = if (dom == null || dom == tile.baseColor) tile.gradientColors else shadeColors(dom, isDark)
                             if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
@@ -602,7 +630,79 @@ fun TreemapCanvas(
                         }
                     }
 
-                    val blurModifier = remember {
+                    val topBlurModifier = remember {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            Modifier.blur(BlurRadiusSpec.verticalGradient(36.dp, 0.dp))
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            Modifier.blur(20.dp)
+                        } else {
+                            Modifier
+                        }
+                    }
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(topBlurModifier),
+                        onDraw = drawTopColumns
+                    )
+
+                    // Subtle top scrim gradient for crisp status bar legibility
+                    val topScrimHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(topScrimHeight)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        (if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)).copy(alpha = 0.35f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+        }
+
+        // Bottom ambient zone: progressive Gaussian blur extending treemap colors under nav-pill
+        if (!isLandscape && bottomSpaceDp > 0.dp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(bottomSpaceDp)
+                    .clipToBounds()
+            ) {
+                if (bottomTiles.isNotEmpty()) {
+                    val drawBottomColumns: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
+                        val curScale = currentScaleState.value
+                        val curOff = currentOffsetState.value
+                        for (tile in bottomTiles) {
+                            val tLeft = tile.left * curScale + curOff.x
+                            val tWidth = maxOf(1f, tile.width * curScale)
+                            if (tLeft + tWidth < 0f || tLeft > size.width) continue
+                            val dom = tile.pkgName?.let { AppIconCache.getDominantColor(it) }
+                            val colors = if (dom == null || dom == tile.baseColor) tile.gradientColors else shadeColors(dom, isDark)
+                            if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
+                                val brush = tile.cushionBrush
+                                drawContext.canvas.save()
+                                drawContext.transform.translate(tLeft, 0f)
+                                drawContext.transform.scale(tWidth, size.height, pivot = Offset.Zero)
+                                drawRect(brush = brush, topLeft = Offset.Zero, size = Size(1f, 1f))
+                                drawContext.canvas.restore()
+                            } else {
+                                drawRect(
+                                    color = colors[1],
+                                    topLeft = Offset(tLeft, 0f),
+                                    size = Size(tWidth, size.height)
+                                )
+                            }
+                        }
+                    }
+
+                    val bottomBlurModifier = remember {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             Modifier.blur(BlurRadiusSpec.verticalGradient(0.dp, 36.dp))
                         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -615,8 +715,25 @@ fun TreemapCanvas(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .then(blurModifier),
-                        onDraw = drawColumns
+                            .then(bottomBlurModifier),
+                        onDraw = drawBottomColumns
+                    )
+
+                    // Subtle bottom scrim gradient for gesture bar legibility
+                    val bottomScrimHeight = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 8.dp
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(bottomScrimHeight)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        (if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)).copy(alpha = 0.40f)
+                                    )
+                                )
+                            )
                     )
                 }
             }
