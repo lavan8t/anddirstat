@@ -41,12 +41,15 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -210,6 +213,70 @@ fun TreemapCanvas(
 
     val appTiles = remember(precalculatedTiles.value) {
         precalculatedTiles.value.filter { it.pkgName != null }
+    }
+
+    val ambientBlobs = remember(precalculatedTiles.value, isDark, canvasSize, topSpacePx, bottomSpacePx, leftSpacePx, rightSpacePx) {
+        val tiles = precalculatedTiles.value
+        if (tiles.isEmpty()) return@remember emptyList<AmbientBlob>()
+
+        val colorAreaMap = HashMap<Color, Float>()
+        for (tile in tiles) {
+            val a = tile.width * tile.height
+            colorAreaMap[tile.baseColor] = (colorAreaMap[tile.baseColor] ?: 0f) + a
+        }
+        val topColors = colorAreaMap.entries
+            .sortedByDescending { it.value }
+            .map { it.key }
+
+        if (topColors.isEmpty()) return@remember emptyList<AmbientBlob>()
+
+        val usableW = (canvasSize.width.toFloat() - leftSpacePx - rightSpacePx).coerceAtLeast(10f)
+        val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(10f)
+        val midX = leftSpacePx + usableW / 2f
+        val midY = topSpacePx + usableH / 2f
+
+        fun dominantColorInRegion(predicate: (TreemapTile) -> Boolean, fallback: Color): Color {
+            val regionMap = HashMap<Color, Float>()
+            for (tile in tiles) {
+                if (predicate(tile)) {
+                    val a = tile.width * tile.height
+                    regionMap[tile.baseColor] = (regionMap[tile.baseColor] ?: 0f) + a
+                }
+            }
+            return regionMap.maxByOrNull { it.value }?.key ?: fallback
+        }
+
+        val cTopLeft = dominantColorInRegion({ it.left < midX && it.top < midY }, topColors[0])
+        val cTopRight = dominantColorInRegion({ it.left >= midX && it.top < midY }, topColors.getOrElse(1 % topColors.size) { topColors[0] })
+        val cBottomLeft = dominantColorInRegion({ it.left < midX && it.top >= midY }, topColors.getOrElse(2 % topColors.size) { topColors[0] })
+        val cBottomRight = dominantColorInRegion({ it.left >= midX && it.top >= midY }, topColors.getOrElse(3 % topColors.size) { topColors[0] })
+
+        val cTopCenter = dominantColorInRegion({ it.top <= topSpacePx + usableH * 0.35f }, topColors[0])
+        val cBottomCenter = dominantColorInRegion({ it.top + it.height >= (topSpacePx + usableH) - usableH * 0.35f }, topColors.getOrElse(1 % topColors.size) { cBottomRight })
+        val cLeftCenter = dominantColorInRegion({ it.left <= leftSpacePx + usableW * 0.35f }, topColors.getOrElse(2 % topColors.size) { cBottomLeft })
+        val cRightCenter = dominantColorInRegion({ it.left + it.width >= (leftSpacePx + usableW) - usableW * 0.35f }, topColors.getOrElse(3 % topColors.size) { cTopRight })
+
+        listOf(
+            // Top halo blobs (around top margin, filter pill, and status bar)
+            AmbientBlob(relX = 0.05f, relY = 0.0f, offsetY = (-24).dp, radiusDp = 100.dp, color = cTopLeft),
+            AmbientBlob(relX = 0.35f, relY = 0.0f, offsetY = (-32).dp, radiusDp = 110.dp, color = cTopCenter),
+            AmbientBlob(relX = 0.65f, relY = 0.0f, offsetY = (-30).dp, radiusDp = 105.dp, color = topColors.getOrElse(4 % topColors.size) { cTopRight }),
+            AmbientBlob(relX = 0.95f, relY = 0.0f, offsetY = (-24).dp, radiusDp = 100.dp, color = cTopRight),
+
+            // Bottom halo blobs (around bottom margin and navigation pill)
+            AmbientBlob(relX = 0.05f, relY = 1.0f, offsetY = 32.dp, radiusDp = 110.dp, color = cBottomLeft),
+            AmbientBlob(relX = 0.35f, relY = 1.0f, offsetY = 40.dp, radiusDp = 120.dp, color = cBottomCenter),
+            AmbientBlob(relX = 0.65f, relY = 1.0f, offsetY = 38.dp, radiusDp = 115.dp, color = topColors.getOrElse(5 % topColors.size) { cBottomRight }),
+            AmbientBlob(relX = 0.95f, relY = 1.0f, offsetY = 32.dp, radiusDp = 110.dp, color = cBottomRight),
+
+            // Left margin halo blobs
+            AmbientBlob(relX = 0.0f, relY = 0.30f, offsetX = (-16).dp, radiusDp = 85.dp, color = cLeftCenter),
+            AmbientBlob(relX = 0.0f, relY = 0.70f, offsetX = (-16).dp, radiusDp = 85.dp, color = cBottomLeft),
+
+            // Right margin halo blobs
+            AmbientBlob(relX = 1.0f, relY = 0.30f, offsetX = 16.dp, radiusDp = 85.dp, color = cTopRight),
+            AmbientBlob(relX = 1.0f, relY = 0.70f, offsetX = 16.dp, radiusDp = 85.dp, color = cRightCenter)
+        )
     }
 
     // Material 3 color tokens: zero hardcoded colors
@@ -490,93 +557,79 @@ fun TreemapCanvas(
                 }
         )
 
-        // Dynamic ambient blur radiating outward from treemap perimeter, moving seamlessly with the canvas
-        if (precalculatedTiles.value.isNotEmpty()) {
+        // Organic ambient blur blobs radiating all around the treemap perimeter, moving seamlessly with the canvas
+        if (ambientBlobs.isNotEmpty()) {
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .blur(18.dp)
+                    .blur(36.dp)
             ) {
                 val curScale = currentScaleState.value
                 val curOff = currentOffsetState.value
-                val ext = 14.dp.toPx()
-                val eps = 4f
+
+                val tmLeft = leftSpacePx * curScale + curOff.x
+                val tmTop = topSpacePx * curScale + curOff.y
                 val rightBound = canvasSize.width.toFloat() - rightSpacePx
                 val bottomBound = canvasSize.height.toFloat() - bottomSpacePx
+                val tmRight = rightBound * curScale + curOff.x
+                val tmBottom = bottomBound * curScale + curOff.y
+                val tmWidth = tmRight - tmLeft
+                val tmHeight = tmBottom - tmTop
 
-                for (tile in precalculatedTiles.value) {
-                    val isTop = tile.top <= topSpacePx + eps
-                    val isBottom = tile.top + tile.height >= bottomBound - eps
-                    val isLeft = tile.left <= leftSpacePx + eps
-                    val isRight = tile.left + tile.width >= rightBound - eps
+                val inset = 12.dp.toPx() * curScale
+                val clipLeft = tmLeft + inset
+                val clipTop = tmTop + inset
+                val clipRight = tmRight - inset
+                val clipBottom = tmBottom - inset
 
-                    if (!isTop && !isBottom && !isLeft && !isRight) continue
+                if (clipRight > clipLeft && clipBottom > clipTop) {
+                    clipRect(
+                        left = clipLeft,
+                        top = clipTop,
+                        right = clipRight,
+                        bottom = clipBottom,
+                        clipOp = ClipOp.Difference
+                    ) {
+                        for (blob in ambientBlobs) {
+                            val blobX = tmLeft + blob.relX * tmWidth + blob.offsetX.toPx() * curScale
+                            val blobY = tmTop + blob.relY * tmHeight + blob.offsetY.toPx() * curScale
+                            val radiusPx = blob.radiusDp.toPx() * curScale.coerceIn(0.7f, 1.4f)
+                            val center = Offset(blobX, blobY)
 
-                    val sLeft = tile.left * curScale + curOff.x
-                    val sTop = tile.top * curScale + curOff.y
-                    val sW = tile.width * curScale
-                    val sH = tile.height * curScale
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        blob.color.copy(alpha = if (isDark) 0.70f else 0.50f),
+                                        blob.color.copy(alpha = if (isDark) 0.35f else 0.22f),
+                                        Color.Transparent
+                                    ),
+                                    center = center,
+                                    radius = radiusPx
+                                ),
+                                radius = radiusPx,
+                                center = center
+                            )
+                        }
+                    }
+                } else {
+                    for (blob in ambientBlobs) {
+                        val blobX = tmLeft + blob.relX * tmWidth + blob.offsetX.toPx() * curScale
+                        val blobY = tmTop + blob.relY * tmHeight + blob.offsetY.toPx() * curScale
+                        val radiusPx = blob.radiusDp.toPx() * curScale.coerceIn(0.7f, 1.4f)
+                        val center = Offset(blobX, blobY)
 
-                    if (sLeft + sW < -ext || sLeft > size.width + ext ||
-                        sTop + sH < -ext || sTop > size.height + ext) continue
-
-                    val color = tile.baseColor
-
-                    if (isTop) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft, sTop - ext),
-                            size = Size(maxOf(1f, sW), ext + 4f)
-                        )
-                    }
-                    if (isBottom) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft, sTop + sH - 4f),
-                            size = Size(maxOf(1f, sW), ext + 4f)
-                        )
-                    }
-                    if (isLeft) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft - ext, sTop),
-                            size = Size(ext + 4f, maxOf(1f, sH))
-                        )
-                    }
-                    if (isRight) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft + sW - 4f, sTop),
-                            size = Size(ext + 4f, maxOf(1f, sH))
-                        )
-                    }
-                    // Corners
-                    if (isTop && isLeft) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft - ext, sTop - ext),
-                            size = Size(ext + 4f, ext + 4f)
-                        )
-                    }
-                    if (isTop && isRight) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft + sW - 4f, sTop - ext),
-                            size = Size(ext + 4f, ext + 4f)
-                        )
-                    }
-                    if (isBottom && isLeft) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft - ext, sTop + sH - 4f),
-                            size = Size(ext + 4f, ext + 4f)
-                        )
-                    }
-                    if (isBottom && isRight) {
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(sLeft + sW - 4f, sTop + sH - 4f),
-                            size = Size(ext + 4f, ext + 4f)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    blob.color.copy(alpha = if (isDark) 0.70f else 0.50f),
+                                    blob.color.copy(alpha = if (isDark) 0.35f else 0.22f),
+                                    Color.Transparent
+                                ),
+                                center = center,
+                                radius = radiusPx
+                            ),
+                            radius = radiusPx,
+                            center = center
                         )
                     }
                 }
@@ -742,3 +795,12 @@ private fun triggerCrispHaptic(context: Context) {
     } catch (_: Exception) {
     }
 }
+
+private data class AmbientBlob(
+    val relX: Float,
+    val relY: Float,
+    val offsetX: Dp = 0.dp,
+    val offsetY: Dp = 0.dp,
+    val radiusDp: Dp,
+    val color: Color
+)
