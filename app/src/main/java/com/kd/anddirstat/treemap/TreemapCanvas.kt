@@ -460,13 +460,48 @@ fun TreemapCanvas(
                         val vTop = (-currentOffset.y / currentScale).coerceAtLeast(0f)
                         val vRight = ((viewW - currentOffset.x) / currentScale).coerceAtMost(canvasSize.width.toFloat())
                         val vBottom = ((viewH - currentOffset.y) / currentScale).coerceAtMost(canvasSize.height.toFloat())
-                        qt.queryVisible(vLeft, vTop, vRight, vBottom)
+                        val minTileArea = (0.5f / (currentScale * currentScale)).coerceAtLeast(0.0001f)
+                        qt.queryVisible(vLeft, vTop, vRight, vBottom, minTileArea)
                     } else {
                         precalculatedTiles.value
                     }
 
                     val numTiles = drawTiles.size
-                    for (i in 0 until numTiles) {
+                    if (numTiles > 2500 && currentStaticBitmap != null && currentScale < 4.0f) {
+                        drawContext.canvas.save()
+                        drawContext.transform.translate(currentOffset.x, currentOffset.y)
+                        drawContext.transform.scale(currentScale, currentScale, pivot = Offset.Zero)
+                        drawImage(currentStaticBitmap)
+                        drawContext.canvas.restore()
+
+                        for (node in selectedNodes) {
+                            val tile = nodeToTileMap[node] ?: continue
+                            val sLeft = tile.left * currentScale + currentOffset.x
+                            val sTop = tile.top * currentScale + currentOffset.y
+                            val sW = tile.width * currentScale
+                            val sH = tile.height * currentScale
+                            if (sLeft + sW < 0f || sLeft > viewW || sTop + sH < 0f || sTop > viewH) continue
+
+                            val drawW = maxOf(1f, sW)
+                            val drawH = maxOf(1f, sH)
+                            val minDim = minOf(drawW, drawH)
+                            val strokeW = if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 2.5f
+                            val halfStroke = strokeW / 2f
+
+                            drawRect(
+                                color = Color(0x6600E676),
+                                topLeft = Offset(sLeft, sTop),
+                                size = Size(drawW, drawH)
+                            )
+                            drawRect(
+                                color = Color(0xFF00E676),
+                                topLeft = Offset(sLeft + halfStroke, sTop + halfStroke),
+                                size = Size(maxOf(1f, drawW - strokeW), maxOf(1f, drawH - strokeW)),
+                                style = Stroke(width = strokeW)
+                            )
+                        }
+                    } else {
+                        for (i in 0 until numTiles) {
                         val tile = drawTiles[i]
 
                         val sLeft = tile.left * currentScale + currentOffset.x
@@ -474,8 +509,8 @@ fun TreemapCanvas(
                         val sW = tile.width * currentScale
                         val sH = tile.height * currentScale
 
-                        // Viewport frustum culling
-                        if (sLeft + sW < 0f || sLeft > viewW || sTop + sH < 0f || sTop > viewH) {
+                        // Viewport frustum culling and sub-pixel micro-culling
+                        if (sLeft + sW < 0f || sLeft > viewW || sTop + sH < 0f || sTop > viewH || sW < 0.5f || sH < 0.5f) {
                             continue
                         }
 
@@ -495,7 +530,7 @@ fun TreemapCanvas(
                                 size = Size(drawW, drawH),
                                 style = Stroke(width = if (currentScale > 1.5f) 2.5f else 1.5f)
                             )
-                        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || drawW < 3f || drawH < 3f) {
+                        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || drawW < 14f || drawH < 14f) {
                             drawRect(
                                 color = tileBaseColor,
                                 topLeft = Offset(sLeft, sTop),
@@ -559,6 +594,7 @@ fun TreemapCanvas(
                         }
                     }
                 }
+            }
 
             // Exact adaptive inset selection border matching the precise tile bounds with spring physics
             val sel = selectedTile ?: lastSelectedTile

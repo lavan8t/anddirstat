@@ -31,7 +31,8 @@ class TreemapTile(
     val isApp: Boolean,
     val pkgName: String?,
     val baseColor: Color,
-    val gradientColors: List<Color>
+    val gradientColors: List<Color>,
+    var lastQueryId: Int = 0
 ) {
     val cushionBrush: Brush by lazy(LazyThreadSafetyMode.NONE) {
         Brush.radialGradient(gradientColors, center = Offset(0.38f, 0.35f), radius = 0.85f)

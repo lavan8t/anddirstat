@@ -5,19 +5,21 @@ class TreemapQuadtree(
     val minY: Float,
     val maxX: Float,
     val maxY: Float,
-    private val maxDepth: Int = 8,
-    private val maxItemsPerNode: Int = 16,
+    private val maxDepth: Int = 12,
+    private val maxItemsPerNode: Int = 32,
     private val depth: Int = 0
 ) {
     private val midX: Float = (minX + maxX) / 2f
     private val midY: Float = (minY + maxY) / 2f
 
-    private val items = mutableListOf<TreemapTile>()
+    private val items = ArrayList<TreemapTile>(maxItemsPerNode)
     private var nw: TreemapQuadtree? = null
     private var ne: TreemapQuadtree? = null
     private var sw: TreemapQuadtree? = null
     private var se: TreemapQuadtree? = null
     private var isDivided = false
+
+    private var currentQueryId = 0
 
     fun insert(tile: TreemapTile) {
         val tileRight = tile.left + tile.width
@@ -55,14 +57,15 @@ class TreemapQuadtree(
         se = TreemapQuadtree(midX, midY, maxX, maxY, maxDepth, maxItemsPerNode, nextDepth)
         isDivided = true
 
-        val existing = ArrayList(items)
-        items.clear()
-        for (item in existing) {
+        val count = items.size
+        for (i in 0 until count) {
+            val item = items[i]
             nw?.insert(item)
             ne?.insert(item)
             sw?.insert(item)
             se?.insert(item)
         }
+        items.clear()
     }
 
     fun queryVisible(
@@ -72,9 +75,12 @@ class TreemapQuadtree(
         bottom: Float,
         minArea: Float = 0f
     ): List<TreemapTile> {
-        val result = mutableSetOf<TreemapTile>()
-        queryInternal(left, top, right, bottom, minArea, result)
-        return result.toList()
+        currentQueryId++
+        if (currentQueryId == Int.MAX_VALUE) currentQueryId = 1
+        val qId = currentQueryId
+        val result = ArrayList<TreemapTile>(1024)
+        queryInternal(left, top, right, bottom, minArea, qId, result)
+        return result
     }
 
     private fun queryInternal(
@@ -83,28 +89,34 @@ class TreemapQuadtree(
         qRight: Float,
         qBottom: Float,
         minArea: Float,
-        outResult: MutableSet<TreemapTile>
+        qId: Int,
+        outResult: MutableList<TreemapTile>
     ) {
         if (qRight < minX || qLeft > maxX || qBottom < minY || qTop > maxY) {
             return
         }
 
-        for (item in items) {
+        val count = items.size
+        for (i in 0 until count) {
+            val item = items[i]
+            if (item.lastQueryId == qId) continue
+
             val tileRight = item.left + item.width
             val tileBottom = item.top + item.height
 
             if (tileRight >= qLeft && item.left <= qRight && tileBottom >= qTop && item.top <= qBottom) {
                 if (item.width * item.height >= minArea) {
+                    item.lastQueryId = qId
                     outResult.add(item)
                 }
             }
         }
 
         if (isDivided) {
-            nw?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, outResult)
-            ne?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, outResult)
-            sw?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, outResult)
-            se?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, outResult)
+            nw?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, qId, outResult)
+            ne?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, qId, outResult)
+            sw?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, qId, outResult)
+            se?.queryInternal(qLeft, qTop, qRight, qBottom, minArea, qId, outResult)
         }
     }
 }

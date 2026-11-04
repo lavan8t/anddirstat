@@ -188,6 +188,40 @@ fun generate50kScatterTree(targetCount: Int = 50_000, seed: Long = 42L): Compact
     )
 }
 
+/**
+ * Generates 50,000 files in a single flat folder, with varying small sizes from 1 Byte to 1 Megabyte.
+ */
+fun generateSingleFolder50kTree(targetCount: Int = 50_000, seed: Long = 42L): CompactNode {
+    val rng = Random(seed)
+    val extensions = listOf("dat", "bin", "tmp", "log", "cache", "thumb", "jpg", "png", "txt", "db", "raw", "part")
+    val files = ArrayList<CompactNode>(targetCount)
+    var totalSize = 0L
+
+    for (i in 0 until targetCount) {
+        val ext = extensions[rng.nextInt(extensions.size)]
+        // Varying from 1B to 1MB (1 to 1_048_576 bytes)
+        val size = 1L + rng.nextInt(1024 * 1024).toLong()
+        totalSize += size
+        files.add(CompactNode(name = "item_$i.$ext", isDirectory = false, size = size))
+    }
+
+    files.sortByDescending { it.size }
+
+    val singleFolder = CompactNode(
+        name = "SingleFolder50K",
+        isDirectory = true,
+        size = totalSize,
+        children = files.toTypedArray()
+    )
+
+    return CompactNode(
+        name = "Root50K",
+        isDirectory = true,
+        size = totalSize,
+        children = arrayOf(singleFolder)
+    )
+}
+
 @Composable
 fun TestTreemapScreen(
     onBack: () -> Unit,
@@ -200,6 +234,7 @@ fun TestTreemapScreen(
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
 
+    var isSingleFolderMode by remember { mutableStateOf(true) }
     var testSeed by remember { mutableStateOf(System.currentTimeMillis()) }
     var rootNode by remember { mutableStateOf<CompactNode?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -238,21 +273,25 @@ fun TestTreemapScreen(
     }
 
     // Load or regenerate 50k items
-    fun load50k(seed: Long) {
+    fun load50k(seed: Long, singleFolder: Boolean) {
         isLoading = true
         selectedNode = null
         selectedPath = null
         coroutineScope.launch {
             val node = withContext(Dispatchers.Default) {
-                generate50kScatterTree(targetCount = 50_000, seed = seed)
+                if (singleFolder) {
+                    generateSingleFolder50kTree(targetCount = 50_000, seed = seed)
+                } else {
+                    generate50kScatterTree(targetCount = 50_000, seed = seed)
+                }
             }
             rootNode = node
             isLoading = false
         }
     }
 
-    LaunchedEffect(testSeed) {
-        load50k(testSeed)
+    LaunchedEffect(testSeed, isSingleFolderMode) {
+        load50k(testSeed, isSingleFolderMode)
     }
 
     val baseBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
@@ -320,7 +359,7 @@ fun TestTreemapScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "50K Items Scatter",
+                            text = if (isSingleFolderMode) "50K in 1 Folder (1B–1MB)" else "50K Items Scatter",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -353,6 +392,22 @@ fun TestTreemapScreen(
                         text = "Zoom: ${String.format("%.2fx", scale)} • Total: 50,000 files",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Mode switch: 1 Folder vs Multi-folder
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        isSingleFolderMode = !isSingleFolderMode
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    MaterialSymbol(
+                        name = if (isSingleFolderMode) "folder" else "folder_copy",
+                        active = true,
+                        size = 20.dp,
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
 
