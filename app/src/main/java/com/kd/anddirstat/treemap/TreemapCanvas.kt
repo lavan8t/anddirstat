@@ -1,11 +1,14 @@
 package com.kd.anddirstat.treemap
 
 import android.content.Context
+import android.graphics.PixelFormat
+import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.LruCache
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -96,6 +99,7 @@ fun TreemapCanvas(
     selectedNode: CompactNode?,
     selectedNodes: Set<CompactNode> = emptySet(),
     resetKey: Int = 0,
+    externalScale: Float? = null,
     isDark: Boolean = true,
     pureBlack: Boolean = false,
     onScaleChanged: ((Float) -> Unit)? = null,
@@ -120,6 +124,21 @@ fun TreemapCanvas(
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
+    LaunchedEffect(externalScale) {
+        if (externalScale != null) {
+            val newScale = externalScale.coerceIn(1f, 10f)
+            scale = newScale
+            val viewW = canvasSize.width.toFloat()
+            val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
+            offset = Offset(
+                (viewW / 2f) * (1f - newScale),
+                (usableH / 2f) * (1f - newScale)
+            )
+            onScaleChanged?.invoke(newScale)
+            onZoomChanged?.invoke(newScale > 1.02f)
+        }
+    }
+
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
@@ -128,14 +147,15 @@ fun TreemapCanvas(
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
 
     LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
-        val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(100f)
-        if (canvasSize.width > 0 && usableH > 0) {
+        val usableW = canvasSize.width.toFloat().coerceAtLeast(1000f)
+        val usableH = (canvasSize.height.toFloat() - bottomSpacePx).coerceAtLeast(1000f)
+        if (usableW > 0 && usableH > 0) {
             val tiles = withContext(Dispatchers.Default) {
-                computeTreemapTiles(rootNode, rootPath, canvasSize.width.toFloat(), usableH, isDark)
+                computeTreemapTiles(rootNode, rootPath, usableW, usableH, isDark)
             }
             precalculatedTiles.value = tiles
             quadtree.value = if (tiles.isEmpty()) null else {
-                val qt = TreemapQuadtree(0f, 0f, canvasSize.width.toFloat(), usableH)
+                val qt = TreemapQuadtree(0f, 0f, usableW, usableH)
                 qt.insertAll(tiles)
                 qt
             }
@@ -190,35 +210,34 @@ fun TreemapCanvas(
         if (selectedNode == null) null else nodeToTileMap[selectedNode]
     }
 
-    val staticBitmap by produceState<ImageBitmap?>(
-        initialValue = TreemapBitmapCache.get("${cacheKey}_$pureBlack"),
-        key1 = cacheKey,
-        key2 = pureBlack,
-        key3 = precalculatedTiles.value
-    ) {
-        if (canvasSize.width > 0 && canvasSize.height > 0 && precalculatedTiles.value.isNotEmpty()) {
-            val bmpKey = "${cacheKey}_$pureBlack"
-            val cachedBmp = TreemapBitmapCache.get(bmpKey)
-            if (cachedBmp != null) {
-                value = cachedBmp
-            } else {
-                val usableH = (canvasSize.height.toFloat() - bottomSpacePx).toInt().coerceAtLeast(100)
-                val bmp = withContext(Dispatchers.Default) {
-                    renderTreemapToBitmap(
-                        tiles = precalculatedTiles.value,
-                        width = canvasSize.width,
-                        height = usableH,
-                        isDark = isDark,
-                        pureBlack = pureBlack,
-                        context = context
-                    )
-                }
-                TreemapBitmapCache.put(bmpKey, bmp)
-                value = bmp
-            }
-        } else {
-            value = null
+    val glRenderer = remember { TreemapGLRenderer(context) }
+    var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
+
+    val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
+
+    LaunchedEffect(canvasBg, shadingMode) {
+        glRenderer.setClearColor(canvasBg.red, canvasBg.green, canvasBg.blue, canvasBg.alpha)
+        val modeInt = when (shadingMode) {
+            FileUtils.TreemapShadingMode.SOLID -> 1
+            FileUtils.TreemapShadingMode.LINEAR -> 2
+            else -> if (pureBlack && isDark) 3 else 0
         }
+        glRenderer.setShadingMode(modeInt)
+        glSurfaceViewRef?.requestRender()
+    }
+
+    LaunchedEffect(precalculatedTiles.value) {
+        if (precalculatedTiles.value.isNotEmpty()) {
+            withContext(Dispatchers.Default) {
+                glRenderer.updateTiles(precalculatedTiles.value)
+            }
+            glSurfaceViewRef?.requestRender()
+        }
+    }
+
+    LaunchedEffect(scale, offset) {
+        glRenderer.setScaleAndOffset(scale, offset)
+        glSurfaceViewRef?.requestRender()
     }
 
     var lastSelectedTile by remember { mutableStateOf<TreemapTile?>(null) }
@@ -251,22 +270,38 @@ fun TreemapCanvas(
         label = "selectionBorderWidth"
     )
 
-    val canvasBg = if (pureBlack && isDark) Color.Black else if (isDark) Color(0xFF08090E) else Color(0xFFF1F3F9)
-
     var glidingTile by remember { mutableStateOf<TreemapTile?>(null) }
     var glidingTouchPos by remember { mutableStateOf<Offset?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
-        Canvas(
+        AndroidView(
+            factory = { ctx ->
+                GLSurfaceView(ctx).apply {
+                    setEGLContextClientVersion(3)
+                    setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+                    holder.setFormat(PixelFormat.TRANSLUCENT)
+                    setZOrderMediaOverlay(true)
+                    setRenderer(glRenderer)
+                    renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+                    glSurfaceViewRef = this
+                }
+            },
+            update = { glView ->
+                glRenderer.setScaleAndOffset(scale, offset)
+                glView.requestRender()
+            },
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { clip = true }
-                .background(canvasBg)
                 .onSizeChanged { newSize ->
                     if (newSize.width > 0 && newSize.height > 0 && (newSize.width != canvasSize.width || newSize.height != canvasSize.height)) {
                         canvasSize = newSize
                     }
                 }
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
                 .pointerInput(precalculatedTiles.value, quadtree.value) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -416,71 +451,23 @@ fun TreemapCanvas(
                     }
                 }
         ) {
-            val usableDrawH = (size.height - bottomSpacePx).coerceAtLeast(100f)
-            clipRect(0f, 0f, size.width, usableDrawH) {
-                val currentScale = scale
-                val currentOffset = offset
-                val isAmoled = pureBlack && isDark
-                val currentStaticBitmap = staticBitmap
-                val isFrozenStatic = currentScale <= 1.001f && currentOffset == Offset.Zero && currentStaticBitmap != null
+            val sel = selectedTile ?: lastSelectedTile
+            val hasSelectionBorder = (sel != null && selectionBorderWidth > 0.05f)
+            val hasMarkedNodes = selectedNodes.isNotEmpty()
 
-                if (isFrozenStatic) {
-                    drawImage(currentStaticBitmap)
+            if (hasSelectionBorder || hasMarkedNodes) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val curScale = currentScaleState.value
+                    val curOff = currentOffsetState.value
 
-                    // Draw marked selection highlights over cached snapshot
-                    for (node in selectedNodes) {
-                        val tile = nodeToTileMap[node] ?: continue
-                        val sLeft = tile.left
-                        val sTop = tile.top
-                        val drawW = maxOf(1f, tile.width)
-                        val drawH = maxOf(1f, tile.height)
-                        val minDim = minOf(drawW, drawH)
-                        val strokeW = if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 2.5f
-                        val halfStroke = strokeW / 2f
-
-                        drawRect(
-                            color = Color(0x6600E676),
-                            topLeft = Offset(sLeft, sTop),
-                            size = Size(drawW, drawH)
-                        )
-                        drawRect(
-                            color = Color(0xFF00E676),
-                            topLeft = Offset(sLeft + halfStroke, sTop + halfStroke),
-                            size = Size(maxOf(1f, drawW - strokeW), maxOf(1f, drawH - strokeW)),
-                            style = Stroke(width = strokeW)
-                        )
-                    }
-                } else {
-                    // Direct full GPU hardware vector rendering on zoom and pan with Quadtree spatial culling
-                    val viewW = size.width
-                    val viewH = size.height
-                    val qt = quadtree.value
-                    val drawTiles = if (qt != null && (currentScale > 1.05f || currentOffset != Offset.Zero)) {
-                        val vLeft = (-currentOffset.x / currentScale).coerceAtLeast(0f)
-                        val vTop = (-currentOffset.y / currentScale).coerceAtLeast(0f)
-                        val vRight = ((viewW - currentOffset.x) / currentScale).coerceAtMost(canvasSize.width.toFloat())
-                        val vBottom = ((viewH - currentOffset.y) / currentScale).coerceAtMost(canvasSize.height.toFloat())
-                        val minTileArea = (0.5f / (currentScale * currentScale)).coerceAtLeast(0.0001f)
-                        qt.queryVisible(vLeft, vTop, vRight, vBottom, minTileArea)
-                    } else {
-                        precalculatedTiles.value
-                    }
-
-                    val numTiles = drawTiles.size
-                    if (numTiles > 2500 && currentStaticBitmap != null && currentScale < 4.0f) {
-                        drawContext.canvas.save()
-                        drawContext.transform.translate(currentOffset.x, currentOffset.y)
-                        drawContext.transform.scale(currentScale, currentScale, pivot = Offset.Zero)
-                        drawImage(currentStaticBitmap)
-                        drawContext.canvas.restore()
-
+                    if (hasMarkedNodes) {
                         for (node in selectedNodes) {
                             val tile = nodeToTileMap[node] ?: continue
-                            val sLeft = tile.left * currentScale + currentOffset.x
-                            val sTop = tile.top * currentScale + currentOffset.y
-                            val sW = tile.width * currentScale
-                            val sH = tile.height * currentScale
-                            if (sLeft + sW < 0f || sLeft > viewW || sTop + sH < 0f || sTop > viewH) continue
+                            val sLeft = tile.left * curScale + curOff.x
+                            val sTop = tile.top * curScale + curOff.y
+                            val sW = tile.width * curScale
+                            val sH = tile.height * curScale
+                            if (sLeft + sW < 0f || sLeft > size.width || sTop + sH < 0f || sTop > size.height) continue
 
                             val drawW = maxOf(1f, sW)
                             val drawH = maxOf(1f, sH)
@@ -500,135 +487,38 @@ fun TreemapCanvas(
                                 style = Stroke(width = strokeW)
                             )
                         }
-                    } else {
-                        for (i in 0 until numTiles) {
-                        val tile = drawTiles[i]
+                    }
 
-                        val sLeft = tile.left * currentScale + currentOffset.x
-                        val sTop = tile.top * currentScale + currentOffset.y
-                        val sW = tile.width * currentScale
-                        val sH = tile.height * currentScale
+                    if (sel != null && selectionBorderWidth > 0.05f) {
+                        val selLeft = sel.left * curScale + curOff.x
+                        val selTop = sel.top * curScale + curOff.y
+                        val selW = sel.width * curScale
+                        val selH = sel.height * curScale
 
-                        // Viewport frustum culling and sub-pixel micro-culling
-                        if (sLeft + sW < 0f || sLeft > viewW || sTop + sH < 0f || sTop > viewH || sW < 0.5f || sH < 0.5f) {
-                            continue
-                        }
+                        val centerX = selLeft + selW / 2f
+                        val centerY = selTop + selH / 2f
+                        val scaledW = selW * selectionScale
+                        val scaledH = selH * selectionScale
 
-                        val drawW = maxOf(1f, sW)
-                        val drawH = maxOf(1f, sH)
+                        val sLeft = centerX - scaledW / 2f
+                        val sTop = centerY - scaledH / 2f
 
-                        val tileBaseColor = if (tile.pkgName != null) {
-                            AppIconCache.getDominantColor(tile.pkgName) ?: tile.baseColor
-                        } else {
-                            tile.baseColor
-                        }
+                        val halfStroke = selectionBorderWidth / 2f
+                        val inLeft = sLeft + halfStroke
+                        val inTop = sTop + halfStroke
+                        val inW = maxOf(1f, scaledW - selectionBorderWidth)
+                        val inH = maxOf(1f, scaledH - selectionBorderWidth)
 
-                        if (isAmoled) {
-                            drawRect(
-                                color = tileBaseColor,
-                                topLeft = Offset(sLeft, sTop),
-                                size = Size(drawW, drawH),
-                                style = Stroke(width = if (currentScale > 1.5f) 2.5f else 1.5f)
-                            )
-                        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || drawW < 14f || drawH < 14f) {
-                            drawRect(
-                                color = tileBaseColor,
-                                topLeft = Offset(sLeft, sTop),
-                                size = Size(drawW, drawH)
-                            )
-                        } else {
-                            if (shadingMode == FileUtils.TreemapShadingMode.CUSHION) {
-                                drawContext.canvas.save()
-                                drawContext.transform.translate(sLeft, sTop)
-                                drawContext.transform.scale(drawW, drawH, pivot = Offset.Zero)
-                                drawRect(
-                                    brush = tile.cushionBrush,
-                                    topLeft = Offset.Zero,
-                                    size = Size(1f, 1f)
-                                )
-                                drawContext.canvas.restore()
-                            } else {
-                                drawContext.canvas.save()
-                                drawContext.transform.translate(sLeft, sTop)
-                                drawContext.transform.scale(drawW, drawH, pivot = Offset.Zero)
-                                drawRect(
-                                    brush = tile.linearBrush,
-                                    topLeft = Offset.Zero,
-                                    size = Size(1f, 1f)
-                                )
-                                drawContext.canvas.restore()
-                            }
-                        }
-
-                        val isMarked = selectedNodes.contains(tile.node)
-                        if (isMarked) {
-                            val minDim = minOf(drawW, drawH)
-                            val strokeW = if (minDim < 8f) maxOf(1f, minDim * 0.25f) else if (minDim < 20f) 2.0f else 2.5f
-                            val halfStroke = strokeW / 2f
-
-                            drawRect(
-                                color = Color(0x6600E676),
-                                topLeft = Offset(sLeft, sTop),
-                                size = Size(drawW, drawH)
-                            )
-                            drawRect(
-                                color = Color(0xFF00E676),
-                                topLeft = Offset(sLeft + halfStroke, sTop + halfStroke),
-                                size = Size(maxOf(1f, drawW - strokeW), maxOf(1f, drawH - strokeW)),
-                                style = Stroke(width = strokeW)
-                            )
-                        }
-
-                        if (tile.pkgName != null && sW >= 24f && sH >= 24f) {
-                            val bmp = AppIconCache.peek(tile.pkgName) ?: AppIconCache.get(context, tile.pkgName)
-                            if (bmp != null) {
-                                val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
-                                val iconX = sLeft + (sW - iconSize) / 2f
-                                val iconY = sTop + (sH - iconSize) / 2f
-                                drawImage(
-                                    image = bmp,
-                                    dstOffset = IntOffset(iconX.toInt(), iconY.toInt()),
-                                    dstSize = IntSize(iconSize.toInt(), iconSize.toInt())
-                                )
-                            }
-                        }
+                        drawRect(
+                            color = SelectionBorderColor,
+                            topLeft = Offset(inLeft, inTop),
+                            size = Size(inW, inH),
+                            style = Stroke(width = selectionBorderWidth)
+                        )
                     }
                 }
             }
-
-            // Exact adaptive inset selection border matching the precise tile bounds with spring physics
-            val sel = selectedTile ?: lastSelectedTile
-            if (sel != null && selectionBorderWidth > 0.05f) {
-                val curScale = currentScaleState.value
-                val curOff = currentOffsetState.value
-                val selLeft = sel.left * curScale + curOff.x
-                val selTop = sel.top * curScale + curOff.y
-                val selW = sel.width * curScale
-                val selH = sel.height * curScale
-
-                val centerX = selLeft + selW / 2f
-                val centerY = selTop + selH / 2f
-                val scaledW = selW * selectionScale
-                val scaledH = selH * selectionScale
-
-                val sLeft = centerX - scaledW / 2f
-                val sTop = centerY - scaledH / 2f
-
-                val halfStroke = selectionBorderWidth / 2f
-                val inLeft = sLeft + halfStroke
-                val inTop = sTop + halfStroke
-                val inW = maxOf(1f, scaledW - selectionBorderWidth)
-                val inH = maxOf(1f, scaledH - selectionBorderWidth)
-
-                drawRect(
-                    color = SelectionBorderColor,
-                    topLeft = Offset(inLeft, inTop),
-                    size = Size(inW, inH),
-                    style = Stroke(width = selectionBorderWidth)
-                )
-            }
         }
-    }
 
         // Bottom nav-pill zone: true progressive Gaussian blur connecting seamlessly with treemap tiles
         if (!isLandscape && bottomSpaceDp > 0.dp) {

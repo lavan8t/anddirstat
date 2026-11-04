@@ -46,7 +46,9 @@ fun renderTreemapToBitmap(
     pureBlack: Boolean,
     context: Context
 ): ImageBitmap {
-    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+    val renderWidth = width.coerceAtLeast(1000)
+    val renderHeight = height.coerceAtLeast(1000)
+    val bitmap = android.graphics.Bitmap.createBitmap(renderWidth, renderHeight, android.graphics.Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
     val isAmoled = pureBlack && isDark
     val shadingMode = FileUtils.getTreemapShadingMode(context)
@@ -75,7 +77,7 @@ fun renderTreemapToBitmap(
             paint.color = tileBaseColor.toArgb()
             paint.shader = null
             canvas.drawRect(sLeft, sTop, sLeft + sW, sTop + sH, paint)
-        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || sW < 3f || sH < 3f) {
+        } else if (shadingMode == FileUtils.TreemapShadingMode.SOLID || sW < 1f || sH < 1f) {
             paint.style = android.graphics.Paint.Style.FILL
             paint.shader = null
             paint.color = tileBaseColor.toArgb()

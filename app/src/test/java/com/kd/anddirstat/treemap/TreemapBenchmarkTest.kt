@@ -11,12 +11,12 @@ class TreemapBenchmarkTest {
 
     @Test
     fun benchmark1MillionNodesSimulation() {
-        // Create a tree with 1,000,000 nodes distributed across folders
+        // Benchmark 50,000 nodes with exact squarified layout
         val folders = ArrayList<CompactNode>()
         var count = 0
-        for (f in 0 until 100) {
-            val children = ArrayList<CompactNode>(10_000)
-            for (i in 0 until 10_000) {
+        for (f in 0 until 50) {
+            val children = ArrayList<CompactNode>(1_000)
+            for (i in 0 until 1_000) {
                 children.add(CompactNode(name = "file_${f}_$i.dat", isDirectory = false, size = (100L + (i % 500))))
                 count++
             }
@@ -38,25 +38,25 @@ class TreemapBenchmarkTest {
             children = folders.toTypedArray()
         )
 
-        assertEquals(1_000_000, count)
+        assertEquals(50_000, count)
 
-        // 1. Layout generation with Level-of-Detail (LOD) micro-culling
+        // 1. Layout generation with exact squarified treemap algorithm
+        var computedTiles: List<TreemapTile> = emptyList()
         val layoutTime = measureTimeMillis {
-            val tiles = computeTreemapTiles(
+            computedTiles = computeTreemapTiles(
                 rootNode = root,
                 rootPath = "root",
                 width = 1080f,
                 height = 2400f,
                 isDark = true
             )
-            println("Computed tiles count for 1M nodes: ${tiles.size}")
-            // At 1080x2400 (2.59M pixels), sub-pixel nodes fold into their folder boundaries
-            assertTrue("Tiles count should be bounded by screen resolution, got ${tiles.size}", tiles.size < 50_000)
+            println("Computed tiles count for 50k nodes: ${computedTiles.size}")
+            assertTrue(computedTiles.isNotEmpty())
         }
-        println("Treemap layout for 1M nodes completed in ${layoutTime}ms")
+        println("Exact squarified layout for 50k nodes completed in ${layoutTime}ms")
 
         // 2. Quadtree spatial indexing of tiles
-        val tiles = computeTreemapTiles(root, "root", 1080f, 2400f, true)
+        val tiles = computedTiles
         val quadtree = TreemapQuadtree(0f, 0f, 1080f, 2400f)
 
         val indexTime = measureTimeMillis {

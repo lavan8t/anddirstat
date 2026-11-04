@@ -60,6 +60,8 @@ import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Random
@@ -244,6 +246,22 @@ fun TestTreemapScreen(
     var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
     var selectedPath by remember { mutableStateOf<String?>(null) }
 
+    var isFastZoomActive by remember { mutableStateOf(false) }
+    var fastZoomScale by remember { mutableFloatStateOf(1f) }
+
+    LaunchedEffect(isFastZoomActive) {
+        if (isFastZoomActive) {
+            val rng = Random()
+            while (isActive && isFastZoomActive) {
+                // 20 times per second = 50ms interval, random scale between 1.0f and 1.2f
+                fastZoomScale = 1.0f + (rng.nextFloat() * 0.2f)
+                delay(50L)
+            }
+        } else {
+            fastZoomScale = 1f
+        }
+    }
+
     // Live FPS Tracker
     var currentFps by remember { mutableIntStateOf(60) }
     DisposableEffect(Unit) {
@@ -308,6 +326,7 @@ fun TestTreemapScreen(
                 rootPath = "StressTest50K",
                 selectedNode = selectedNode,
                 resetKey = resetKey,
+                externalScale = if (isFastZoomActive) fastZoomScale else null,
                 isDark = isDark,
                 pureBlack = pureBlack,
                 isLandscape = isLandscape,
@@ -389,9 +408,39 @@ fun TestTreemapScreen(
                     }
 
                     Text(
-                        text = "Zoom: ${String.format("%.2fx", scale)} • Total: 50,000 files",
+                        text = if (isFastZoomActive) {
+                            "⚡ 20Hz Zoom: ${String.format("%.2fx", scale)} • Total: 50,000 files"
+                        } else {
+                            "Zoom: ${String.format("%.2fx", scale)} • Total: 50,000 files"
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (isFastZoomActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isFastZoomActive) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+
+                // Fast Zoom Stress Test toggle (20 times per second 1x to 1.2x)
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        isFastZoomActive = !isFastZoomActive
+                        if (!isFastZoomActive) {
+                            resetKey++
+                            scale = 1f
+                        }
+                    },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            if (isFastZoomActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            CircleShape
+                        )
+                ) {
+                    MaterialSymbol(
+                        name = "bolt",
+                        active = isFastZoomActive,
+                        size = 20.dp,
+                        tint = if (isFastZoomActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
                     )
                 }
 
