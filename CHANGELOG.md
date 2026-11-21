@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.6] - 2026-11-21
+
+### Added
+- **GPU App Icons**: Launcher icons are packed into a high-resolution atlas and drawn inside the single instanced treemap draw call. Small app tiles keep their icon and high zoom stays sharp.
+- **Staggered Treemap Entrance**: Tiles fall into the screen one by one, bottom row first, using per-tile order and offsets in the GPU shader. The effect respects the system reduced-motion setting.
+- **Elephant-Goldfish Review Artifacts**: Architectural review reports and the project glossary recorded for the strict-MVVM migration.
+
+### Changed
+- **Strict MVVM**: Shell, tree, and cleaner state moved into ViewModels with named events and JVM tests. Cleaner screens share only selection and sort state; undo, vibration, and preferences stay per-screen.
+- **Framework-Free Tree ViewModel**: Android dependencies replaced with injected ports and adapters, with four behavioural JVM tests.
+- **Treemap Background**: The ambient blob layer removed and the full background painted with the Material 3 `surface` role, so high zoom has no black or transparent gaps.
+- **Deletion Safety**: All delete and uninstall paths route through the guarded `FileMaintenanceEngine`; block reasons are carried in the typed result and shown to the user.
+- **App Accent Colours**: Icon colours are warmed before tree layout so app tiles use their launcher accent on the first draw.
+
+### Fixed
+- **Resume Rendering**: The GL instance buffer is restored when the EGL context is recreated, fixing a blank treemap after app resume or device reboot.
+- **Shader Compile**: Corrected the entrance shader scale calculation that crashed the release build on device.
+- **Test Race**: A cleaner deletion test now waits for the background flag before asserting.
+
+---
+
 ## [1.0.5] - 2026-10-19
 
 ### Added
