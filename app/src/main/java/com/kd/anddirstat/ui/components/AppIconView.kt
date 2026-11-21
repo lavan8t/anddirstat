@@ -24,7 +24,7 @@ import java.util.Collections
 
 object AppIconCache {
     private const val CACHE_SIZE = 300
-    private const val ICON_SIZE_PX = 64
+    private const val ICON_SIZE_PX = 192
     private val memoryCache = LruCache<String, ImageBitmap>(CACHE_SIZE)
     private val colorCache = LruCache<String, Color>(CACHE_SIZE)
     private val failedPackages = Collections.synchronizedSet(HashSet<String>())

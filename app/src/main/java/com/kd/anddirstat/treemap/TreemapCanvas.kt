@@ -12,7 +12,6 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -42,12 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -60,7 +54,9 @@ import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.AppIconCache
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import android.provider.Settings
 
 @Composable
 fun TreemapCanvas(
@@ -108,6 +104,17 @@ fun TreemapCanvas(
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
+    val glRenderer = remember { TreemapGLRenderer(context) }
+    var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
+    val reduceMotion = remember {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f
+        ) == 0f
+    }
+    LaunchedEffect(reduceMotion) { glRenderer.setEntranceEnabled(!reduceMotion) }
+
     val density = LocalDensity.current
     val marginDp = 10.dp
     val marginPx = with(density) { marginDp.toPx() }
@@ -126,23 +133,10 @@ fun TreemapCanvas(
     val rightSpaceDp = marginDp
     val rightSpacePx = with(density) { rightSpaceDp.toPx() }
 
-    var iconEpoch by remember { mutableStateOf(0) }
-    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx}_${bottomSpacePx}_${leftSpacePx}_${rightSpacePx}_${iconEpoch}"
+    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx}_${bottomSpacePx}_${leftSpacePx}_${rightSpacePx}"
     val precalculatedTiles = remember { mutableStateOf<List<TreemapTile>>(emptyList()) }
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
     val tileListId = System.identityHashCode(precalculatedTiles.value)
-
-    LaunchedEffect(tileListId) {
-        val missing = precalculatedTiles.value.mapNotNull { it.pkgName }
-            .distinct()
-            .filter { AppIconCache.peek(it) == null }
-        if (missing.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                missing.forEach { AppIconCache.load(context, it) }
-            }
-            iconEpoch++
-        }
-    }
 
     LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
         val usableW = (canvasSize.width.toFloat() - leftSpacePx - rightSpacePx).coerceAtLeast(100f)
@@ -170,9 +164,6 @@ fun TreemapCanvas(
     val selectedTile = remember(selectedNode, nodeToTileMap) {
         if (selectedNode == null) null else nodeToTileMap[selectedNode]
     }
-
-    val glRenderer = remember { TreemapGLRenderer(context) }
-    var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
 
     // Material 3 Expressive motion physics: damping ratio 0.82f, stiffness MediumLow
     LaunchedEffect(resetKey) {
@@ -229,47 +220,6 @@ fun TreemapCanvas(
         }
     }
 
-    val appTiles = remember(tileListId) {
-        precalculatedTiles.value.filter { it.pkgName != null }
-    }
-
-    // One static bitmap of all app icons in layout coordinates. Zoom/pan moves this single layer
-    // on the GPU compositor instead of redrawing every icon on each zoom frame.
-    var iconOverlay by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(tileListId, canvasSize) {
-        val tiles = appTiles
-        if (tiles.isEmpty()) {
-            iconOverlay = null
-        } else {
-            val layer = withContext(Dispatchers.Default) {
-                val bmp = android.graphics.Bitmap.createBitmap(
-                    canvasSize.width.coerceAtLeast(1),
-                    canvasSize.height.coerceAtLeast(1),
-                    android.graphics.Bitmap.Config.ARGB_8888
-                )
-                val c = android.graphics.Canvas(bmp)
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                for (tile in tiles) {
-                    val sW = tile.width
-                    val sH = tile.height
-                    if (sW < 24f || sH < 24f) continue
-                    val src = AppIconCache.peek(tile.pkgName!!) ?: continue
-                    val iconSize = minOf(72f, minOf(sW, sH) * 0.75f).coerceAtLeast(16f)
-                    val left = tile.left + (sW - iconSize) / 2f
-                    val top = tile.top + (sH - iconSize) / 2f
-                    c.drawBitmap(
-                        src.asAndroidBitmap(),
-                        null,
-                        android.graphics.RectF(left, top, left + iconSize, top + iconSize),
-                        paint
-                    )
-                }
-                bmp.asImageBitmap()
-            }
-            iconOverlay = layer
-        }
-    }
-
     // Material 3 color tokens: zero hardcoded colors
     val surfaceColor = MaterialTheme.colorScheme.surface
     val canvasBg = if (pureBlack && isDark) Color.Black else surfaceColor
@@ -287,13 +237,30 @@ fun TreemapCanvas(
         glSurfaceViewRef?.requestRender()
     }
 
+    var entranceActive by remember { mutableStateOf(false) }
+
     LaunchedEffect(tileListId) {
         if (precalculatedTiles.value.isNotEmpty()) {
             withContext(Dispatchers.Default) {
                 glRenderer.updateTiles(precalculatedTiles.value)
             }
+            if (!reduceMotion) {
+                glRenderer.startEntrance()
+                entranceActive = true
+            }
             glSurfaceViewRef?.requestRender()
         }
+    }
+
+    LaunchedEffect(entranceActive) {
+        if (!entranceActive) return@LaunchedEffect
+        val deadline = System.currentTimeMillis() + 1400L
+        while (System.currentTimeMillis() < deadline) {
+            glSurfaceViewRef?.requestRender()
+            delay(16L)
+        }
+        entranceActive = false
+        glSurfaceViewRef?.requestRender()
     }
 
     LaunchedEffect(scale, offset) {
@@ -524,22 +491,6 @@ fun TreemapCanvas(
                 .fillMaxSize()
                 .then(gestureModifier)
         ) {
-            iconOverlay?.let { layer ->
-                Image(
-                    bitmap = layer,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = currentScaleState.value
-                            scaleY = currentScaleState.value
-                            translationX = currentOffsetState.value.x
-                            translationY = currentOffsetState.value.y
-                            transformOrigin = TransformOrigin(0f, 0f)
-                        }
-                )
-            }
-
             val hasMarkedNodes = selectedNodes.isNotEmpty()
 
             if (hasMarkedNodes) {

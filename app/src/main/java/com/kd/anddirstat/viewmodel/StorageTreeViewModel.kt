@@ -69,6 +69,7 @@ class StorageTreeViewModel(
             }
             val cached = withContext(Dispatchers.IO) { treeStore.load() }
             if (cached != null) {
+                withContext(Dispatchers.IO) { warmAppIcons(cached) }
                 val (filtered, stats, top) = filterTree(cached, settings)
                 _uiState.update {
                     it.copy(
@@ -131,6 +132,7 @@ class StorageTreeViewModel(
             }
             progressSink.update(SCAN_PHASE_FINALIZING, SCAN_DETAIL_FINALIZING, 100, 100, false)
 
+            withContext(Dispatchers.IO) { warmAppIcons(scanned) }
             val (filtered, computedStats, computedTopFiles) = filterTree(scanned, settings)
             _uiState.update {
                 it.copy(
@@ -145,12 +147,6 @@ class StorageTreeViewModel(
 
             launch(Dispatchers.IO) {
                 snapshots.record(scanned.size, scanned.size)
-                val packageNames = scanned.children
-                    ?.firstOrNull { it.name == "Apps & System Packages" }
-                    ?.children
-                    ?.mapNotNull { FileUtils.extractPackageName(it) }
-                    ?: emptyList()
-                icons.warm(packageNames)
             }
         }
     }
@@ -188,6 +184,16 @@ class StorageTreeViewModel(
             }
             withContext(Dispatchers.IO) { treeStore.save(updatedRaw) }
         }
+    }
+
+    private fun warmAppIcons(root: CompactNode) {
+        val packages = HashSet<String>()
+        fun walk(node: CompactNode) {
+            FileUtils.extractPackageName(node)?.let { packages.add(it) }
+            node.children?.forEach { walk(it) }
+        }
+        walk(root)
+        icons.warm(packages.toList())
     }
 
     private suspend fun filterTree(

@@ -191,7 +191,7 @@ class CleanerViewModelTest {
 
         vm.onBatchDelete()
 
-        waitFor { deleter.batches.size == 1 }
+        waitFor { deleter.batches.size == 1 && deleter.lastIsPermanent != null }
         assertEquals(1, deleter.batches.size)
         assertEquals(setOf("/a.png", "/b.png"), deleter.batches.first())
         assertEquals(false, deleter.lastIsPermanent)
