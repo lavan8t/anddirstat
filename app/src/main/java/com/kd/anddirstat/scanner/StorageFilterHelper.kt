@@ -385,14 +385,13 @@ object StorageFilterHelper {
         return duplicateList.sortedByDescending { it.node.size }.take(limit)
     }
 
-    fun filterByPreset(rootNode: CompactNode, preset: String, context: android.content.Context? = null): List<TopFileEntry> {
+    fun filterByPreset(rootNode: CompactNode, preset: String, starredPaths: Set<String> = emptySet()): List<TopFileEntry> {
         // Only the branches below read it; "Screenshots" and "Duplicates" walk the tree themselves.
         fun topFiles() = aggregateTopFiles(rootNode, limit = 500)
         return when (preset) {
-            "Starred" -> if (context != null) {
+            "Starred" -> if (starredPaths.isNotEmpty()) {
                 val allFiles = topFiles()
-                val starred = com.kd.anddirstat.util.FavoritesManager.getStarredPaths(context)
-                allFiles.filter { starred.contains(it.path) || com.kd.anddirstat.util.FavoritesManager.isStarred(context, it.path) }
+                allFiles.filter { starredPaths.contains(it.path) }
             } else emptyList()
             "> 1 GB" -> topFiles().filter { it.node.size >= 1024L * 1024L * 1024L }
             "Screenshots" -> getScreenshots(rootNode)

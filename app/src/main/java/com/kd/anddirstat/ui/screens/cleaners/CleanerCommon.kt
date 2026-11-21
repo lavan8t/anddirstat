@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.ui.components.DeletionProgressDialog
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.AppNotifier
+import com.kd.anddirstat.viewmodel.SortOption
 
 fun getGroupedItemShape(
     index: Int,
@@ -288,11 +289,6 @@ fun CleanerBottomActionBar(
             }
         }
     }
-}
-
-interface SortOption {
-    val label: String
-    val icon: String
 }
 
 @Composable

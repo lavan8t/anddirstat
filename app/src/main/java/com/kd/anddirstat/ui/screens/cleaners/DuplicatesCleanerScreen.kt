@@ -1,6 +1,5 @@
 package com.kd.anddirstat.ui.screens.cleaners
 
-import android.os.Environment
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,224 +23,79 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.FavoritesManager
-import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
+import com.kd.anddirstat.viewmodel.AndroidCleanerDeleter
+import com.kd.anddirstat.viewmodel.AndroidCleanerHaptics
+import com.kd.anddirstat.viewmodel.AndroidDuplicateSource
+import com.kd.anddirstat.viewmodel.AutoSelectStrategy
+import com.kd.anddirstat.viewmodel.CleanerViewModelFactory
+import com.kd.anddirstat.viewmodel.DuplicateSort
+import com.kd.anddirstat.viewmodel.DuplicatesViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-data class DuplicateFileItem(
-    val file: File,
-    val path: String,
-    val lastModified: Long
-)
-
-data class DuplicateGroup(
-    val key: String,
-    val fileName: String,
-    val fileSize: Long,
-    val files: List<DuplicateFileItem>
-)
-
-enum class DuplicateSort(override val label: String, override val icon: String) : SortOption {
-    LARGEST("Largest Size First", "folder_zip"),
-    MOST_COPIES("Most Copies First", "content_copy"),
-    NAME_AZ("Name (A to Z)", "sort_by_alpha")
-}
 
 @Composable
 fun DuplicatesCleanerView(onBack: () -> Unit) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
+    val appContext = context.applicationContext
 
-    var isScanning by remember { mutableStateOf(true) }
-    var duplicateGroups by remember { mutableStateOf<List<DuplicateGroup>>(emptyList()) }
-    var expandedGroupKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var sortOrder by remember { mutableStateOf(DuplicateSort.LARGEST) }
+    val vm: DuplicatesViewModel = viewModel(
+        factory = CleanerViewModelFactory {
+            DuplicatesViewModel(
+                source = AndroidDuplicateSource(),
+                deleter = AndroidCleanerDeleter(appContext),
+                haptics = AndroidCleanerHaptics(appContext, haptic)
+            )
+        }
+    )
+    val uiState by vm.uiState.collectAsState()
+
+    LaunchedEffect(Unit) { vm.onScan() }
+
     var showAutoSelectMenu by remember { mutableStateOf(false) }
-
-    var isOperating by remember { mutableStateOf(false) }
-    var operationCurrentCount by remember { mutableIntStateOf(0) }
-    var operationTotalCount by remember { mutableIntStateOf(0) }
-    var operationCurrentFileName by remember { mutableStateOf("") }
-
-    fun sortGroups(groups: List<DuplicateGroup>, sort: DuplicateSort): List<DuplicateGroup> {
-        return when (sort) {
-            DuplicateSort.LARGEST -> groups.sortedByDescending { it.fileSize * (it.files.size - 1) }
-            DuplicateSort.MOST_COPIES -> groups.sortedByDescending { it.files.size }
-            DuplicateSort.NAME_AZ -> groups.sortedBy { it.fileName.lowercase() }
-        }
-    }
-
-    fun scanDuplicates() {
-        scope.launch {
-            isScanning = true
-            val results = withContext(Dispatchers.IO) {
-                val sizeMap = mutableMapOf<Long, MutableList<File>>()
-                val root = Environment.getExternalStorageDirectory()
-
-                fun walk(dir: File, depth: Int = 0) {
-                    if (depth > 8 || !dir.canRead()) return
-                    val list = dir.listFiles() ?: return
-                    for (f in list) {
-                        if (f.isFile && f.length() > 512 * 1024L && !f.name.startsWith(".")) {
-                            val listForSize = sizeMap.getOrPut(f.length()) { mutableListOf() }
-                            listForSize.add(f)
-                        } else if (f.isDirectory && !f.name.equals("Android", ignoreCase = true) && !f.name.startsWith(".")) {
-                            walk(f, depth + 1)
-                        }
-                    }
-                }
-
-                if (root != null && root.exists()) {
-                    walk(root)
-                }
-
-                val groups = mutableListOf<DuplicateGroup>()
-                for ((size, files) in sizeMap) {
-                    if (files.size >= 2) {
-                        // Group by name + size
-                        val byName = files.groupBy { it.name }
-                        for ((name, matchingFiles) in byName) {
-                            if (matchingFiles.size >= 2) {
-                                val items = matchingFiles.map {
-                                    DuplicateFileItem(
-                                        file = it,
-                                        path = it.absolutePath,
-                                        lastModified = it.lastModified()
-                                    )
-                                }
-                                groups.add(
-                                    DuplicateGroup(
-                                        key = "${name}_${size}",
-                                        fileName = name,
-                                        fileSize = size,
-                                        files = items
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-                sortGroups(groups, sortOrder)
-            }
-
-            duplicateGroups = results
-            expandedGroupKeys = results.map { it.key }.toSet()
-            // Default auto-select: keep newest copy, select all older copies
-            val autoSelected = mutableSetOf<String>()
-            for (group in results) {
-                val sorted = group.files.sortedByDescending { it.lastModified }
-                if (sorted.size > 1) {
-                    sorted.drop(1).forEach { autoSelected.add(it.path) }
-                }
-            }
-            selectedPaths = autoSelected
-            isScanning = false
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        scanDuplicates()
-    }
-
-    fun applyAutoSelect(strategy: String) {
-        val newSelection = mutableSetOf<String>()
-        for (group in duplicateGroups) {
-            when (strategy) {
-                "keep_newest" -> {
-                    val sorted = group.files.sortedByDescending { it.lastModified }
-                    sorted.drop(1).forEach { newSelection.add(it.path) }
-                }
-                "keep_oldest" -> {
-                    val sorted = group.files.sortedBy { it.lastModified }
-                    sorted.drop(1).forEach { newSelection.add(it.path) }
-                }
-                "select_all" -> {
-                    group.files.forEach { newSelection.add(it.path) }
-                }
-                "deselect_all" -> {}
-            }
-        }
-        selectedPaths = newSelection
-    }
-
-    fun handleDeleteSelected() {
-        val toDelete = duplicateGroups.flatMap { it.files }
-            .filter { selectedPaths.contains(it.path) }
-            .map { it.file }
-        if (toDelete.isEmpty()) return
-
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        scope.launch {
-            isOperating = true
-            FileMaintenanceEngine.batchDelete(
-                context = context,
-                files = toDelete,
-                isPermanent = false,
-                actionName = "Moved to Recycle Bin"
-            ) { curr, tot, name ->
-                operationCurrentCount = curr
-                operationTotalCount = tot
-                operationCurrentFileName = name
-            }
-            isOperating = false
-            scanDuplicates()
-        }
-    }
-
-    val totalSelectedBytes = remember(duplicateGroups, selectedPaths) {
-        duplicateGroups.flatMap { it.files }
-            .filter { selectedPaths.contains(it.path) }
+    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
+    val selectedPaths = uiState.selection.selectedPaths
+    val totalSelectedBytes = remember(uiState.groups, selectedPaths) {
+        uiState.groups.flatMap { it.files }
+            .filter { it.path in selectedPaths }
             .sumOf { it.file.length() }
     }
-    val allSelectableCount = remember(duplicateGroups) {
-        duplicateGroups.sumOf { it.files.size }
-    }
-    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
 
     CleanerScaffold(
         title = "Duplicate Files",
         selectedCount = selectedPaths.size,
-        totalCount = allSelectableCount,
-        isLoading = isScanning,
-        isOperating = isOperating,
-        operationProgress = Triple(operationCurrentCount, operationTotalCount, operationCurrentFileName),
+        totalCount = uiState.allSelectableCount,
+        isLoading = uiState.isScanning,
+        isOperating = uiState.isOperating,
+        operationProgress = Triple(uiState.progress.current, uiState.progress.total, uiState.progress.fileName),
         operationIsTrash = true,
         onBack = onBack,
         actions = {
-            if (!isScanning && duplicateGroups.isNotEmpty()) {
+            if (!uiState.isScanning && uiState.groups.isNotEmpty()) {
                 Box {
                     IconButton(onClick = { showAutoSelectMenu = true }) {
                         MaterialSymbol("auto_fix_high", active = true, size = 22.dp)
@@ -254,58 +108,55 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                             text = { Text("Keep Newest (Recommended)") },
                             onClick = {
                                 showAutoSelectMenu = false
-                                applyAutoSelect("keep_newest")
+                                vm.onAutoSelect(AutoSelectStrategy.KEEP_NEWEST)
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Keep Oldest") },
                             onClick = {
                                 showAutoSelectMenu = false
-                                applyAutoSelect("keep_oldest")
+                                vm.onAutoSelect(AutoSelectStrategy.KEEP_OLDEST)
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Select All Copies") },
                             onClick = {
                                 showAutoSelectMenu = false
-                                applyAutoSelect("select_all")
+                                vm.onAutoSelect(AutoSelectStrategy.SELECT_ALL)
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Deselect All") },
                             onClick = {
                                 showAutoSelectMenu = false
-                                applyAutoSelect("deselect_all")
+                                vm.onAutoSelect(AutoSelectStrategy.DESELECT_ALL)
                             }
                         )
                     }
                 }
                 CleanerSortDropdown(
                     options = DuplicateSort.entries.toTypedArray(),
-                    selected = sortOrder,
-                    onSelect = {
-                        sortOrder = it
-                        duplicateGroups = sortGroups(duplicateGroups, it)
-                    }
+                    selected = uiState.selection.sortOrder,
+                    onSelect = { vm.onSortChanged(it) }
                 )
             }
         },
         bottomBar = {
-            if (!isScanning && duplicateGroups.isNotEmpty()) {
+            if (!uiState.isScanning && uiState.groups.isNotEmpty()) {
                 CleanerBottomActionBar(
                     visible = true,
                     enabled = selectedPaths.isNotEmpty(),
                     actionText = if (selectedPaths.isNotEmpty()) "Clean ${FileUtils.formatFileSize(totalSelectedBytes)} (${selectedPaths.size})" else "Clean",
                     actionIcon = "delete",
                     isDestructive = true,
-                    onClick = { handleDeleteSelected() }
+                    onClick = { vm.onDeleteSelected() }
                 )
             }
         }
     ) {
         when {
-            isScanning -> CleanerLoadingState("Scanning storage for duplicate files...")
-            duplicateGroups.isEmpty() -> CleanerEmptyState(
+            uiState.isScanning -> CleanerLoadingState("Scanning storage for duplicate files...")
+            uiState.groups.isEmpty() -> CleanerEmptyState(
                 icon = "check_circle",
                 title = "No Duplicates Found",
                 subtitle = "Your storage has no identical copies of large files taking up space.",
@@ -317,8 +168,8 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(duplicateGroups, key = { it.key }) { group ->
-                        val isExpanded = expandedGroupKeys.contains(group.key)
+                    items(uiState.groups, key = { it.key }) { group ->
+                        val isExpanded = uiState.expandedKeys.contains(group.key)
                         val wastedSize = group.fileSize * (group.files.size - 1)
 
                         Card(
@@ -330,9 +181,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            expandedGroupKeys = if (isExpanded) expandedGroupKeys - group.key else expandedGroupKeys + group.key
-                                        }
+                                        .clickable { vm.onToggleExpanded(group.key) }
                                         .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -376,9 +225,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                             val itemShape = getGroupedItemShape(index, group.files.size, outerRadius = 14.dp, innerRadius = 3.dp)
 
                                             Card(
-                                                onClick = {
-                                                    selectedPaths = if (isSelected) selectedPaths - fileItem.path else selectedPaths + fileItem.path
-                                                },
+                                                onClick = { vm.onToggleSelected(fileItem.path) },
                                                 shape = itemShape,
                                                 colors = CardDefaults.cardColors(
                                                     containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
@@ -394,9 +241,7 @@ fun DuplicatesCleanerView(onBack: () -> Unit) {
                                                 ) {
                                                     Checkbox(
                                                         checked = isSelected,
-                                                        onCheckedChange = { checked ->
-                                                            selectedPaths = if (checked) selectedPaths + fileItem.path else selectedPaths - fileItem.path
-                                                        },
+                                                        onCheckedChange = { vm.onToggleSelected(fileItem.path) },
                                                         colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                                                     )
                                                     Spacer(Modifier.width(6.dp))

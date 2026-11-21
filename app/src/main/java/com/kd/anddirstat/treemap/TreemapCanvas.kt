@@ -12,6 +12,7 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -36,21 +37,21 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
@@ -125,9 +126,23 @@ fun TreemapCanvas(
     val rightSpaceDp = marginDp
     val rightSpacePx = with(density) { rightSpaceDp.toPx() }
 
-    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx}_${bottomSpacePx}_${leftSpacePx}_${rightSpacePx}"
+    var iconEpoch by remember { mutableStateOf(0) }
+    val cacheKey = "${System.identityHashCode(rootNode)}_${canvasSize.width}_${canvasSize.height}_${isDark}_${isLandscape}_${topSpacePx}_${bottomSpacePx}_${leftSpacePx}_${rightSpacePx}_${iconEpoch}"
     val precalculatedTiles = remember { mutableStateOf<List<TreemapTile>>(emptyList()) }
     val quadtree = remember { mutableStateOf<TreemapQuadtree?>(null) }
+    val tileListId = System.identityHashCode(precalculatedTiles.value)
+
+    LaunchedEffect(tileListId) {
+        val missing = precalculatedTiles.value.mapNotNull { it.pkgName }
+            .distinct()
+            .filter { AppIconCache.peek(it) == null }
+        if (missing.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                missing.forEach { AppIconCache.load(context, it) }
+            }
+            iconEpoch++
+        }
+    }
 
     LaunchedEffect(cacheKey, rootNode, rootPath, isDark) {
         val usableW = (canvasSize.width.toFloat() - leftSpacePx - rightSpacePx).coerceAtLeast(100f)
@@ -148,7 +163,7 @@ fun TreemapCanvas(
         }
     }
 
-    val nodeToTileMap = remember(precalculatedTiles.value) {
+    val nodeToTileMap = remember(tileListId) {
         precalculatedTiles.value.associateBy { it.node }
     }
 
@@ -199,7 +214,10 @@ fun TreemapCanvas(
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> glSurfaceViewRef?.onResume()
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    glSurfaceViewRef?.onResume()
+                    glSurfaceViewRef?.requestRender()
+                }
                 androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> glSurfaceViewRef?.onPause()
                 else -> {}
             }
@@ -211,72 +229,45 @@ fun TreemapCanvas(
         }
     }
 
-    val appTiles = remember(precalculatedTiles.value) {
+    val appTiles = remember(tileListId) {
         precalculatedTiles.value.filter { it.pkgName != null }
     }
 
-    val ambientBlobs = remember(precalculatedTiles.value, isDark, canvasSize, topSpacePx, bottomSpacePx, leftSpacePx, rightSpacePx) {
-        val tiles = precalculatedTiles.value
-        if (tiles.isEmpty()) return@remember emptyList<AmbientBlob>()
-
-        val colorAreaMap = HashMap<Color, Float>()
-        for (tile in tiles) {
-            val a = tile.width * tile.height
-            colorAreaMap[tile.baseColor] = (colorAreaMap[tile.baseColor] ?: 0f) + a
-        }
-        val topColors = colorAreaMap.entries
-            .sortedByDescending { it.value }
-            .map { it.key }
-
-        if (topColors.isEmpty()) return@remember emptyList<AmbientBlob>()
-
-        val usableW = (canvasSize.width.toFloat() - leftSpacePx - rightSpacePx).coerceAtLeast(10f)
-        val usableH = (canvasSize.height.toFloat() - topSpacePx - bottomSpacePx).coerceAtLeast(10f)
-        val midX = leftSpacePx + usableW / 2f
-        val midY = topSpacePx + usableH / 2f
-
-        fun dominantColorInRegion(predicate: (TreemapTile) -> Boolean, fallback: Color): Color {
-            val regionMap = HashMap<Color, Float>()
-            for (tile in tiles) {
-                if (predicate(tile)) {
-                    val a = tile.width * tile.height
-                    regionMap[tile.baseColor] = (regionMap[tile.baseColor] ?: 0f) + a
+    // One static bitmap of all app icons in layout coordinates. Zoom/pan moves this single layer
+    // on the GPU compositor instead of redrawing every icon on each zoom frame.
+    var iconOverlay by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(tileListId, canvasSize) {
+        val tiles = appTiles
+        if (tiles.isEmpty()) {
+            iconOverlay = null
+        } else {
+            val layer = withContext(Dispatchers.Default) {
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    canvasSize.width.coerceAtLeast(1),
+                    canvasSize.height.coerceAtLeast(1),
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
+                val c = android.graphics.Canvas(bmp)
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                for (tile in tiles) {
+                    val sW = tile.width
+                    val sH = tile.height
+                    if (sW < 24f || sH < 24f) continue
+                    val src = AppIconCache.peek(tile.pkgName!!) ?: continue
+                    val iconSize = minOf(72f, minOf(sW, sH) * 0.75f).coerceAtLeast(16f)
+                    val left = tile.left + (sW - iconSize) / 2f
+                    val top = tile.top + (sH - iconSize) / 2f
+                    c.drawBitmap(
+                        src.asAndroidBitmap(),
+                        null,
+                        android.graphics.RectF(left, top, left + iconSize, top + iconSize),
+                        paint
+                    )
                 }
+                bmp.asImageBitmap()
             }
-            return regionMap.maxByOrNull { it.value }?.key ?: fallback
+            iconOverlay = layer
         }
-
-        val cTopLeft = dominantColorInRegion({ it.left < midX && it.top < midY }, topColors[0])
-        val cTopRight = dominantColorInRegion({ it.left >= midX && it.top < midY }, topColors.getOrElse(1 % topColors.size) { topColors[0] })
-        val cBottomLeft = dominantColorInRegion({ it.left < midX && it.top >= midY }, topColors.getOrElse(2 % topColors.size) { topColors[0] })
-        val cBottomRight = dominantColorInRegion({ it.left >= midX && it.top >= midY }, topColors.getOrElse(3 % topColors.size) { topColors[0] })
-
-        val cTopCenter = dominantColorInRegion({ it.top <= topSpacePx + usableH * 0.35f }, topColors[0])
-        val cBottomCenter = dominantColorInRegion({ it.top + it.height >= (topSpacePx + usableH) - usableH * 0.35f }, topColors.getOrElse(1 % topColors.size) { cBottomRight })
-        val cLeftCenter = dominantColorInRegion({ it.left <= leftSpacePx + usableW * 0.35f }, topColors.getOrElse(2 % topColors.size) { cBottomLeft })
-        val cRightCenter = dominantColorInRegion({ it.left + it.width >= (leftSpacePx + usableW) - usableW * 0.35f }, topColors.getOrElse(3 % topColors.size) { cTopRight })
-
-        listOf(
-            // Top halo blobs (around top margin, filter pill, and status bar)
-            AmbientBlob(relX = 0.05f, relY = 0.0f, offsetY = (-24).dp, radiusDp = 100.dp, color = cTopLeft),
-            AmbientBlob(relX = 0.35f, relY = 0.0f, offsetY = (-32).dp, radiusDp = 110.dp, color = cTopCenter),
-            AmbientBlob(relX = 0.65f, relY = 0.0f, offsetY = (-30).dp, radiusDp = 105.dp, color = topColors.getOrElse(4 % topColors.size) { cTopRight }),
-            AmbientBlob(relX = 0.95f, relY = 0.0f, offsetY = (-24).dp, radiusDp = 100.dp, color = cTopRight),
-
-            // Bottom halo blobs (around bottom margin and navigation pill)
-            AmbientBlob(relX = 0.05f, relY = 1.0f, offsetY = 32.dp, radiusDp = 110.dp, color = cBottomLeft),
-            AmbientBlob(relX = 0.35f, relY = 1.0f, offsetY = 40.dp, radiusDp = 120.dp, color = cBottomCenter),
-            AmbientBlob(relX = 0.65f, relY = 1.0f, offsetY = 38.dp, radiusDp = 115.dp, color = topColors.getOrElse(5 % topColors.size) { cBottomRight }),
-            AmbientBlob(relX = 0.95f, relY = 1.0f, offsetY = 32.dp, radiusDp = 110.dp, color = cBottomRight),
-
-            // Left margin halo blobs
-            AmbientBlob(relX = 0.0f, relY = 0.30f, offsetX = (-16).dp, radiusDp = 85.dp, color = cLeftCenter),
-            AmbientBlob(relX = 0.0f, relY = 0.70f, offsetX = (-16).dp, radiusDp = 85.dp, color = cBottomLeft),
-
-            // Right margin halo blobs
-            AmbientBlob(relX = 1.0f, relY = 0.30f, offsetX = 16.dp, radiusDp = 85.dp, color = cTopRight),
-            AmbientBlob(relX = 1.0f, relY = 0.70f, offsetX = 16.dp, radiusDp = 85.dp, color = cRightCenter)
-        )
     }
 
     // Material 3 color tokens: zero hardcoded colors
@@ -284,7 +275,9 @@ fun TreemapCanvas(
     val canvasBg = if (pureBlack && isDark) Color.Black else surfaceColor
 
     LaunchedEffect(canvasBg, shadingMode) {
-        glRenderer.setClearColor(0f, 0f, 0f, 0f)
+        // Fill the whole GL surface with the background colour. Uncovered pixels at high zoom then
+        // show this colour instead of transparent black, so no gap or wallpaper shows through.
+        glRenderer.setClearColor(canvasBg.red, canvasBg.green, canvasBg.blue, 1f)
         val modeInt = when (shadingMode) {
             FileUtils.TreemapShadingMode.SOLID -> 1
             FileUtils.TreemapShadingMode.LINEAR -> 2
@@ -294,7 +287,7 @@ fun TreemapCanvas(
         glSurfaceViewRef?.requestRender()
     }
 
-    LaunchedEffect(precalculatedTiles.value) {
+    LaunchedEffect(tileListId) {
         if (precalculatedTiles.value.isNotEmpty()) {
             withContext(Dispatchers.Default) {
                 glRenderer.updateTiles(precalculatedTiles.value)
@@ -314,7 +307,7 @@ fun TreemapCanvas(
     val primaryColor = MaterialTheme.colorScheme.primary
 
     val gestureModifier = if (isInteractive) {
-        Modifier.pointerInput(precalculatedTiles.value, quadtree.value) {
+        Modifier.pointerInput(tileListId, quadtree.value) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val downTime = System.currentTimeMillis()
@@ -526,121 +519,33 @@ fun TreemapCanvas(
                 }
         )
 
-        // Organic ambient blur blobs radiating all around the treemap perimeter, moving seamlessly with the canvas
-        if (ambientBlobs.isNotEmpty()) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(36.dp)
-            ) {
-                val curScale = currentScaleState.value
-                val curOff = currentOffsetState.value
-
-                val tmLeft = leftSpacePx * curScale + curOff.x
-                val tmTop = topSpacePx * curScale + curOff.y
-                val rightBound = canvasSize.width.toFloat() - rightSpacePx
-                val bottomBound = canvasSize.height.toFloat() - bottomSpacePx
-                val tmRight = rightBound * curScale + curOff.x
-                val tmBottom = bottomBound * curScale + curOff.y
-                val tmWidth = tmRight - tmLeft
-                val tmHeight = tmBottom - tmTop
-
-                val inset = 12.dp.toPx() * curScale
-                val clipLeft = tmLeft + inset
-                val clipTop = tmTop + inset
-                val clipRight = tmRight - inset
-                val clipBottom = tmBottom - inset
-
-                if (clipRight > clipLeft && clipBottom > clipTop) {
-                    clipRect(
-                        left = clipLeft,
-                        top = clipTop,
-                        right = clipRight,
-                        bottom = clipBottom,
-                        clipOp = ClipOp.Difference
-                    ) {
-                        for (blob in ambientBlobs) {
-                            val blobX = tmLeft + blob.relX * tmWidth + blob.offsetX.toPx() * curScale
-                            val blobY = tmTop + blob.relY * tmHeight + blob.offsetY.toPx() * curScale
-                            val radiusPx = blob.radiusDp.toPx() * curScale.coerceIn(0.7f, 1.4f)
-                            val center = Offset(blobX, blobY)
-
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        blob.color.copy(alpha = if (isDark) 0.70f else 0.50f),
-                                        blob.color.copy(alpha = if (isDark) 0.35f else 0.22f),
-                                        Color.Transparent
-                                    ),
-                                    center = center,
-                                    radius = radiusPx
-                                ),
-                                radius = radiusPx,
-                                center = center
-                            )
-                        }
-                    }
-                } else {
-                    for (blob in ambientBlobs) {
-                        val blobX = tmLeft + blob.relX * tmWidth + blob.offsetX.toPx() * curScale
-                        val blobY = tmTop + blob.relY * tmHeight + blob.offsetY.toPx() * curScale
-                        val radiusPx = blob.radiusDp.toPx() * curScale.coerceIn(0.7f, 1.4f)
-                        val center = Offset(blobX, blobY)
-
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    blob.color.copy(alpha = if (isDark) 0.70f else 0.50f),
-                                    blob.color.copy(alpha = if (isDark) 0.35f else 0.22f),
-                                    Color.Transparent
-                                ),
-                                center = center,
-                                radius = radiusPx
-                            ),
-                            radius = radiusPx,
-                            center = center
-                        )
-                    }
-                }
-            }
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .then(gestureModifier)
         ) {
-            val hasMarkedNodes = selectedNodes.isNotEmpty()
-            val hasAppIcons = appTiles.isNotEmpty()
+            iconOverlay?.let { layer ->
+                Image(
+                    bitmap = layer,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = currentScaleState.value
+                            scaleY = currentScaleState.value
+                            translationX = currentOffsetState.value.x
+                            translationY = currentOffsetState.value.y
+                            transformOrigin = TransformOrigin(0f, 0f)
+                        }
+                )
+            }
 
-            if (hasMarkedNodes || hasAppIcons) {
+            val hasMarkedNodes = selectedNodes.isNotEmpty()
+
+            if (hasMarkedNodes) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val curScale = currentScaleState.value
                     val curOff = currentOffsetState.value
-
-                    if (hasAppIcons) {
-                        for (tile in appTiles) {
-                            val sLeft = tile.left * curScale + curOff.x
-                            val sTop = tile.top * curScale + curOff.y
-                            val sW = tile.width * curScale
-                            val sH = tile.height * curScale
-                            if (sLeft + sW < 0f || sLeft > size.width || sTop + sH < 0f || sTop > size.height) continue
-
-                            if (sW >= 24f && sH >= 24f) {
-                                val bmp = AppIconCache.get(context, tile.pkgName!!)
-                                if (bmp != null) {
-                                    val iconSize = minOf(80f, minOf(sW, sH) * 0.70f).coerceAtLeast(16f)
-                                    val iconX = sLeft + (sW - iconSize) / 2f
-                                    val iconY = sTop + (sH - iconSize) / 2f
-                                    drawImage(
-                                        image = bmp,
-                                        dstOffset = IntOffset(iconX.toInt(), iconY.toInt()),
-                                        dstSize = IntSize(iconSize.toInt(), iconSize.toInt())
-                                    )
-                                }
-                            }
-                        }
-                    }
 
                     if (hasMarkedNodes) {
                         for (node in selectedNodes) {
@@ -735,11 +640,3 @@ private fun triggerCrispHaptic(context: Context) {
     }
 }
 
-private data class AmbientBlob(
-    val relX: Float,
-    val relY: Float,
-    val offsetX: Dp = 0.dp,
-    val offsetY: Dp = 0.dp,
-    val radiusDp: Dp,
-    val color: Color
-)

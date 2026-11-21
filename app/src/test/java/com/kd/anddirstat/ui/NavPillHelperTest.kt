@@ -70,10 +70,4 @@ class NavPillHelperTest {
         assertEquals(1.0f, effective, 0.001f)
     }
 
-    @Test
-    fun testOffsetPxCalculation() {
-        val slotPitchPx = 100f
-        val offset = NavPillHelper.calculateIndicatorOffsetPx(effectiveIndex = 1.5f, slotPitchPx = slotPitchPx)
-        assertEquals(150f, offset, 0.001f)
-    }
 }

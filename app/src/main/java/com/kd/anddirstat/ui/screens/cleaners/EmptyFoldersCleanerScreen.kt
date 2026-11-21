@@ -1,6 +1,5 @@
 package com.kd.anddirstat.ui.screens.cleaners
 
-import android.os.Environment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,146 +21,65 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.util.FavoritesManager
-import com.kd.anddirstat.util.FileMaintenanceEngine
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
+import com.kd.anddirstat.viewmodel.AndroidCleanerDeleter
+import com.kd.anddirstat.viewmodel.AndroidEmptyFolderSource
+import com.kd.anddirstat.viewmodel.CleanerViewModelFactory
+import com.kd.anddirstat.viewmodel.EmptyFoldersViewModel
 
 @Composable
 fun EmptyFoldersCleanerView(onBack: () -> Unit) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
+    val appContext = context.applicationContext
 
-    var isScanning by remember { mutableStateOf(true) }
-    var emptyFolders by remember { mutableStateOf<List<File>>(emptyList()) }
-    var selectedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
-
-    var isDeleting by remember { mutableStateOf(false) }
-    var deleteCurrentCount by remember { mutableIntStateOf(0) }
-    var deleteTotalCount by remember { mutableIntStateOf(0) }
-    var deleteCurrentFileName by remember { mutableStateOf("") }
-
-    fun scanEmptyFolders() {
-        scope.launch {
-            isScanning = true
-            val results = withContext(Dispatchers.IO) {
-                val found = mutableListOf<File>()
-
-                fun isFolderEmpty(dir: File): Boolean {
-                    if (!dir.exists() || !dir.isDirectory || !dir.canRead()) return false
-                    val name = dir.name.lowercase()
-                    if (name == "android" || name.startsWith(".trashed") || name == "system volume information") return false
-                    val children = dir.listFiles() ?: return false
-                    if (children.isEmpty()) {
-                        found.add(dir)
-                        return true
-                    }
-                    var allSubEmpty = true
-                    for (child in children) {
-                        if (child.isDirectory) {
-                            if (!isFolderEmpty(child)) allSubEmpty = false
-                        } else {
-                            allSubEmpty = false
-                        }
-                    }
-                    if (allSubEmpty) {
-                        found.add(dir)
-                        return true
-                    }
-                    return false
-                }
-
-                val rootStorage = Environment.getExternalStorageDirectory()
-                if (rootStorage != null && rootStorage.exists()) {
-                    val topDirs = rootStorage.listFiles()?.filter { it.isDirectory && it.canRead() } ?: emptyList()
-                    for (dir in topDirs) {
-                        val n = dir.name.lowercase()
-                        if (n != "android" && !n.startsWith(".")) {
-                            isFolderEmpty(dir)
-                        }
-                    }
-                }
-
-                found.distinctBy { it.absolutePath }.sortedBy { it.absolutePath }
-            }
-
-            emptyFolders = results
-            selectedFolders = results.map { it.absolutePath }.toSet()
-            isScanning = false
+    val vm: EmptyFoldersViewModel = viewModel(
+        factory = CleanerViewModelFactory {
+            EmptyFoldersViewModel(
+                source = AndroidEmptyFolderSource(),
+                deleter = AndroidCleanerDeleter(appContext)
+            )
         }
-    }
+    )
+    val uiState by vm.uiState.collectAsState()
 
-    LaunchedEffect(Unit) {
-        scanEmptyFolders()
-    }
+    LaunchedEffect(Unit) { vm.onScan() }
 
-    fun handleDeleteSelected() {
-        val toDelete = emptyFolders.filter { selectedFolders.contains(it.absolutePath) }
-            .sortedByDescending { it.absolutePath.length }
-        if (toDelete.isEmpty()) return
-
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        scope.launch {
-            isDeleting = true
-            FileMaintenanceEngine.batchDelete(
-                context = context,
-                files = toDelete,
-                isPermanent = true,
-                actionName = "Deleted"
-            ) { curr, tot, name ->
-                deleteCurrentCount = curr
-                deleteTotalCount = tot
-                deleteCurrentFileName = name
-            }
-            isDeleting = false
-            scanEmptyFolders()
-        }
-    }
+    val selectedFolders = uiState.selection.selectedPaths
 
     CleanerScaffold(
         title = "Empty Folders",
         selectedCount = selectedFolders.size,
-        totalCount = emptyFolders.size,
-        isLoading = isScanning,
-        isOperating = isDeleting,
-        operationProgress = Triple(deleteCurrentCount, deleteTotalCount, deleteCurrentFileName),
+        totalCount = uiState.folders.size,
+        isLoading = uiState.isScanning,
+        isOperating = uiState.isOperating,
+        operationProgress = Triple(uiState.progress.current, uiState.progress.total, uiState.progress.fileName),
         onBack = onBack,
-        onSelectAllToggle = {
-            selectedFolders = if (selectedFolders.size == emptyFolders.size) emptySet() else emptyFolders.map { it.absolutePath }.toSet()
-        },
+        onSelectAllToggle = { vm.onSelectAllToggle() },
         bottomBar = {
-            if (!isScanning && emptyFolders.isNotEmpty()) {
+            if (!uiState.isScanning && uiState.folders.isNotEmpty()) {
                 CleanerBottomActionBar(
                     visible = true,
                     enabled = selectedFolders.isNotEmpty(),
                     actionText = if (selectedFolders.isNotEmpty()) "Delete (${selectedFolders.size})" else "Delete",
                     isDestructive = true,
-                    onClick = { handleDeleteSelected() }
+                    onClick = { vm.onDeleteSelected() }
                 )
             }
         }
     ) {
         when {
-            isScanning -> CleanerLoadingState("Scanning storage for empty folders...")
-            emptyFolders.isEmpty() -> CleanerEmptyState(
+            uiState.isScanning -> CleanerLoadingState("Scanning storage for empty folders...")
+            uiState.folders.isEmpty() -> CleanerEmptyState(
                 icon = "check_circle",
                 title = "No Empty Folders!",
                 subtitle = "Your storage is tidy and free of empty directories.",
@@ -176,16 +94,13 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        itemsIndexed(emptyFolders, key = { _, file -> file.absolutePath }) { index, file ->
+                        itemsIndexed(uiState.folders, key = { _, file -> file.absolutePath }) { index, file ->
                             val isSelected = selectedFolders.contains(file.absolutePath)
                             val isStarred = FavoritesManager.isStarred(context, file.absolutePath)
-                            val itemShape = getGroupedItemShape(index, emptyFolders.size, outerRadius = 20.dp, innerRadius = 4.dp)
+                            val itemShape = getGroupedItemShape(index, uiState.folders.size, outerRadius = 20.dp, innerRadius = 4.dp)
 
                             Card(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    selectedFolders = if (isSelected) selectedFolders - file.absolutePath else selectedFolders + file.absolutePath
-                                },
+                                onClick = { vm.onToggleSelected(file.absolutePath) },
                                 shape = itemShape,
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isSelected)
@@ -203,10 +118,7 @@ fun EmptyFoldersCleanerView(onBack: () -> Unit) {
                                 ) {
                                     Checkbox(
                                         checked = isSelected,
-                                        onCheckedChange = { checked ->
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            selectedFolders = if (checked) selectedFolders + file.absolutePath else selectedFolders - file.absolutePath
-                                        },
+                                        onCheckedChange = { vm.onToggleSelected(file.absolutePath) },
                                         colors = CheckboxDefaults.colors(
                                             checkedColor = MaterialTheme.colorScheme.primary
                                         )

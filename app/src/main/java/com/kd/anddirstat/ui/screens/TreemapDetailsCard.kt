@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,7 +48,9 @@ import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.AppTooltip
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,6 +68,7 @@ fun ExpressiveNodeDetailsSheet(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val realFile = remember(path, node.name) {
         FileUtils.resolveActualFile(path, context) ?: FileUtils.resolveActualFile(node.name, context)
@@ -297,7 +301,7 @@ fun ExpressiveNodeDetailsSheet(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val targetPkg = pkgName ?: FileUtils.extractPackageName(node, path, context)
                                 if (targetPkg != null) {
-                                    FileUtils.uninstallApp(context, targetPkg)
+                                    scope.launch { FileMaintenanceEngine.uninstallAppGuarded(context, targetPkg) }
                                 }
                                 onDismiss()
                             },
@@ -438,12 +442,17 @@ fun ExpressiveNodeDetailsSheet(
                         onClick = {
                             showDeleteConfirmation = false
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (FileUtils.deleteOrTrashFile(realFile, context)) {
-                                val msg = if (isAlreadyTrashed) "Deleted ${realFile.name}" else "Moved to Recycle Bin"
-                                com.kd.anddirstat.util.AppNotifier.notify(msg)
-                                onDeleted()
-                            } else {
-                                com.kd.anddirstat.util.AppNotifier.notify("Delete failed")
+                            scope.launch {
+                                val outcome = FileMaintenanceEngine.deleteFileGuarded(context, realFile, isPermanent = isAlreadyTrashed)
+                                when {
+                                    outcome.deleted -> {
+                                        val msg = if (isAlreadyTrashed) "Deleted ${realFile.name}" else "Moved to Recycle Bin"
+                                        com.kd.anddirstat.util.AppNotifier.notify(msg)
+                                        onDeleted()
+                                    }
+                                    outcome.blockReason != null -> com.kd.anddirstat.util.AppNotifier.notify("Deletion blocked: ${outcome.blockReason}")
+                                    else -> com.kd.anddirstat.util.AppNotifier.notify("Delete failed")
+                                }
                             }
                         }
                     ) {

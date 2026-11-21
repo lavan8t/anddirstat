@@ -2,6 +2,7 @@ package com.kd.anddirstat.util
 
 import android.content.Context
 import com.kd.anddirstat.cleanup.DeletionSafetyGuard
+import com.kd.anddirstat.cleanup.SafetyResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,11 +26,15 @@ object FileMaintenanceEngine {
             AppNotifier.notify("Cannot delete starred items. Unstar them first.")
             return@withContext BatchResult(0, starred.size)
         }
-        val (safeFiles, blockedByGuard) = unstarred.partition { file ->
-            DeletionSafetyGuard.isDeletionAllowed(null, file.absolutePath, context)
+        val safetyByFile = unstarred.associateWith { file ->
+            DeletionSafetyGuard.checkSafety(null, file.absolutePath, context)
         }
+        val safeFiles = safetyByFile.filterValues { it is SafetyResult.Allowed }.keys.toList()
+        val blockedByGuard = safetyByFile.filterValues { it is SafetyResult.Blocked }
         if (safeFiles.isEmpty() && blockedByGuard.isNotEmpty()) {
-            AppNotifier.notify("Deletion blocked: Protected system paths selected.")
+            blockedByGuard.values.first().let { result ->
+                AppNotifier.notify("Deletion blocked: ${(result as SafetyResult.Blocked).reason}")
+            }
             return@withContext BatchResult(0, starred.size)
         }
 
@@ -62,7 +67,8 @@ object FileMaintenanceEngine {
         val deletedCount: Int,
         val deletedNodes: Set<com.kd.anddirstat.model.CompactNode>,
         val skippedStarredCount: Int,
-        val blockedBySafetyCount: Int
+        val blockedBySafetyCount: Int,
+        val blockReasons: List<String> = emptyList()
     )
 
     suspend fun deleteTreeNodes(
@@ -75,12 +81,15 @@ object FileMaintenanceEngine {
             AppNotifier.notify("Cannot delete starred files. Unstar them manually first.")
             return@withContext TreeDeleteResult(0, emptySet(), starredItems.size, 0)
         }
-        val (safeItems, blockedByGuard) = unstarredItems.partition { (node, path) ->
-            DeletionSafetyGuard.isDeletionAllowed(node, path, context)
+        val safetyByItem = unstarredItems.associateWith { (node, path) ->
+            DeletionSafetyGuard.checkSafety(node, path, context)
         }
+        val safeItems = safetyByItem.filterValues { it is SafetyResult.Allowed }.keys.toList()
+        val blockedByGuard = safetyByItem.filterValues { it is SafetyResult.Blocked }
+        val blockReasons = blockedByGuard.values.map { (it as SafetyResult.Blocked).reason }.distinct()
         if (safeItems.isEmpty() && blockedByGuard.isNotEmpty()) {
-            AppNotifier.notify("Deletion blocked: Protected system paths selected.")
-            return@withContext TreeDeleteResult(0, emptySet(), starredItems.size, blockedByGuard.size)
+            AppNotifier.notify("Deletion blocked: ${blockReasons.first()}")
+            return@withContext TreeDeleteResult(0, emptySet(), starredItems.size, blockedByGuard.size, blockReasons)
         }
         val allAlreadyTrashed = safeItems.all { (node, path) ->
             node.name.startsWith(".trashed") || path.contains(".trashed") || path.contains("[Recycle Bin]")
@@ -124,9 +133,41 @@ object FileMaintenanceEngine {
         val baseMsg = if (allAlreadyTrashed) "Deleted $processedCount items permanently" else "Moved $processedCount items to Recycle Bin"
         val extraNotes = mutableListOf<String>()
         if (starredItems.isNotEmpty()) extraNotes.add("Skipped ${starredItems.size} starred")
-        if (blockedByGuard.isNotEmpty()) extraNotes.add("Skipped ${blockedByGuard.size} protected")
+        if (blockedByGuard.isNotEmpty()) extraNotes.add("Skipped ${blockedByGuard.size} protected: ${blockReasons.firstOrNull() ?: "protected path"}")
         val msg = if (extraNotes.isNotEmpty()) "$baseMsg (${extraNotes.joinToString(", ")})" else baseMsg
         AppNotifier.finishActivity(context, msg)
-        TreeDeleteResult(processedCount, deletedNodes, starredItems.size, blockedByGuard.size)
+        TreeDeleteResult(processedCount, deletedNodes, starredItems.size, blockedByGuard.size, blockReasons)
     }
+
+    data class DeletionOutcome(
+        val deleted: Boolean,
+        val blockReason: String? = null
+    )
+
+    suspend fun deleteFileGuarded(
+        context: Context,
+        file: File,
+        isPermanent: Boolean = false
+    ): DeletionOutcome = withContext(Dispatchers.IO) {
+        val safety = DeletionSafetyGuard.checkSafety(null, file.absolutePath, context)
+        if (safety is SafetyResult.Blocked) {
+            AppNotifier.notify("Deletion blocked: ${safety.reason}")
+            return@withContext DeletionOutcome(false, safety.reason)
+        }
+        val fLen = file.length()
+        val ok = if (isPermanent) file.deleteRecursively() else FileUtils.deleteOrTrashFile(file, context)
+        if (ok) StorageTrendManager.recordFreedBytes(context, fLen)
+        DeletionOutcome(ok)
+    }
+
+    suspend fun uninstallAppGuarded(context: Context, packageName: String): DeletionOutcome =
+        withContext(Dispatchers.IO) {
+            val safety = DeletionSafetyGuard.checkSafety(null, packageName, context)
+            if (safety is SafetyResult.Blocked) {
+                AppNotifier.notify("Deletion blocked: ${safety.reason}")
+                return@withContext DeletionOutcome(false, safety.reason)
+            }
+            FileUtils.uninstallApp(context, packageName)
+            DeletionOutcome(true)
+        }
 }

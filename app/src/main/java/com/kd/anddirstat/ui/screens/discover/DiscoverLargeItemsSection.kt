@@ -51,6 +51,7 @@ import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -193,7 +194,7 @@ private fun DiscoverLargeItemRow(
                         scope.launch { offsetX.animateTo(0f) }
                         if (isApp) {
                             val targetPkg = pkgName ?: entry.node.name
-                            FileUtils.uninstallApp(context, targetPkg)
+                            scope.launch { FileMaintenanceEngine.uninstallAppGuarded(context, targetPkg) }
                         } else {
                             if (FavoritesManager.isStarred(context, entry.path)) {
                                 AppNotifier.notify("Cannot delete starred file. Unstar manually first.")
@@ -203,7 +204,8 @@ private fun DiscoverLargeItemRow(
                                         try {
                                             val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
                                             if (f != null && f.exists()) {
-                                                FileUtils.deleteOrTrashFile(f, context)
+                                                val outcome = FileMaintenanceEngine.deleteFileGuarded(context, f)
+                                                outcome.blockReason?.let { AppNotifier.notify("Deletion blocked: $it") }
                                             }
                                         } catch (_: Exception) {}
                                     }

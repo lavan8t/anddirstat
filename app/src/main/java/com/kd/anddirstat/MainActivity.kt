@@ -20,7 +20,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
+import com.kd.anddirstat.viewmodel.MainAppViewModel
+import com.kd.anddirstat.viewmodel.StorageFilterSettings
 import com.kd.anddirstat.viewmodel.StorageTreeViewModel
+import com.kd.anddirstat.viewmodel.StorageTreeViewModelFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -148,6 +151,7 @@ import com.kd.anddirstat.treemap.TreemapBitmapCache
 import com.kd.anddirstat.treemap.TreemapCanvas
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
 import com.kd.anddirstat.util.StorageTrendManager
 import com.kd.anddirstat.util.StorageVolumeInfo
@@ -160,7 +164,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
-    private val viewModel: StorageTreeViewModel by viewModels()
+    private val viewModel: StorageTreeViewModel by viewModels { StorageTreeViewModelFactory(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -220,7 +224,11 @@ private fun ScanProgressBanner(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+fun MainApp(
+    viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+        factory = StorageTreeViewModelFactory(LocalContext.current.applicationContext)
+    )
+) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -257,13 +265,18 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
             AppNotifier.dismissAll(context)
         }
 
-        var hasStoragePermission by remember { mutableStateOf(FileUtils.checkStoragePermission(context)) }
-        var hasUsageAccess by remember { mutableStateOf(FileUtils.checkUsageAccessPermission(context)) }
-        var usageAccessDismissed by remember { mutableStateOf(prefs.getBoolean("usage_access_dismissed", false)) }
-        var showFreeSpace by remember { mutableStateOf(prefs.getBoolean("show_free_space", true)) }
-        var showSystemApps by remember { mutableStateOf(prefs.getBoolean("show_system_apps", true)) }
-        var showHiddenFiles by remember { mutableStateOf(prefs.getBoolean("show_hidden_files", false)) }
-        var showSystemOS by remember { mutableStateOf(prefs.getBoolean("show_system_os", false)) }
+        val mainAppViewModel = remember {
+            MainAppViewModel(
+                hasStoragePermission = FileUtils.checkStoragePermission(context),
+                hasUsageAccess = FileUtils.checkUsageAccessPermission(context),
+                usageAccessDismissed = prefs.getBoolean("usage_access_dismissed", false),
+                showFreeSpace = prefs.getBoolean("show_free_space", true),
+                showSystemApps = prefs.getBoolean("show_system_apps", true),
+                showHiddenFiles = prefs.getBoolean("show_hidden_files", false),
+                showSystemOS = prefs.getBoolean("show_system_os", false)
+            )
+        }
+        val uiState by mainAppViewModel.uiState.collectAsState()
 
         val treeState by viewModel.uiState.collectAsState()
         val rawScannedNode = treeState.rawScannedNode
@@ -271,7 +284,7 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
         val rootNode = treeState.rootNode
         val extensionStats = treeState.extensionStats
         val topFiles = treeState.topFiles
-        val isLoading = treeState.isLoading || (hasStoragePermission && rootNode == null)
+        val isLoading = treeState.isLoading || (uiState.hasStoragePermission && rootNode == null)
         val isBackgroundScanning = treeState.isBackgroundScanning
         val scanProgress = remember(treeState.scanPhase, treeState.scanDetail, treeState.scanProgress) {
             ScanProgress().apply {
@@ -281,35 +294,27 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
             }
         }
 
-        var selectedNode by remember { mutableStateOf<CompactNode?>(null) }
-        var selectedPath by remember { mutableStateOf<String?>(null) }
+        // Transient View geometry only; semantic selection state lives in MainAppViewModel.
         var lastTouchDown by remember { mutableStateOf(Offset.Zero) }
         var selectedTouchOffset by remember { mutableStateOf<Offset?>(null) }
         var selectedTileRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         var selectedTileColor by remember { mutableStateOf<Color?>(null) }
-        var activePopupNode by remember { mutableStateOf<CompactNode?>(null) }
-        var activePopupPath by remember { mutableStateOf<String?>(null) }
         var activePopupOffset by remember { mutableStateOf(Offset.Zero) }
         var activePopupTileRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         var activePopupTileColor by remember { mutableStateOf<Color?>(null) }
 
-        LaunchedEffect(selectedNode, selectedPath, selectedTouchOffset, selectedTileRect, selectedTileColor) {
-            if (selectedNode != null && selectedPath != null) {
-                activePopupNode = selectedNode
-                activePopupPath = selectedPath
+        LaunchedEffect(uiState.selectedNode, uiState.selectedPath, selectedTouchOffset, selectedTileRect, selectedTileColor) {
+            if (uiState.selectedNode != null && uiState.selectedPath != null) {
+                mainAppViewModel.onActivePopupChanged(uiState.selectedNode, uiState.selectedPath)
                 activePopupOffset = selectedTouchOffset ?: lastTouchDown
                 activePopupTileRect = selectedTileRect
                 activePopupTileColor = selectedTileColor
             }
         }
-        val isPopupVisible = selectedNode != null && selectedPath != null
-        var explorerTargetPath by remember { mutableStateOf<String?>(null) }
-        var nodeToDelete by remember { mutableStateOf<Pair<CompactNode, String>?>(null) }
+        val isPopupVisible = uiState.selectedNode != null && uiState.selectedPath != null
 
-        var stagedQueue by remember { mutableStateOf<Map<CompactNode, StagedQueueItem>>(emptyMap()) }
-        var showCleanupReviewSheet by remember { mutableStateOf(false) }
-        val stagedReclaimableBytes = remember(stagedQueue) {
-            CleanupQueueHelper.calculateTotalReclaimable(stagedQueue.values)
+        val stagedReclaimableBytes = remember(uiState.stagedQueue) {
+            CleanupQueueHelper.calculateTotalReclaimable(uiState.stagedQueue.values)
         }
         var pillBackProgress by remember { mutableStateOf(0f) }
         var isPillBackActive by remember { mutableStateOf(false) }
@@ -320,48 +325,34 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
 
         var isTreemapZoomed by remember { mutableStateOf(false) }
         var resetZoomKey by remember { mutableStateOf(0) }
-        var discoverSearchQuery by remember { mutableStateOf("") }
-        var isDiscoverSearchActive by remember { mutableStateOf(false) }
-        var selectedTreeNodes by remember { mutableStateOf(mapOf<CompactNode, String>()) }
-        var showTreeDeleteDialog by remember { mutableStateOf(false) }
-        var showVolumeSelectionDialog by remember { mutableStateOf(false) }
-        var detectedVolumes by remember { mutableStateOf(emptyList<StorageVolumeInfo>()) }
-        var selectedVolumeIds by remember { mutableStateOf(setOf<String>()) }
-        var activeVolume by remember { mutableStateOf<StorageVolumeInfo?>(null) }
-        var scanAppsSelected by remember { mutableStateOf(true) }
 
-        var isTreeDeleting by remember { mutableStateOf(false) }
-        var treeDeleteCurrentCount by remember { mutableStateOf(0) }
-        var treeDeleteTotalCount by remember { mutableStateOf(0) }
-        var treeDeleteCurrentFileName by remember { mutableStateOf("") }
-        var treeDeleteIsTrash by remember { mutableStateOf(true) }
+        fun clearTreeSelection() = mainAppViewModel.clearTreeSelection()
 
-        fun clearTreeSelection() {
-            selectedTreeNodes = emptyMap()
-        }
+        fun clearDiscoverSelection() = mainAppViewModel.clearDiscoverSelection()
 
-        fun clearDiscoverSelection() {
-            isDiscoverSearchActive = false
-            discoverSearchQuery = ""
-        }
+        fun setTreeSelection(next: Map<CompactNode, String>) = mainAppViewModel.setTreeSelection(next)
 
-        // Both selection modes live in this composition, so acquiring one must release the other
-        // or a tab switch leaves two live selection UIs and nothing clears the stale one.
-        fun setTreeSelection(next: Map<CompactNode, String>) {
-            if (next.isNotEmpty()) clearDiscoverSelection()
-            selectedTreeNodes = next
-        }
+        fun setDiscoverSelection(query: String, active: Boolean) = mainAppViewModel.setDiscoverSelection(query, active)
 
-        fun setDiscoverSelection(query: String, active: Boolean) {
-            if (query.isNotBlank() || active) clearTreeSelection()
-            discoverSearchQuery = query
-            isDiscoverSearchActive = active
-        }
+        fun storageSettings(fs: Boolean? = null, sa: Boolean? = null, hf: Boolean? = null, so: Boolean? = null) =
+            StorageFilterSettings(
+                showFreeSpace = fs ?: prefs.getBoolean("show_free_space", true),
+                showSystemApps = sa ?: prefs.getBoolean("show_system_apps", true),
+                showHiddenFiles = hf ?: prefs.getBoolean("show_hidden_files", false),
+                showSystemOS = so ?: prefs.getBoolean("show_system_os", false)
+            )
 
         fun updateFilter(fs: Boolean? = null, sa: Boolean? = null, hf: Boolean? = null, so: Boolean? = null) {
-            viewModel.updateFilter(prefs, fs, sa, hf, so)
+            val settings = storageSettings(fs, sa, hf, so)
+            viewModel.updateFilter(settings)
+            mainAppViewModel.setFilterFlags(
+                showFreeSpace = settings.showFreeSpace,
+                showSystemApps = settings.showSystemApps,
+                showHiddenFiles = settings.showHiddenFiles,
+                showSystemOS = settings.showSystemOS
+            )
             clearTreeSelection()
-            if (selectedNode != null) { selectedNode = null; selectedPath = null }
+            if (uiState.selectedNode != null) mainAppViewModel.onNodeSelected(null, null)
         }
 
         DisposableEffect(prefs) {
@@ -383,40 +374,47 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                     FileUtils.AppUninstallerQueue.onResume(context)
-                    hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
-                    if (hasStoragePermission) detectedVolumes = FileUtils.getAvailableStorageVolumes(context)
+                    mainAppViewModel.setPermissions(hasUsageAccess = FileUtils.checkUsageAccessPermission(context))
+                    if (uiState.hasStoragePermission) {
+                        mainAppViewModel.setVolumes(FileUtils.getAvailableStorageVolumes(context))
+                    }
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
-        fun performScan(volumesToScan: List<StorageVolumeInfo>, scanApps: Boolean = scanAppsSelected) {
+        fun performScan(volumesToScan: List<StorageVolumeInfo>, scanApps: Boolean = uiState.scanAppsSelected) {
             val effectiveScanApps = scanApps && FileUtils.checkUsageAccessPermission(context)
-            if (!hasStoragePermission || (volumesToScan.isEmpty() && !effectiveScanApps)) return
-            activeVolume = if (volumesToScan.size == 1) volumesToScan.first() else null
+            if (!uiState.hasStoragePermission || (volumesToScan.isEmpty() && !effectiveScanApps)) return
+            mainAppViewModel.setActiveVolume(if (volumesToScan.size == 1) volumesToScan.first() else null)
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            viewModel.performScan(context, volumesToScan, scanApps, prefs)
+            viewModel.performScan(volumesToScan, scanApps, storageSettings())
         }
 
         fun removeDeletedNodes(deletedNodes: Set<CompactNode>) {
-            viewModel.removeDeletedNodes(context, deletedNodes, prefs)
-            if (selectedNode != null && deletedNodes.contains(selectedNode)) { selectedNode = null; selectedPath = null }
+            viewModel.removeDeletedNodes(deletedNodes, storageSettings())
+            if (uiState.selectedNode != null && deletedNodes.contains(uiState.selectedNode)) {
+                mainAppViewModel.onNodeSelected(null, null)
+            }
         }
 
         fun requestScan() {
-            if (!hasStoragePermission) return
+            if (!mainAppViewModel.uiState.value.hasStoragePermission) return
             val vols = FileUtils.getAvailableStorageVolumes(context)
-            detectedVolumes = vols; selectedVolumeIds = vols.map { it.id }.toSet(); showVolumeSelectionDialog = true
+            mainAppViewModel.setVolumes(vols)
+            mainAppViewModel.setSelectedVolumeIds(vols.map { it.id }.toSet())
+            mainAppViewModel.showVolumeSelectionDialog()
         }
 
         val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            hasStoragePermission = granted; if (granted) requestScan()
+            mainAppViewModel.setPermissions(hasStoragePermission = granted); if (granted) requestScan()
         }
         val manageStorageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            hasStoragePermission = FileUtils.checkStoragePermission(context)
-            hasUsageAccess = FileUtils.checkUsageAccessPermission(context)
-            if (hasStoragePermission) requestScan()
+            val storage = FileUtils.checkStoragePermission(context)
+            val usage = FileUtils.checkUsageAccessPermission(context)
+            mainAppViewModel.setPermissions(hasStoragePermission = storage, hasUsageAccess = usage)
+            if (storage) requestScan()
         }
         val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -426,19 +424,19 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
             }
         }
 
-        LaunchedEffect(hasStoragePermission, hasUsageAccess, usageAccessDismissed) {
-            if (hasStoragePermission && (hasUsageAccess || usageAccessDismissed) && rootNode == null) {
+        LaunchedEffect(uiState.hasStoragePermission, uiState.hasUsageAccess, uiState.usageAccessDismissed) {
+            if (uiState.hasStoragePermission && (uiState.hasUsageAccess || uiState.usageAccessDismissed) && rootNode == null) {
                 val vols = FileUtils.getAvailableStorageVolumes(context)
-                viewModel.restoreOrScan(context, vols, scanAppsSelected, prefs)
+                viewModel.restoreOrScan(vols, uiState.scanAppsSelected, storageSettings())
             }
         }
 
-        val treeSelectionActive = selectedTreeNodes.isNotEmpty()
-        val discoverSelectionActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty()
+        val treeSelectionActive = uiState.selectedTreeNodes.isNotEmpty()
+        val discoverSelectionActive = uiState.isDiscoverSearchActive || uiState.discoverSearchQuery.isNotEmpty()
         // One derived target for back handlers: the branch order makes them mutually
         // exclusive by construction instead of relying on overlapping guards.
         val backTarget = when {
-            selectedNode != null -> BackTarget.NODE_POPUP
+            uiState.selectedNode != null -> BackTarget.NODE_POPUP
             treeSelectionActive && currentRoute == AppDestinations.TREE -> BackTarget.TREE_SELECTION
             discoverSelectionActive && currentRoute == AppDestinations.DISCOVER -> BackTarget.DISCOVER_SEARCH
             else -> BackTarget.NONE
@@ -447,8 +445,7 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
         PredictiveBackHandler(enabled = backTarget == BackTarget.NODE_POPUP) { progress ->
             try {
                 progress.collect {}
-                selectedNode = null
-                selectedPath = null
+                mainAppViewModel.onNodeSelected(null, null)
                 selectedTouchOffset = null
                 selectedTileRect = null
                 selectedTileColor = null
@@ -474,10 +471,10 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                 }
         ) {
             when {
-                !hasStoragePermission || (!hasUsageAccess && !usageAccessDismissed) -> {
+                !uiState.hasStoragePermission || (!uiState.hasUsageAccess && !uiState.usageAccessDismissed) -> {
                     PermissionScreen(
-                        hasStoragePermission = hasStoragePermission,
-                        hasUsageAccess = hasUsageAccess,
+                        hasStoragePermission = uiState.hasStoragePermission,
+                        hasUsageAccess = uiState.hasUsageAccess,
                         onGrantStorage = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 manageStorageLauncher.launch(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
@@ -496,10 +493,10 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                         },
                         onContinue = { skipUsageAccess ->
                             if (skipUsageAccess) {
-                                usageAccessDismissed = true
+                                mainAppViewModel.setUsageAccessDismissed(true)
                                 prefs.edit().putBoolean("usage_access_dismissed", true).apply()
                             }
-                            if (hasStoragePermission) {
+                            if (uiState.hasStoragePermission) {
                                 requestScan()
                             }
                         }
@@ -514,8 +511,7 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                       currentRoute == AppDestinations.SETTINGS
 
                     LaunchedEffect(currentRoute) {
-                        selectedNode = null
-                        selectedPath = null
+                        mainAppViewModel.onNodeSelected(null, null)
                         selectedTouchOffset = null
                         clearTreeSelection()
                         clearDiscoverSelection()
@@ -524,21 +520,21 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                     val homeContent: @Composable () -> Unit = {
                         TreemapScreen(
                             rootNode = rootNode!!,
-                            selectedNode = selectedNode,
-                            selectedPath = selectedPath,
-                            selectedTreeNodes = selectedTreeNodes,
+                            selectedNode = uiState.selectedNode,
+                            selectedPath = uiState.selectedPath,
+                            selectedTreeNodes = uiState.selectedTreeNodes,
                             resetZoomKey = resetZoomKey,
                             isDark = isDark,
                             pureBlack = pureBlack,
                             isLandscape = isLandscape,
-                            detectedVolumes = detectedVolumes,
-                            activeVolume = activeVolume,
-                            showSystemOS = showSystemOS,
-                            showSystemApps = showSystemApps,
-                            showFreeSpace = showFreeSpace,
-                            showHiddenFiles = showHiddenFiles,
+                            detectedVolumes = uiState.detectedVolumes,
+                            activeVolume = uiState.activeVolume,
+                            showSystemOS = uiState.showSystemOS,
+                            showSystemApps = uiState.showSystemApps,
+                            showFreeSpace = uiState.showFreeSpace,
+                            showHiddenFiles = uiState.showHiddenFiles,
                             onZoomChanged = { isTreemapZoomed = it },
-                            onNodeSelected = { node, path, touchOffset -> selectedNode = node; selectedPath = path; selectedTouchOffset = touchOffset ?: lastTouchDown },
+                            onNodeSelected = { node, path, touchOffset -> mainAppViewModel.onNodeSelected(node, path); selectedTouchOffset = touchOffset ?: lastTouchDown },
                             onNavigate = {
                                 if (it == AppDestinations.TREE) {
                                     resetZoomKey++
@@ -549,15 +545,15 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             },
                             onRescanClick = { requestScan() },
                             onSettingsClick = { navController.navigate(AppDestinations.SETTINGS) },
-                            onSelectVolume = { vol -> activeVolume = vol; selectedVolumeIds = setOf(vol.id); performScan(listOf(vol), scanApps = vol.isPrimary) },
-                            onOpenCustomDriveDialog = { showVolumeSelectionDialog = true },
+                            onSelectVolume = { vol -> mainAppViewModel.setActiveVolume(vol); mainAppViewModel.setSelectedVolumeIds(setOf(vol.id)); performScan(listOf(vol), scanApps = vol.isPrimary) },
+                            onOpenCustomDriveDialog = { mainAppViewModel.showVolumeSelectionDialog() },
                             onToggleShowSystemOS = { updateFilter(so = it); prefs.edit().putBoolean("show_system_os", it).apply() },
                             onToggleShowSystemApps = { updateFilter(sa = it); prefs.edit().putBoolean("show_system_apps", it).apply() },
                             onToggleShowFreeSpace = { updateFilter(fs = it); prefs.edit().putBoolean("show_free_space", it).apply() },
                             onToggleShowHiddenFiles = { updateFilter(hf = it); prefs.edit().putBoolean("show_hidden_files", it).apply() },
                             onClearSelection = { clearTreeSelection() },
-                            onRequestDeleteSelected = { showTreeDeleteDialog = true },
-                            onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null }
+                            onRequestDeleteSelected = { mainAppViewModel.showTreeDeleteDialog() },
+                            onDismissPopup = { mainAppViewModel.onNodeSelected(null, null); selectedTouchOffset = null }
                         )
                     }
 
@@ -575,15 +571,14 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                     rootNode = (rawScannedNode ?: rootNode)!!,
                                     onNodeClick = { child, childPath ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        selectedNode = child
-                                        selectedPath = childPath
+                                        mainAppViewModel.onNodeSelected(child, childPath)
                                         selectedTouchOffset = lastTouchDown
                                     },
                                     onNodesDeleted = { removeDeletedNodes(it) },
-                                    onRefresh = { performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
+                                    onRefresh = { performScan(if (uiState.detectedVolumes.isNotEmpty()) uiState.detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
                                     onNavigateTo = { navController.navigate(it) },
-                                    onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null },
-                                    targetPath = explorerTargetPath,
+                                    onDismissPopup = { mainAppViewModel.onNodeSelected(null, null); selectedTouchOffset = null },
+                                    targetPath = uiState.explorerTargetPath,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -605,12 +600,11 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                     stats = extensionStats,
                                     totalDeviceSize = deviceTotalBytes,
                                     onNodeClick = { node, path ->
-                                        selectedNode = node
-                                        selectedPath = path
+                                        mainAppViewModel.onNodeSelected(node, path)
                                         selectedTouchOffset = lastTouchDown
                                     },
                                     onNavigateTo = { navController.navigate(it) },
-                                    onDismissPopup = { selectedNode = null; selectedPath = null; selectedTouchOffset = null },
+                                    onDismissPopup = { mainAppViewModel.onNodeSelected(null, null); selectedTouchOffset = null },
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -624,17 +618,17 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBars,
                             topBar = {
                                 DiscoverSearchTopAppBar(
-                                    query = discoverSearchQuery,
-                                    isSearchActive = isDiscoverSearchActive,
+                                    query = uiState.discoverSearchQuery,
+                                    isSearchActive = uiState.isDiscoverSearchActive,
                                     isLandscape = isLandscape,
                                     haptic = haptic,
                                     onQueryChange = {
-                                        setDiscoverSelection(it, if (it.isNotBlank()) true else isDiscoverSearchActive)
+                                        setDiscoverSelection(it, if (it.isNotBlank()) true else uiState.isDiscoverSearchActive)
                                         if (it.isNotBlank()) {
                                             FavoritesManager.addRecentSearch(context, it)
                                         }
                                     },
-                                    onSearchActiveChange = { setDiscoverSelection(discoverSearchQuery, it) },
+                                    onSearchActiveChange = { setDiscoverSelection(uiState.discoverSearchQuery, it) },
                                     onBack = {
                                         if (triggerBack != null) triggerBack() else navController.popBackStack()
                                     }
@@ -645,16 +639,16 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                 DiscoverView(
                                     rootNode = (rawScannedNode ?: rootNode)!!,
                                     topFiles = topFiles,
-                                    searchQuery = discoverSearchQuery,
-                                    isSearchActive = isDiscoverSearchActive || discoverSearchQuery.isNotEmpty(),
-                                    onSearchQueryChange = { setDiscoverSelection(it, isDiscoverSearchActive) },
+                                    searchQuery = uiState.discoverSearchQuery,
+                                    isSearchActive = uiState.isDiscoverSearchActive || uiState.discoverSearchQuery.isNotEmpty(),
+                                    onSearchQueryChange = { setDiscoverSelection(it, uiState.isDiscoverSearchActive) },
                                     onNodeClick = { node, path ->
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         val realFile = FileUtils.resolveActualFile(path, context)
                                         if (realFile != null && realFile.exists() && !node.isDirectory) FileUtils.openFile(context, realFile)
                                     },
                                     onNodesDeleted = { removeDeletedNodes(it) },
-                                    onRefresh = { performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
+                                    onRefresh = { performScan(if (uiState.detectedVolumes.isNotEmpty()) uiState.detectedVolumes else FileUtils.getAvailableStorageVolumes(context)) },
                                     onNavigateTo = { navController.navigate(it) },
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -718,7 +712,7 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                 PredictiveSlideBackContainer(
                                     onBackPressed = { navController.popBackStack() },
                                     backgroundContent = homeContent,
-                                    enabled = !isDiscoverSearchActive && discoverSearchQuery.isEmpty()
+                                    enabled = !uiState.isDiscoverSearchActive && uiState.discoverSearchQuery.isEmpty()
                                 ) { triggerBack ->
                                     discoverContent(triggerBack)
                                 }
@@ -815,9 +809,9 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                     Box(modifier = Modifier.fillMaxSize()) {
                         TreemapCanvas(
                             rootNode = rootNode!!,
-                            rootPath = activeVolume?.path?.absolutePath ?: rootNode!!.name,
-                            selectedNode = selectedNode,
-                            selectedNodes = selectedTreeNodes.keys,
+                            rootPath = uiState.activeVolume?.path?.absolutePath ?: rootNode!!.name,
+                            selectedNode = uiState.selectedNode,
+                            selectedNodes = uiState.selectedTreeNodes.keys,
                             resetKey = resetZoomKey,
                             isDark = isDark,
                             pureBlack = pureBlack,
@@ -825,25 +819,23 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             onZoomChanged = { isTreemapZoomed = it },
                             isLandscape = isLandscape,
                             onNodeSelected = { node, path, touchOffset, tileRect, tileColor ->
-                                selectedNode = node
-                                selectedPath = path
+                                mainAppViewModel.onNodeSelected(node, path)
                                 selectedTouchOffset = touchOffset ?: lastTouchDown
                                 selectedTileRect = tileRect
                                 selectedTileColor = tileColor
                             },
                             onDismissPopup = {
-                                selectedNode = null
-                                selectedPath = null
+                                mainAppViewModel.onNodeSelected(null, null)
                                 selectedTouchOffset = null
                                 selectedTileRect = null
                                 selectedTileColor = null
                             },
                             onToggleSelectNode = { node, path ->
                                 setTreeSelection(
-                                    if (selectedTreeNodes.containsKey(node)) {
-                                        selectedTreeNodes - node
+                                    if (uiState.selectedTreeNodes.containsKey(node)) {
+                                        uiState.selectedTreeNodes - node
                                     } else {
-                                        selectedTreeNodes + (node to path)
+                                        uiState.selectedTreeNodes + (node to path)
                                     }
                                 )
                             },
@@ -870,13 +862,13 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                             }
                                         }
                                     },
-                                    selectedTreeNodes = selectedTreeNodes,
-                                    stagedQueueCount = stagedQueue.size,
+                                    selectedTreeNodes = uiState.selectedTreeNodes,
+                                    stagedQueueCount = uiState.stagedQueue.size,
                                     stagedReclaimableBytes = stagedReclaimableBytes,
-                                    onOpenReviewSheet = { showCleanupReviewSheet = true },
-                                    onClearStaged = { stagedQueue = emptyMap() },
+                                    onOpenReviewSheet = { mainAppViewModel.showCleanupReviewSheet() },
+                                    onClearStaged = { mainAppViewModel.clearStaged() },
                                     onClearSelection = { clearTreeSelection() },
-                                    onDeleteSelected = { showTreeDeleteDialog = true }
+                                    onDeleteSelected = { mainAppViewModel.showTreeDeleteDialog() }
                                 )
 
                                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -898,13 +890,13 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                                             isLandscape = isLandscape,
                                             currentDestination = currentRoute,
                                             onBack = { navController.popBackStack() },
-                                            stagedQueueCount = stagedQueue.size,
+                                            stagedQueueCount = uiState.stagedQueue.size,
                                             stagedReclaimableBytes = stagedReclaimableBytes,
-                                            onOpenReviewSheet = { showCleanupReviewSheet = true },
-                                            onClearStaged = { stagedQueue = emptyMap() },
-                                            selectedTreeNodes = selectedTreeNodes,
+                                            onOpenReviewSheet = { mainAppViewModel.showCleanupReviewSheet() },
+                                            onClearStaged = { mainAppViewModel.clearStaged() },
+                                            selectedTreeNodes = uiState.selectedTreeNodes,
                                             onClearSelection = { clearTreeSelection() },
-                                            onDeleteSelected = { showTreeDeleteDialog = true },
+                                            onDeleteSelected = { mainAppViewModel.showTreeDeleteDialog() },
                                             predictiveBackProgress = pillBackProgress,
                                             isPredictiveBackActive = isPillBackActive,
                                             predictiveBackTargetDestination = AppDestinations.TREE,
@@ -947,104 +939,98 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                 }
             }
 
-            if (showCleanupReviewSheet) {
+            if (uiState.showCleanupReviewSheet) {
                 CleanupQueueReviewSheet(
-                    stagedItems = stagedQueue.values.toList(),
-                    onUnstageItem = { item -> stagedQueue = stagedQueue - item.node },
-                    onClearAll = { stagedQueue = emptyMap() },
+                    stagedItems = uiState.stagedQueue.values.toList(),
+                    onUnstageItem = { item -> mainAppViewModel.onUnstageStaged(item.node) },
+                    onClearAll = { mainAppViewModel.clearStaged() },
                     onCommitCleanup = { _ ->
-                        showCleanupReviewSheet = false
-                        val nodesToDelete = stagedQueue.keys.toSet()
+                        mainAppViewModel.dismissCleanupReviewSheet()
+                        val nodesToDelete = uiState.stagedQueue.keys.toSet()
                         removeDeletedNodes(nodesToDelete)
-                        stagedQueue = emptyMap()
+                        mainAppViewModel.clearStaged()
                     },
-                    onDismiss = { showCleanupReviewSheet = false }
+                    onDismiss = { mainAppViewModel.dismissCleanupReviewSheet() }
                 )
             }
 
 
 
-            if (showTreeDeleteDialog && selectedTreeNodes.isNotEmpty()) {
+            if (uiState.showTreeDeleteDialog && uiState.selectedTreeNodes.isNotEmpty()) {
                 TreeDeleteDialog(
-                    selectedTreeNodes = selectedTreeNodes,
+                    selectedTreeNodes = uiState.selectedTreeNodes,
                     context = context,
                     onConfirmDelete = {
-                        showTreeDeleteDialog = false
-                        val items = selectedTreeNodes.toList()
+                        mainAppViewModel.dismissTreeDeleteDialog()
+                        val items = uiState.selectedTreeNodes.toList()
                         scope.launch {
-                            isTreeDeleting = true
-                            com.kd.anddirstat.util.FileMaintenanceEngine.deleteTreeNodes(
+                            mainAppViewModel.setTreeDeleting(true)
+                            val result = FileMaintenanceEngine.deleteTreeNodes(
                                 context = context,
                                 items = items,
                                 onProgress = { cur, tot, name, isTrash ->
-                                    treeDeleteCurrentCount = cur
-                                    treeDeleteTotalCount = tot
-                                    treeDeleteCurrentFileName = name
-                                    treeDeleteIsTrash = isTrash
+                                    mainAppViewModel.setDeleteProgress(cur, tot, name, isTrash)
                                 }
                             )
-                            isTreeDeleting = false
+                            mainAppViewModel.setTreeDeleting(false)
                             clearTreeSelection()
-                            performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context))
+                            if (result.deletedCount > 0) {
+                                performScan(if (uiState.detectedVolumes.isNotEmpty()) uiState.detectedVolumes else FileUtils.getAvailableStorageVolumes(context))
+                            } else {
+                                result.blockReasons.firstOrNull()?.let { reason ->
+                                    mainAppViewModel.setBlockReason(reason)
+                                    AppNotifier.notify("Deletion blocked: $reason")
+                                }
+                            }
                         }
                     },
-                    onDismiss = { showTreeDeleteDialog = false }
+                    onDismiss = { mainAppViewModel.dismissTreeDeleteDialog() }
                 )
             }
 
             DeletionProgressDialog(
-                visible = isTreeDeleting,
-                currentCount = treeDeleteCurrentCount,
-                totalCount = treeDeleteTotalCount,
-                currentFileName = treeDeleteCurrentFileName,
-                isTrash = treeDeleteIsTrash
+                visible = uiState.isTreeDeleting,
+                currentCount = uiState.treeDeleteCurrentCount,
+                totalCount = uiState.treeDeleteTotalCount,
+                currentFileName = uiState.treeDeleteCurrentFileName,
+                isTrash = uiState.treeDeleteIsTrash
             )
 
-            if (showVolumeSelectionDialog && detectedVolumes.isNotEmpty()) {
+            if (uiState.showVolumeSelectionDialog && uiState.detectedVolumes.isNotEmpty()) {
                 VolumeSelectionBottomSheet(
-                    detectedVolumes = detectedVolumes,
-                    selectedVolumeIds = selectedVolumeIds,
-                    onToggleVolume = { volId ->
-                        selectedVolumeIds = if (selectedVolumeIds.contains(volId)) {
-                            if (selectedVolumeIds.size > 1 || scanAppsSelected) selectedVolumeIds - volId else selectedVolumeIds
-                        } else {
-                            selectedVolumeIds + volId
-                        }
-                    },
-                    scanAppsSelected = scanAppsSelected,
-                    onToggleScanApps = { scanAppsSelected = it },
+                    detectedVolumes = uiState.detectedVolumes,
+                    selectedVolumeIds = uiState.selectedVolumeIds,
+                    onToggleVolume = { volId -> mainAppViewModel.onToggleVolume(volId) },
+                    scanAppsSelected = uiState.scanAppsSelected,
+                    onToggleScanApps = { mainAppViewModel.setScanAppsSelected(it) },
                     onConfirm = {
-                        showVolumeSelectionDialog = false
-                        val toScan = detectedVolumes.filter { selectedVolumeIds.contains(it.id) }
-                        performScan(toScan, scanApps = scanAppsSelected)
+                        mainAppViewModel.dismissVolumeSelectionDialog()
+                        val toScan = uiState.detectedVolumes.filter { uiState.selectedVolumeIds.contains(it.id) }
+                        performScan(toScan, scanApps = uiState.scanAppsSelected)
                     },
-                    onDismiss = { showVolumeSelectionDialog = false }
+                    onDismiss = { mainAppViewModel.dismissVolumeSelectionDialog() }
                 )
             }
 
-            if (activePopupNode != null && activePopupPath != null) {
+            if (uiState.activePopupNode != null && uiState.activePopupPath != null) {
                 TreemapTilePopup(
-                    node = activePopupNode!!,
-                    path = activePopupPath!!,
+                    node = uiState.activePopupNode!!,
+                    path = uiState.activePopupPath!!,
                     tileRect = activePopupTileRect,
                     tileColor = activePopupTileColor,
                     touchOffset = activePopupOffset,
                     visible = isPopupVisible,
                     onDismiss = {
-                        selectedNode = null
-                        selectedPath = null
+                        mainAppViewModel.dismissPopup()
                         selectedTouchOffset = null
                         selectedTileRect = null
                         selectedTileColor = null
-                        activePopupNode = null
-                        activePopupPath = null
                         activePopupTileRect = null
                         activePopupTileColor = null
                     },
-                    stagedQueue = stagedQueue,
+                    stagedQueue = uiState.stagedQueue,
                     onToggleStaged = { n, p, size, isApp, pkg ->
-                        stagedQueue = CleanupQueueHelper.toggleItem(
-                            stagedQueue,
+                        mainAppViewModel.onToggleStaged(
                             StagedQueueItem(
                                 node = n,
                                 path = p,
@@ -1054,15 +1040,15 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                             )
                         )
                     },
-                    isSelected = selectedTreeNodes.containsKey(activePopupNode),
+                    isSelected = uiState.selectedTreeNodes.containsKey(uiState.activePopupNode),
                     onToggleSelect = {
-                        val n = activePopupNode ?: return@TreemapTilePopup
-                        val p = activePopupPath ?: return@TreemapTilePopup
+                        val n = uiState.activePopupNode ?: return@TreemapTilePopup
+                        val p = uiState.activePopupPath ?: return@TreemapTilePopup
                         setTreeSelection(
-                            if (selectedTreeNodes.containsKey(n)) {
-                                selectedTreeNodes - n
+                            if (uiState.selectedTreeNodes.containsKey(n)) {
+                                uiState.selectedTreeNodes - n
                             } else {
-                                selectedTreeNodes + (n to p)
+                                uiState.selectedTreeNodes + (n to p)
                             }
                         )
                     },
@@ -1081,46 +1067,45 @@ fun MainApp(viewModel: StorageTreeViewModel = androidx.lifecycle.viewmodel.compo
                         } catch (_: Exception) {}
                     },
                     onUninstallApp = { pkg ->
-                        FileUtils.uninstallApp(context, pkg)
+                        scope.launch { FileMaintenanceEngine.uninstallAppGuarded(context, pkg) }
                     },
                     onNavigateToExplorer = { p ->
-                        explorerTargetPath = p
+                        mainAppViewModel.setExplorerTargetPath(p)
                         navController.navigate(AppDestinations.EXPLORER)
                     },
                     onRequestDelete = {
-                        val n = activePopupNode ?: return@TreemapTilePopup
-                        val p = activePopupPath ?: return@TreemapTilePopup
-                        nodeToDelete = n to p
+                        val n = uiState.activePopupNode ?: return@TreemapTilePopup
+                        val p = uiState.activePopupPath ?: return@TreemapTilePopup
+                        mainAppViewModel.requestNodeDelete(n, p)
                     }
                 )
             }
 
-            if (nodeToDelete != null) {
-                val (delNode, delPath) = nodeToDelete!!
+            if (uiState.nodeToDelete != null) {
+                val (delNode, delPath) = uiState.nodeToDelete!!
                 AlertDialog(
-                    onDismissRequest = { nodeToDelete = null },
+                    onDismissRequest = { mainAppViewModel.dismissNodeDelete() },
                     title = { Text("Delete file?") },
                     text = { Text("Are you sure you want to delete ${delNode.name} (${FileUtils.formatFileSize(delNode.size)})?") },
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                val file = FileUtils.resolveActualFile(delPath, context) ?: File(delPath)
-                                if (file.exists()) {
-                                    val fLen = file.length()
-                                    if (FileUtils.deleteOrTrashFile(file, context)) {
-                                        StorageTrendManager.recordFreedBytes(context, fLen)
+                                scope.launch {
+                                    val file = FileUtils.resolveActualFile(delPath, context) ?: File(delPath)
+                                    if (file.exists()) {
+                                        FileMaintenanceEngine.deleteFileGuarded(context, file)
                                     }
+                                    setTreeSelection(uiState.selectedTreeNodes - delNode)
+                                    mainAppViewModel.dismissNodeDelete()
+                                    performScan(if (uiState.detectedVolumes.isNotEmpty()) uiState.detectedVolumes else FileUtils.getAvailableStorageVolumes(context))
                                 }
-                                setTreeSelection(selectedTreeNodes - delNode)
-                                nodeToDelete = null
-                                performScan(if (detectedVolumes.isNotEmpty()) detectedVolumes else FileUtils.getAvailableStorageVolumes(context))
                             }
                         ) {
                             Text("Delete", color = MaterialTheme.colorScheme.error)
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = { nodeToDelete = null }) { Text("Cancel") }
+                        TextButton(onClick = { mainAppViewModel.dismissNodeDelete() }) { Text("Cancel") }
                     }
                 )
             }

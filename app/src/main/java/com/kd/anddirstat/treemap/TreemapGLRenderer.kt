@@ -132,6 +132,12 @@ class TreemapGLRenderer(private val context: Context) : GLSurfaceView.Renderer {
     private var pendingInstanceCount = 0
     private var activeInstanceCount = 0
 
+    // The EGL context is destroyed when the SurfaceView surface goes away (app backgrounded,
+    // device reboot). Keep the last packed instance data so onSurfaceCreated can re-upload it;
+    // otherwise the new context has an empty instance VBO and renders a transparent treemap.
+    private var lastInstanceBuffer: FloatBuffer? = null
+    private var lastInstanceCount = 0
+
     fun setScaleAndOffset(scale: Float, offset: Offset) {
         currentScale = scale
         currentOffsetX = offset.x
@@ -204,6 +210,8 @@ class TreemapGLRenderer(private val context: Context) : GLSurfaceView.Renderer {
         synchronized(lock) {
             pendingInstanceBuffer = floatBuffer
             pendingInstanceCount = count
+            lastInstanceBuffer = floatBuffer.duplicate().apply { position(0) }
+            lastInstanceCount = count
         }
     }
 
@@ -272,6 +280,16 @@ class TreemapGLRenderer(private val context: Context) : GLSurfaceView.Renderer {
 
         GLES30.glBindVertexArray(0)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+
+        // A new EGL context has an empty instance VBO. Re-queue the last packed buffer so the
+        // next draw call restores the treemap instead of leaving a transparent surface.
+        synchronized(lock) {
+            activeInstanceCount = 0
+            lastInstanceBuffer?.let {
+                pendingInstanceBuffer = it.duplicate().apply { position(0) }
+                pendingInstanceCount = lastInstanceCount
+            }
+        }
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {

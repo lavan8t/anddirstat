@@ -24,6 +24,7 @@ import java.util.Collections
 
 object AppIconCache {
     private const val CACHE_SIZE = 300
+    private const val ICON_SIZE_PX = 64
     private val memoryCache = LruCache<String, ImageBitmap>(CACHE_SIZE)
     private val colorCache = LruCache<String, Color>(CACHE_SIZE)
     private val failedPackages = Collections.synchronizedSet(HashSet<String>())
@@ -84,9 +85,9 @@ object AppIconCache {
             try {
                 val pm = context.packageManager
                 val drawable = pm.getApplicationIcon(packageName)
-                val bmp = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+                val bmp = Bitmap.createBitmap(ICON_SIZE_PX, ICON_SIZE_PX, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bmp)
-                drawable.setBounds(0, 0, 48, 48)
+                drawable.setBounds(0, 0, ICON_SIZE_PX, ICON_SIZE_PX)
                 drawable.draw(canvas)
                 val dominantColor = extractDominantColor(bmp)
                 colorCache.put(packageName, dominantColor)
@@ -109,9 +110,9 @@ object AppIconCache {
         return try {
             val pm = context.packageManager
             val drawable = pm.getApplicationIcon(packageName)
-            val bmp = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+            val bmp = Bitmap.createBitmap(ICON_SIZE_PX, ICON_SIZE_PX, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
-            drawable.setBounds(0, 0, 48, 48)
+            drawable.setBounds(0, 0, ICON_SIZE_PX, ICON_SIZE_PX)
             drawable.draw(canvas)
             val dominantColor = extractDominantColor(bmp)
             colorCache.put(packageName, dominantColor)

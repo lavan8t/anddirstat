@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,83 +39,62 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
-import com.kd.anddirstat.util.AppNotifier
-import com.kd.anddirstat.util.FavoritesManager
 import com.kd.anddirstat.util.FileUtils
-import java.io.File
-
-data class StarredItem(
-    val path: String,
-    val file: File,
-    val name: String,
-    val size: Long,
-    val isDirectory: Boolean,
-    val exists: Boolean
-)
+import com.kd.anddirstat.viewmodel.AndroidCleanerHaptics
+import com.kd.anddirstat.viewmodel.AndroidCleanerNotifier
+import com.kd.anddirstat.viewmodel.AndroidFileOpener
+import com.kd.anddirstat.viewmodel.AndroidStarredSource
+import com.kd.anddirstat.viewmodel.AndroidStarRepository
+import com.kd.anddirstat.viewmodel.CleanerViewModelFactory
+import com.kd.anddirstat.viewmodel.StarredFilesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun StarredFilesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val appContext = context.applicationContext
 
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
-    var isGridView by remember { mutableStateOf(false) }
-    var starredList by remember { mutableStateOf<List<StarredItem>>(emptyList()) }
-    val selectedPaths = remember { mutableStateListOf<String>() }
-
-    fun refreshList() {
-        val paths = FavoritesManager.getStarredPaths(context)
-        starredList = paths.map { path ->
-            val file = File(path)
-            StarredItem(
-                path = path,
-                file = file,
-                name = file.name.ifEmpty { path },
-                size = if (file.exists()) file.length() else 0L,
-                isDirectory = file.isDirectory,
-                exists = file.exists()
+    val vm: StarredFilesViewModel = viewModel(
+        factory = CleanerViewModelFactory {
+            StarredFilesViewModel(
+                source = AndroidStarredSource(appContext),
+                stars = AndroidStarRepository(appContext),
+                haptics = AndroidCleanerHaptics(appContext, haptic),
+                notifier = AndroidCleanerNotifier(),
+                opener = AndroidFileOpener(appContext)
             )
-        }.sortedBy { it.name.lowercase() }
-    }
-
-    LaunchedEffect(Unit) {
-        refreshList()
-    }
-
-    val filteredList = remember(starredList, searchQuery) {
-        if (searchQuery.isBlank()) starredList
-        else starredList.filter {
-            it.name.contains(searchQuery, ignoreCase = true) || it.path.contains(searchQuery, ignoreCase = true)
         }
-    }
+    )
+    val uiState by vm.uiState.collectAsState()
+
+    LaunchedEffect(Unit) { vm.onRefresh() }
+
+    val selectedPaths = uiState.selectedPaths
+    val filteredList = uiState.filteredItems
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    if (isSearchActive) {
+                    if (uiState.isSearchActive) {
                         OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
+                            value = uiState.searchQuery,
+                            onValueChange = { vm.onSearchQueryChanged(it) },
                             placeholder = { Text("Search starred files…") },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -135,9 +113,8 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (isSearchActive) {
-                            isSearchActive = false
-                            searchQuery = ""
+                        if (uiState.isSearchActive) {
+                            vm.onSearchActiveChanged(false)
                         } else {
                             onBack()
                         }
@@ -146,29 +123,20 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    if (!isSearchActive) {
-                        IconButton(onClick = { isSearchActive = true }) {
+                    if (!uiState.isSearchActive) {
+                        IconButton(onClick = { vm.onSearchActiveChanged(true) }) {
                             MaterialSymbol(name = "search", active = true)
                         }
-                        IconButton(onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            isGridView = !isGridView
-                        }) {
-                            MaterialSymbol(name = if (isGridView) "view_list" else "grid_view", active = true)
+                        IconButton(onClick = { vm.onToggleGrid() }) {
+                            MaterialSymbol(name = if (uiState.isGridView) "view_list" else "grid_view", active = true)
                         }
-                    } else if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
+                    } else if (uiState.searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { vm.onSearchQueryChanged("") }) {
                             MaterialSymbol(name = "close", active = true)
                         }
                     }
                     if (selectedPaths.isNotEmpty()) {
-                        IconButton(onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            selectedPaths.forEach { FavoritesManager.toggleStar(context, it) }
-                            selectedPaths.clear()
-                            refreshList()
-                            AppNotifier.notify("Unstarred selected items")
-                        }) {
+                        IconButton(onClick = { vm.onUnstarSelected() }) {
                             MaterialSymbol(name = "star_outline", active = true, tint = MaterialTheme.colorScheme.primary)
                         }
                     }
@@ -201,20 +169,12 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    selectedPaths.forEach { FavoritesManager.toggleStar(context, it) }
-                                    selectedPaths.clear()
-                                    refreshList()
-                                    AppNotifier.notify("Unstarred selected items")
-                                }
-                            ) {
+                            FilledTonalButton(onClick = { vm.onUnstarSelected() }) {
                                 MaterialSymbol(name = "star_outline", active = true, size = 18.dp)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Unstar")
                             }
-                            IconButton(onClick = { selectedPaths.clear() }) {
+                            IconButton(onClick = { vm.onClearSelection() }) {
                                 MaterialSymbol(name = "close", active = true)
                             }
                         }
@@ -224,14 +184,14 @@ fun StarredFilesScreen(onBack: () -> Unit) {
         },
         containerColor = MaterialTheme.colorScheme.surface
     ) { innerPadding ->
-        if (starredList.isEmpty()) {
+        if (uiState.items.isEmpty()) {
             CleanerEmptyState(
                 icon = "star",
                 title = "No Starred Files",
                 subtitle = "Star files in Explorer or Treemap to protect them and access them quickly.",
                 onButtonClick = onBack
             )
-        } else if (isGridView) {
+        } else if (uiState.isGridView) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(150.dp),
                 contentPadding = PaddingValues(
@@ -259,15 +219,12 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                             .combinedClickable(
                                 onClick = {
                                     if (selectedPaths.isNotEmpty()) {
-                                        if (isSelected) selectedPaths.remove(item.path) else selectedPaths.add(item.path)
+                                        vm.onToggleSelected(item.path)
                                     } else if (item.exists) {
-                                        FileUtils.openFile(context, item.file)
+                                        vm.onOpenItem(item.path)
                                     }
                                 },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (isSelected) selectedPaths.remove(item.path) else selectedPaths.add(item.path)
-                                }
+                                onLongClick = { vm.onToggleSelected(item.path) }
                             )
                     ) {
                         Column(
@@ -290,11 +247,7 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                                     )
                                 }
                                 IconButton(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        FavoritesManager.toggleStar(context, item.path)
-                                        refreshList()
-                                    },
+                                    onClick = { vm.onToggleStar(item.path) },
                                     modifier = Modifier.size(28.dp)
                                 ) {
                                     MaterialSymbol("star", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.primary)
@@ -342,15 +295,12 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                             .combinedClickable(
                                 onClick = {
                                     if (selectedPaths.isNotEmpty()) {
-                                        if (isSelected) selectedPaths.remove(item.path) else selectedPaths.add(item.path)
+                                        vm.onToggleSelected(item.path)
                                     } else if (item.exists) {
-                                        FileUtils.openFile(context, item.file)
+                                        vm.onOpenItem(item.path)
                                     }
                                 },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (isSelected) selectedPaths.remove(item.path) else selectedPaths.add(item.path)
-                                }
+                                onLongClick = { vm.onToggleSelected(item.path) }
                             )
                     ) {
                         Row(
@@ -384,13 +334,7 @@ fun StarredFilesScreen(onBack: () -> Unit) {
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    FavoritesManager.toggleStar(context, item.path)
-                                    refreshList()
-                                }
-                            ) {
+                            IconButton(onClick = { vm.onToggleStar(item.path) }) {
                                 MaterialSymbol("star", active = true, size = 20.dp, tint = MaterialTheme.colorScheme.primary)
                             }
                         }

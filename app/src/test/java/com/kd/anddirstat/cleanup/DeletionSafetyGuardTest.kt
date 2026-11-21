@@ -1,6 +1,7 @@
 package com.kd.anddirstat.cleanup
 
 import com.kd.anddirstat.model.CompactNode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,21 @@ class DeletionSafetyGuardTest {
         assertFalse(DeletionSafetyGuard.isDeletionAllowed(freeSpace, "[Free Space]"))
         assertFalse(DeletionSafetyGuard.isDeletionAllowed(sysOs, "[System & OS]"))
         assertFalse(DeletionSafetyGuard.isDeletionAllowed(apps, "Apps & System Packages"))
+    }
+
+    @Test
+    fun testBlockedResultCarriesReason() {
+        val blocked = DeletionSafetyGuard.checkSafety(null, "/", null)
+        assertTrue(blocked is SafetyResult.Blocked)
+        assertEquals("Root storage mounts cannot be deleted", (blocked as SafetyResult.Blocked).reason)
+
+        val virtual = DeletionSafetyGuard.checkSafety(
+            CompactNode(name = "[Free Space]", isDirectory = false),
+            "[Free Space]",
+            null
+        )
+        assertTrue(virtual is SafetyResult.Blocked)
+        assertEquals("System virtual items cannot be deleted", (virtual as SafetyResult.Blocked).reason)
     }
 
     @Test

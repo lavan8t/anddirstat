@@ -20,6 +20,8 @@ import android.widget.Toast
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.kd.anddirstat.cleanup.DeletionSafetyGuard
+import com.kd.anddirstat.cleanup.SafetyResult
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.FileCategory
 import java.io.File
@@ -202,6 +204,7 @@ object FileUtils {
 
     fun deleteOrTrashFile(file: File, context: Context? = null): Boolean {
         if (!file.exists()) return false
+        if (DeletionSafetyGuard.checkSafety(null, file.absolutePath, context) is SafetyResult.Blocked) return false
         val parent = file.parentFile ?: return file.deleteRecursively()
         val name = file.name
 
@@ -357,6 +360,7 @@ object FileUtils {
     fun uninstallApp(context: Context, packageName: String) {
         val cleanPkg = packageName.trim()
         if (cleanPkg.isEmpty()) return
+        if (DeletionSafetyGuard.checkSafety(null, cleanPkg, context) is SafetyResult.Blocked) return
 
         var launched = false
         // 1. Try standard ACTION_DELETE uninstaller intent

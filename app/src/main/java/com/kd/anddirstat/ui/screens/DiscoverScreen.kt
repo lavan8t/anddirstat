@@ -37,6 +37,7 @@ import com.kd.anddirstat.ui.screens.discover.discoverSearchResultsSection
 import com.kd.anddirstat.ui.screens.discover.discoverToolsSection
 import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FavoritesManager
+import com.kd.anddirstat.util.FileMaintenanceEngine
 import com.kd.anddirstat.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -90,8 +91,8 @@ private fun computeDiscoverSearchResults(
         StorageFilterHelper.searchTree(rootNode, searchQuery).filterNot { isSystemEntry(it) }
     } else if (selectedSearchFilter != "all") {
         when (selectedSearchFilter) {
-            "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB", context).filterNot { isSystemEntry(it) }
-            "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads", context).filterNot { isSystemEntry(it) }
+            "large" -> StorageFilterHelper.filterByPreset(rootNode, "> 1 GB").filterNot { isSystemEntry(it) }
+            "old" -> StorageFilterHelper.filterByPreset(rootNode, "Old Downloads").filterNot { isSystemEntry(it) }
             else -> {
                 val results = mutableListOf<TopFileEntry>()
                 fun collect(node: CompactNode, currentPath: String) {
@@ -348,17 +349,18 @@ fun DiscoverView(
                                     try {
                                         val f = FileUtils.resolveActualFile(entry.path) ?: FileUtils.resolveActualFile(entry.node.name)
                                         if (f != null && f.exists()) {
-                                            if (FileUtils.deleteOrTrashFile(f, context)) {
-                                                processedCount++
-                                            }
+                                            val outcome = FileMaintenanceEngine.deleteFileGuarded(context, f, isPermanent = allAlreadyTrashed)
+                                            if (outcome.deleted) processedCount++
+                                            outcome.blockReason?.let { AppNotifier.notify("Deletion blocked: $it") }
                                         }
                                     } catch (_: Exception) {}
                                 }
                             }
                         }
 
-                        if (packagesToUninstall.isNotEmpty()) {
-                            FileUtils.uninstallApps(context, packagesToUninstall)
+                        packagesToUninstall.forEach { pkg ->
+                            val outcome = FileMaintenanceEngine.uninstallAppGuarded(context, pkg)
+                            outcome.blockReason?.let { AppNotifier.notify("Deletion blocked: $it") }
                         }
 
                         isDeleting = false

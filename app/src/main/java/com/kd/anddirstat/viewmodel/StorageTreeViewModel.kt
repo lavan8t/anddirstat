@@ -1,7 +1,5 @@
 package com.kd.anddirstat.viewmodel
 
-import android.content.Context
-import android.content.SharedPreferences
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,12 +7,7 @@ import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.model.ExtensionStat
 import com.kd.anddirstat.model.TopFileEntry
 import com.kd.anddirstat.scanner.StorageFilterHelper
-import com.kd.anddirstat.scanner.StorageScanner
-import com.kd.anddirstat.scanner.TreeCacheManager
-import com.kd.anddirstat.ui.components.AppIconCache
-import com.kd.anddirstat.util.AppNotifier
 import com.kd.anddirstat.util.FileUtils
-import com.kd.anddirstat.util.StorageTrendManager
 import com.kd.anddirstat.util.StorageVolumeInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,7 +38,14 @@ data class StorageTreeUiState(
     val scanProgress: Int = 0
 )
 
-class StorageTreeViewModel : ViewModel() {
+class StorageTreeViewModel(
+    private val treeStore: TreeStore,
+    private val progressSink: ScanProgressSink,
+    private val permissions: StoragePermissionGate,
+    private val scanner: TreeScannerPort,
+    private val snapshots: SnapshotSink,
+    private val icons: IconWarmer
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StorageTreeUiState())
     val uiState: StateFlow<StorageTreeUiState> = _uiState.asStateFlow()
@@ -53,13 +53,12 @@ class StorageTreeViewModel : ViewModel() {
     private var scanJob: Job? = null
 
     fun restoreOrScan(
-        context: Context,
         volumes: List<StorageVolumeInfo>,
         scanApps: Boolean,
-        prefs: SharedPreferences
+        settings: StorageFilterSettings
     ) {
         if (_uiState.value.rootNode != null) return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.Default) {
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -68,22 +67,9 @@ class StorageTreeViewModel : ViewModel() {
                     scanProgress = 0
                 )
             }
-            val cached = withContext(Dispatchers.IO) {
-                try { TreeCacheManager.loadTree(context) } catch (_: Exception) { null }
-            }
+            val cached = withContext(Dispatchers.IO) { treeStore.load() }
             if (cached != null) {
-                val showFreeSpace = prefs.getBoolean("show_free_space", true)
-                val showSystemApps = prefs.getBoolean("show_system_apps", true)
-                val showHiddenFiles = prefs.getBoolean("show_hidden_files", false)
-                val showSystemOS = prefs.getBoolean("show_system_os", false)
-                val (filtered, stats, top) = withContext(Dispatchers.Default) {
-                    val f = StorageFilterHelper.filterStorageTree(cached, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, cached.size)
-                    if (f != null) {
-                        val s = async { StorageFilterHelper.aggregateExtensionStats(f) }
-                        val t = async { StorageFilterHelper.aggregateTopFiles(f) }
-                        Triple(f, s.await(), t.await())
-                    } else Triple(null, emptyList(), emptyList())
-                }
+                val (filtered, stats, top) = filterTree(cached, settings)
                 _uiState.update {
                     it.copy(
                         rawScannedNode = cached,
@@ -95,7 +81,7 @@ class StorageTreeViewModel : ViewModel() {
                     )
                 }
             } else if (volumes.isNotEmpty()) {
-                performScan(context, volumes, scanApps, prefs)
+                performScan(volumes, scanApps, settings)
             } else {
                 _uiState.update { it.copy(isLoading = false) }
             }
@@ -103,13 +89,12 @@ class StorageTreeViewModel : ViewModel() {
     }
 
     fun performScan(
-        context: Context,
         volumesToScan: List<StorageVolumeInfo>,
         scanApps: Boolean,
-        prefs: SharedPreferences
+        settings: StorageFilterSettings
     ) {
-        val effectiveScanApps = scanApps && FileUtils.checkUsageAccessPermission(context)
-        if (!FileUtils.checkStoragePermission(context) || (volumesToScan.isEmpty() && !effectiveScanApps)) return
+        val effectiveScanApps = scanApps && permissions.usageAllowed()
+        if (!permissions.storageAllowed() || (volumesToScan.isEmpty() && !effectiveScanApps)) return
 
         val hasTree = _uiState.value.rootNode != null
         _uiState.update {
@@ -122,22 +107,16 @@ class StorageTreeViewModel : ViewModel() {
             )
         }
 
-        AppNotifier.updateProgress(context, title = SCAN_PHASE_START, detail = SCAN_DETAIL_START, indeterminate = true, type = "scan")
+        progressSink.update(SCAN_PHASE_START, SCAN_DETAIL_START, 0, 100, true)
         scanJob?.cancel()
-        scanJob = viewModelScope.launch {
-            val showFreeSpace = prefs.getBoolean("show_free_space", true)
-            val showSystemApps = prefs.getBoolean("show_system_apps", true)
-            val showHiddenFiles = prefs.getBoolean("show_hidden_files", false)
-            val showSystemOS = prefs.getBoolean("show_system_os", false)
-
-            val scanner = StorageScanner(context)
+        scanJob = viewModelScope.launch(Dispatchers.Default) {
             var lastPublishMs = 0L
-            val scanned = scanner.scanStorage(selectedVolumes = volumesToScan, includeFreeSpace = true, scanApps = effectiveScanApps) { phase, detail, progress, max ->
+            val scanned = scanner.scan(volumesToScan, includeFreeSpace = true, scanApps = effectiveScanApps) { phase, detail, progress, max ->
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastPublishMs >= SCAN_PUBLISH_INTERVAL_MS) {
                     lastPublishMs = now
                     _uiState.update { it.copy(scanPhase = phase, scanDetail = detail, scanProgress = progress) }
-                    AppNotifier.updateProgress(context, title = phase, detail = detail, progress = progress, max = max, indeterminate = false, type = "scan")
+                    progressSink.update(phase, detail, progress, max, false)
                 }
             }
 
@@ -150,19 +129,9 @@ class StorageTreeViewModel : ViewModel() {
                     scanProgress = 100
                 )
             }
-            AppNotifier.updateProgress(context, title = SCAN_PHASE_FINALIZING, detail = SCAN_DETAIL_FINALIZING, progress = 100, max = 100, indeterminate = false, type = "scan")
+            progressSink.update(SCAN_PHASE_FINALIZING, SCAN_DETAIL_FINALIZING, 100, 100, false)
 
-            val (filtered, computedStats, computedTopFiles) = withContext(Dispatchers.Default) {
-                val f = StorageFilterHelper.filterStorageTree(scanned, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, scanned.size)
-                if (f != null) {
-                    val statsJob = async { StorageFilterHelper.aggregateExtensionStats(f) }
-                    val topJob = async { StorageFilterHelper.aggregateTopFiles(f) }
-                    Triple(f, statsJob.await(), topJob.await())
-                } else {
-                    Triple(null, emptyList(), emptyList())
-                }
-            }
-
+            val (filtered, computedStats, computedTopFiles) = filterTree(scanned, settings)
             _uiState.update {
                 it.copy(
                     rootNode = filtered,
@@ -172,14 +141,16 @@ class StorageTreeViewModel : ViewModel() {
                     isBackgroundScanning = false
                 )
             }
-            AppNotifier.finishActivity(context)
+            progressSink.finish()
 
             launch(Dispatchers.IO) {
-                StorageTrendManager.recordSnapshot(context, scanned.size, scanned.size)
-                scanned.children?.firstOrNull { it.name == "Apps & System Packages" }?.children?.forEach { appNode ->
-                    val pkg = FileUtils.extractPackageName(appNode)
-                    if (pkg != null && AppIconCache.peek(pkg) == null) AppIconCache.get(context, pkg)
-                }
+                snapshots.record(scanned.size, scanned.size)
+                val packageNames = scanned.children
+                    ?.firstOrNull { it.name == "Apps & System Packages" }
+                    ?.children
+                    ?.mapNotNull { FileUtils.extractPackageName(it) }
+                    ?: emptyList()
+                icons.warm(packageNames)
             }
         }
     }
@@ -189,61 +160,54 @@ class StorageTreeViewModel : ViewModel() {
         _uiState.update { it.copy(isLoading = false, isBackgroundScanning = false) }
     }
 
-    fun updateFilter(
-        prefs: SharedPreferences,
-        fs: Boolean? = null,
-        sa: Boolean? = null,
-        hf: Boolean? = null,
-        so: Boolean? = null
-    ) {
+    fun updateFilter(settings: StorageFilterSettings) {
         val raw = _uiState.value.rawScannedNode ?: return
-        val showFreeSpace = fs ?: prefs.getBoolean("show_free_space", true)
-        val showSystemApps = sa ?: prefs.getBoolean("show_system_apps", true)
-        val showHiddenFiles = hf ?: prefs.getBoolean("show_hidden_files", false)
-        val showSystemOS = so ?: prefs.getBoolean("show_system_os", false)
-
         viewModelScope.launch(Dispatchers.Default) {
-            val filtered = StorageFilterHelper.filterStorageTree(raw, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, _uiState.value.deviceTotalBytes)
-            val newStats = if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList()
-            val newTop = if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList()
+            val (filtered, stats, top) = filterTree(raw, settings)
             _uiState.update {
-                it.copy(
-                    rootNode = filtered,
-                    extensionStats = newStats,
-                    topFiles = newTop
-                )
+                it.copy(rootNode = filtered, extensionStats = stats, topFiles = top)
             }
         }
     }
 
-    fun removeDeletedNodes(context: Context, deletedNodes: Set<CompactNode>, prefs: SharedPreferences) {
+    fun removeDeletedNodes(deletedNodes: Set<CompactNode>, settings: StorageFilterSettings) {
         if (deletedNodes.isEmpty()) return
         val currentRaw = _uiState.value.rawScannedNode ?: return
-        val showFreeSpace = prefs.getBoolean("show_free_space", true)
-        val showSystemApps = prefs.getBoolean("show_system_apps", true)
-        val showHiddenFiles = prefs.getBoolean("show_hidden_files", false)
-        val showSystemOS = prefs.getBoolean("show_system_os", false)
 
         viewModelScope.launch(Dispatchers.Default) {
             val updatedRaw = StorageFilterHelper.pruneNodes(currentRaw, deletedNodes)
-            val filtered = StorageFilterHelper.filterStorageTree(updatedRaw, showFreeSpace, showSystemApps, showHiddenFiles, showSystemOS, updatedRaw.size)
-            val newStats = async { if (filtered != null) StorageFilterHelper.aggregateExtensionStats(filtered) else emptyList() }
-            val newTop = async { if (filtered != null) StorageFilterHelper.aggregateTopFiles(filtered) else emptyList() }
-            val computedStats = newStats.await()
-            val computedTop = newTop.await()
-
+            val (filtered, stats, top) = filterTree(updatedRaw, settings)
             _uiState.update {
                 it.copy(
                     rawScannedNode = updatedRaw,
                     deviceTotalBytes = updatedRaw.size,
                     rootNode = filtered,
-                    extensionStats = computedStats,
-                    topFiles = computedTop
+                    extensionStats = stats,
+                    topFiles = top
                 )
             }
-            withContext(Dispatchers.IO) {
-                try { TreeCacheManager.saveTree(context, updatedRaw) } catch (_: Exception) {}
-            }
+            withContext(Dispatchers.IO) { treeStore.save(updatedRaw) }
+        }
+    }
+
+    private suspend fun filterTree(
+        root: CompactNode,
+        settings: StorageFilterSettings
+    ): Triple<CompactNode?, List<ExtensionStat>, List<TopFileEntry>> = withContext(Dispatchers.Default) {
+        val filtered = StorageFilterHelper.filterStorageTree(
+            root,
+            settings.showFreeSpace,
+            settings.showSystemApps,
+            settings.showHiddenFiles,
+            settings.showSystemOS,
+            root.size
+        )
+        if (filtered == null) {
+            Triple(null, emptyList(), emptyList())
+        } else {
+            val stats = async { StorageFilterHelper.aggregateExtensionStats(filtered) }
+            val top = async { StorageFilterHelper.aggregateTopFiles(filtered) }
+            Triple(filtered, stats.await(), top.await())
         }
     }
 }

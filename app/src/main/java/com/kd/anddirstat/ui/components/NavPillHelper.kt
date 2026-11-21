@@ -28,10 +28,4 @@ object NavPillHelper {
         }
     }
 
-    fun calculateIndicatorOffsetPx(
-        effectiveIndex: Float,
-        slotPitchPx: Float
-    ): Float {
-        return effectiveIndex * slotPitchPx
-    }
 }
