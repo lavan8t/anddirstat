@@ -3,20 +3,15 @@ package com.kd.anddirstat.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,16 +38,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -62,7 +53,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import com.kd.anddirstat.model.AppDestinations
@@ -82,11 +72,7 @@ private val NAV_ITEMS = listOf(
     NavItemData("Discover", "search", AppDestinations.DISCOVER)
 )
 
-private val PORTRAIT_NAV_ITEMS = listOf(
-    NavItemData("Files", "folder", AppDestinations.EXPLORER),
-    NavItemData("Usage", "pie_chart", AppDestinations.TYPES),
-    NavItemData("Search", "search", AppDestinations.DISCOVER)
-)
+private val PORTRAIT_NAV_ITEMS = NAV_ITEMS.take(3)
 
 /**
  * Landscape Nameless Navigation Rail with AndDirStat Branded Logo Header.
@@ -210,23 +196,43 @@ fun TreemapNavRail(
                             }
                         }
                     } else if (hasLegacySelection) {
-                        SelectionActionBar(
-                            selectedCount = selectedTreeNodes.size,
-                            totalBytes = remember(selectedTreeNodes) {
-                                selectedTreeNodes.keys.sumOf { it.size }
-                            },
-                            onClear = onClearSelection,
-                            onAction = onDeleteSelected,
-                            vertical = true,
-                            compact = true,
-                            showActionLabel = false,
-                            clearButtonColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            countTextStyle = MaterialTheme.typography.labelSmall,
-                            sizeTextStyle = MaterialTheme.typography.labelSmall,
-                            containerShape = RoundedCornerShape(18.dp),
-                            containerShadowElevation = 0.dp,
-                            containerTonalElevation = 0.dp
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onClearSelection()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Text(
+                                text = "${selectedTreeNodes.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.error)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onDeleteSelected()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
+                            }
+                        }
                     }
                 }
 
@@ -338,46 +344,13 @@ fun TreemapNavPill(
     val hasLegacySelection = selectedTreeNodes.isNotEmpty() && currentDestination == AppDestinations.TREE
     val hasSelection = hasStaged || hasLegacySelection
 
-    // Water-droplet separation: a single Animatable drives width stretch, height
-    // overshoot and alpha together so they cannot desynchronise. Enter uses a bouncy
-    // spring (surface-tension snap), exit a non-bouncy one (clean re-absorption).
-    // Animatable also cancels toward the new target if selection toggles mid-flight.
-    val droplet = remember { Animatable(0f) }
-    var dropletActive by remember { mutableStateOf(false) }
-    LaunchedEffect(hasLegacySelection) {
-        if (hasLegacySelection) dropletActive = true
-        droplet.animateTo(
-            targetValue = if (hasLegacySelection) 1f else 0f,
-            animationSpec = if (hasLegacySelection) {
-                spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            } else {
-                spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium
-                )
-            }
-        )
-        if (!hasLegacySelection) dropletActive = false
-    }
-    val dropletScaleX = 0.05f + 0.95f * droplet.value
-    val dropletScaleY = if (droplet.value < 0.72f) {
-        0.55f + (1.06f - 0.55f) * (droplet.value / 0.72f)
-    } else {
-        1.06f - 0.06f * ((droplet.value - 0.72f) / 0.28f)
-    }
-    val dropletAlpha = (droplet.value * 2.4f).coerceIn(0f, 1f)
-    val dropletCorner = lerp(30.dp, 24.dp, droplet.value)
-
     // If on Settings screen: only show Back button + Settings icon & name
     if (currentDestination == AppDestinations.SETTINGS) {
         Surface(
             modifier = modifier,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
-            shadowElevation = 8.dp,
+            shadowElevation = 0.dp,
             tonalElevation = 6.dp
         ) {
             Row(
@@ -391,10 +364,7 @@ fun TreemapNavPill(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
+                            .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onBack()
                             }
@@ -439,46 +409,31 @@ fun TreemapNavPill(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
-        horizontalArrangement = Arrangement.Center,
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Single combined pill: Files, Usage, Search. While items are selected it expands
-        // to show the selection count and action buttons.
+        // Left Pill: Treemap, Explorer, Usage
         Surface(
-            modifier = (if (hasLegacySelection) Modifier.fillMaxWidth().padding(horizontal = 8.dp) else Modifier)
-                .then(
-                    if (dropletActive) {
-                        Modifier.graphicsLayer {
-                            scaleX = dropletScaleX
-                            scaleY = dropletScaleY
-                            alpha = dropletAlpha
-                            transformOrigin = TransformOrigin(0.5f, 0.5f)
-                        }
-                    } else {
-                        Modifier
-                    }
-                ),
-            shape = if (hasSelection) RoundedCornerShape(dropletCorner) else CircleShape,
+            modifier = Modifier.animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ),
+            shape = if (hasSelection) RoundedCornerShape(24.dp) else CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
-            shadowElevation = 8.dp,
+            shadowElevation = 0.dp,
             tonalElevation = 6.dp
         ) {
             Column(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp, vertical = 8.dp)
-                    .animateContentSize(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMedium
-                        )
-                    ),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 AnimatedVisibility(
                     visible = hasSelection,
-                    enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
-                    exit = fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                    enter = expandVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
+                    exit = shrinkVertically(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)) + fadeOut(spring(stiffness = Spring.StiffnessMedium))
                 ) {
                     if (hasStaged) {
                         Row(
@@ -497,10 +452,7 @@ fun TreemapNavPill(
                                         .size(34.dp)
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) {
+                                        .clickable {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onClearStaged()
                                         },
@@ -531,10 +483,7 @@ fun TreemapNavPill(
                                     .height(34.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
+                                    .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onOpenReviewSheet()
                                     }
@@ -551,17 +500,70 @@ fun TreemapNavPill(
                             }
                         }
                     } else if (hasLegacySelection) {
-                        SelectionActionBar(
-                            selectedCount = selectedTreeNodes.size,
-                            totalBytes = remember(selectedTreeNodes) {
-                                selectedTreeNodes.keys.sumOf { it.size }
-                            },
-                            onClear = onClearSelection,
-                            onAction = onDeleteSelected,
-                            compact = true,
-                            containerSurface = false,
-                            clearTooltip = "Clear selection"
-                        )
+                        val totalBytes = remember(selectedTreeNodes) { selectedTreeNodes.keys.sumOf { it.size } }
+                        Row(
+                            modifier = Modifier
+                                .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = 8.dp)
+                                .fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onClearSelection()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    MaterialSymbol("close", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Column {
+                                    Text(
+                                        text = "${selectedTreeNodes.size} selected",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = FileUtils.formatFileSize(totalBytes, context),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.error)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onDeleteSelected()
+                                    }
+                                    .padding(horizontal = 14.dp)
+                            ) {
+                                MaterialSymbol("delete", active = true, size = 18.dp, tint = MaterialTheme.colorScheme.onError)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Delete",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onError
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -603,11 +605,6 @@ fun TreemapNavPill(
                     label = "navIndicatorAlpha"
                 )
 
-                AnimatedVisibility(
-                    visible = !hasLegacySelection,
-                    enter = fadeIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)),
-                    exit = fadeOut(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
-                ) {
                 Box(
                     modifier = Modifier.padding(horizontal = 4.dp),
                     contentAlignment = Alignment.CenterStart
@@ -645,10 +642,7 @@ fun TreemapNavPill(
                                     modifier = Modifier
                                         .size(width = slotWidth, height = slotHeight)
                                         .clip(CircleShape)
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) {
+                                        .clickable {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onNavigate(item.destination)
                                         },
@@ -665,6 +659,42 @@ fun TreemapNavPill(
                         }
                     }
                 }
+            }
+        }
+
+        // Right Pill: Discover
+        val isDiscover = currentDestination == AppDestinations.DISCOVER
+        val discoverBg by animateColorAsState(
+            targetValue = if (isDiscover) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+            label = "discoverBg"
+        )
+        val discoverTint by animateColorAsState(
+            targetValue = if (isDiscover) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+            label = "discoverTint"
+        )
+
+        AppTooltip(text = "Discover") {
+            Surface(
+                shape = CircleShape,
+                color = discoverBg,
+                shadowElevation = 0.dp,
+                tonalElevation = 6.dp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNavigate(AppDestinations.DISCOVER)
+                    }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .size(48.dp, 42.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MaterialSymbol(name = "search", active = isDiscover, size = 22.dp, tint = discoverTint)
                 }
             }
         }

@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -75,6 +76,7 @@ fun TreemapCanvas(
     isLandscape: Boolean = false,
     onNodeSelected: (CompactNode, String, Offset?, androidx.compose.ui.geometry.Rect?, androidx.compose.ui.graphics.Color?) -> Unit = { _, _, _, _, _ -> },
     onDismissPopup: () -> Unit = {},
+    onFocusRectChanged: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     onToggleSelectNode: ((CompactNode, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -103,6 +105,7 @@ fun TreemapCanvas(
 
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
+    val toggleSelectNode by rememberUpdatedState(onToggleSelectNode)
 
     val glRenderer = remember { TreemapGLRenderer(context) }
     var glSurfaceViewRef by remember { mutableStateOf<GLSurfaceView?>(null) }
@@ -127,7 +130,7 @@ fun TreemapCanvas(
     val bottomSpaceDp = if (isLandscape) 12.dp else navBarBottomDp + 64.dp + marginDp
     val bottomSpacePx = with(density) { bottomSpaceDp.toPx() }
 
-    val leftSpaceDp = if (isLandscape) 84.dp else marginDp
+    val leftSpaceDp = marginDp
     val leftSpacePx = with(density) { leftSpaceDp.toPx() }
 
     val rightSpaceDp = marginDp
@@ -159,6 +162,22 @@ fun TreemapCanvas(
 
     val nodeToTileMap = remember(tileListId) {
         precalculatedTiles.value.associateBy { it.node }
+    }
+
+    // Glow grows with the falling tiles, then its reach tracks zoom. Strength is constant
+    // per element so the border reads the same regardless of tile size.
+    var glowProgress by remember { mutableStateOf(if (reduceMotion) 1f else 0f) }
+    val glowSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    LaunchedEffect(tileListId) {
+        if (precalculatedTiles.value.isEmpty()) return@LaunchedEffect
+        if (reduceMotion) {
+            glowProgress = 1f
+        } else {
+            glowProgress = 0f
+            animate(0f, 1f, animationSpec = glowSpec) { value, _ ->
+                glowProgress = value
+            }
+        }
     }
 
     val selectedTile = remember(selectedNode, nodeToTileMap) {
@@ -263,9 +282,16 @@ fun TreemapCanvas(
         glSurfaceViewRef?.requestRender()
     }
 
-    LaunchedEffect(scale, offset) {
+    LaunchedEffect(scale, offset, selectedTile) {
         glRenderer.setScaleAndOffset(scale, offset)
         glSurfaceViewRef?.requestRender()
+        selectedTile?.let { tile ->
+            val left = tile.left * scale + offset.x
+            val top = tile.top * scale + offset.y
+            onFocusRectChanged?.invoke(
+                androidx.compose.ui.geometry.Rect(left, top, left + tile.width * scale, top + tile.height * scale)
+            )
+        }
     }
 
     var glidingTile by remember { mutableStateOf<TreemapTile?>(null) }
@@ -274,7 +300,7 @@ fun TreemapCanvas(
     val primaryColor = MaterialTheme.colorScheme.primary
 
     val gestureModifier = if (isInteractive) {
-        Modifier.pointerInput(tileListId, quadtree.value) {
+        Modifier.pointerInput(tileListId, quadtree.value, selectedNode) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val downTime = System.currentTimeMillis()
@@ -332,7 +358,6 @@ fun TreemapCanvas(
                         // Strictly Two-Finger Zoom and Pan
                         hadMultiTouch = true
                         tooltipActive = false
-                        onDismissPopup()
                         if (glidingTile != null) {
                             glidingTile = null
                             glidingTouchPos = null
@@ -416,15 +441,14 @@ fun TreemapCanvas(
                         glidingTouchPos = null
 
                         if (!hadMultiTouch && !hasMovedOutOfInitialTile && elapsed < longPressActivationTimeout) {
-                            if (initialTile != null) {
-                                triggerCrispHaptic(context)
-                                if (selectedNodes.isNotEmpty() && onToggleSelectNode != null) {
-                                    onToggleSelectNode(initialTile.node, initialTile.path)
-                                } else {
+                            when {
+                                selectedNode != null && initialTile?.node != selectedNode -> onDismissPopup()
+                                selectedNode != null -> selectTile(initialTile!!, downPos)
+                                initialTile == null -> onDismissPopup()
+                                else -> {
+                                    triggerCrispHaptic(context)
                                     selectTile(initialTile, downPos)
                                 }
-                            } else {
-                                onDismissPopup()
                             }
                         }
                         break
@@ -443,13 +467,19 @@ fun TreemapCanvas(
                                 tooltipActive = true
                                 glidingTile = initialTile
                                 triggerCrispHaptic(context)
-                                selectTile(initialTile, change.position)
+                                if (toggleSelectNode != null) {
+                                    onDismissPopup()
+                                    toggleSelectNode?.invoke(initialTile.node, initialTile.path)
+                                } else {
+                                    selectTile(initialTile, change.position)
+                                }
                             }
                         } else {
                             if (curTile != null && curTile != glidingTile) {
                                 triggerCrispHaptic(context)
                                 glidingTile = curTile
-                                selectTile(curTile, change.position)
+                                if (toggleSelectNode != null) toggleSelectNode?.invoke(curTile.node, curTile.path)
+                                else selectTile(curTile, change.position)
                             }
                         }
                     }
@@ -485,6 +515,60 @@ fun TreemapCanvas(
                     }
                 }
         )
+
+        // Progressive blur bound to the treemap transform: only perimeter tiles contribute,
+        // so the margin continues the tile colours without a static image or per-tile overlay.
+        if (precalculatedTiles.value.isNotEmpty() && glowProgress > 0f) {
+            Canvas(modifier = Modifier.fillMaxSize().blur(18.dp)) {
+                val curScale = currentScaleState.value
+                val curOff = currentOffsetState.value
+                // Glow fills from the treemap border to the device edges; no base surface shows.
+                val glowAlpha = 0.85f * glowProgress
+                val overlap = 4f * curScale
+                val eps = 4f
+                val rightBound = canvasSize.width.toFloat() - rightSpacePx
+                val bottomBound = canvasSize.height.toFloat() - bottomSpacePx
+
+                for (tile in precalculatedTiles.value) {
+                    val isTop = tile.top <= topSpacePx + eps
+                    val isBottom = tile.top + tile.height >= bottomBound - eps
+                    val isLeft = tile.left <= leftSpacePx + eps
+                    val isRight = tile.left + tile.width >= rightBound - eps
+                    if (!isTop && !isBottom && !isLeft && !isRight) continue
+
+                    val sLeft = tile.left * curScale + curOff.x
+                    val sTop = tile.top * curScale + curOff.y
+                    val sW = tile.width * curScale
+                    val sH = tile.height * curScale
+                    if (sLeft + sW < -overlap || sLeft > size.width + overlap ||
+                        sTop + sH < -overlap || sTop > size.height + overlap) continue
+
+                    val color = tile.baseColor.copy(alpha = glowAlpha)
+                    // Edge tiles extend their colour to the screen edge; corners cover the gaps.
+                    val t = (sTop + overlap).coerceAtLeast(0f)
+                    val b = (sTop + sH - overlap).coerceAtMost(size.height)
+                    val l = (sLeft + overlap).coerceAtLeast(0f)
+                    val r = (sLeft + sW - overlap).coerceAtMost(size.width)
+
+                    if (isTop && t > 0f) {
+                        drawRect(color, Offset(sLeft.coerceAtLeast(0f), 0f), Size((sW + overlap).coerceAtLeast(1f), t))
+                    }
+                    if (isBottom && b < size.height) {
+                        drawRect(color, Offset(sLeft.coerceAtLeast(0f), b), Size((sW + overlap).coerceAtLeast(1f), size.height - b))
+                    }
+                    if (isLeft && l > 0f) {
+                        drawRect(color, Offset(0f, sTop.coerceAtLeast(0f)), Size(l, (sH + overlap).coerceAtLeast(1f)))
+                    }
+                    if (isRight && r < size.width) {
+                        drawRect(color, Offset(r, sTop.coerceAtLeast(0f)), Size(size.width - r, (sH + overlap).coerceAtLeast(1f)))
+                    }
+                    if (isTop && isLeft) drawRect(color, Offset(0f, 0f), Size(l, t))
+                    if (isTop && isRight) drawRect(color, Offset(r, 0f), Size(size.width - r, t))
+                    if (isBottom && isLeft) drawRect(color, Offset(0f, b), Size(l, size.height - b))
+                    if (isBottom && isRight) drawRect(color, Offset(r, b), Size(size.width - r, size.height - b))
+                }
+            }
+        }
 
         Box(
             modifier = Modifier

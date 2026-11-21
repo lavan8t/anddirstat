@@ -20,3 +20,11 @@ _Avoid_: accent seed, seed
 **Ambient blob**:
 A blurred circle drawn behind the treemap to colour the margin. This effect is being removed.
 _Avoid_: halo, ambient glow
+
+**Treemap peek**:
+The strip of the treemap kept visible above an open page.
+_Avoid_: pre map, peak
+
+**Page sheet**:
+An opaque page surface that sits below the treemap peek.
+_Avoid_: transparent page, overlay page

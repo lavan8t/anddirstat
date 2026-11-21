@@ -141,7 +141,7 @@ class StorageTreeViewModelTest {
         val volume = StorageVolumeInfo("primary", "Internal", File("/storage/emulated/0"), true, false, false, 100L, 40L)
         viewModel.performScan(listOf(volume), false, StorageFilterSettings())
 
-        waitFor { viewModel.uiState.value.rawScannedNode != null }
+        waitFor { viewModel.uiState.value.rawScannedNode != null && progress.finished }
         assertNotNull(viewModel.uiState.value.rawScannedNode)
         assertTrue(progress.finished)
         assertEquals(0, store.saveCount)

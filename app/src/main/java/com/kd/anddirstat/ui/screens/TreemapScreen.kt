@@ -29,11 +29,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.kd.anddirstat.model.CompactNode
 import com.kd.anddirstat.ui.components.ActionDropdownMenu
 import com.kd.anddirstat.ui.components.DriveSelectorCompactChip
 import com.kd.anddirstat.ui.components.FilterDropdownMenu
 import com.kd.anddirstat.ui.components.MaterialSymbol
+import com.kd.anddirstat.ui.components.AnimatedAppTitle
 import com.kd.anddirstat.util.StorageVolumeInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,9 +88,11 @@ fun TreemapScreen(
                     top = 8.dp
                 )
                 .statusBarsPadding(),
-            horizontalArrangement = if (detectedVolumes.size > 1) Arrangement.SpaceBetween else Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            AnimatedAppTitle(fontSize = 19.sp)
+
             if (detectedVolumes.size > 1) {
                 Surface(
                     shape = CircleShape,

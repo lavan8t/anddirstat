@@ -129,14 +129,8 @@ object StorageTrendManager {
 
         for (i in daysList.indices) {
             val (key, label, time) = daysList[i]
-            val recorded = recordedMap[key]
-            val used = if (recorded != null && recorded > 0L) {
-                recorded
-            } else {
-                val factor = 1.0 - ((6 - i) * 0.007)
-                (currentUsed * factor).toLong().coerceAtLeast(1024L)
-            }
-            points.add(StorageDayPoint(key, label, time, used, currentTotal))
+            val recorded = recordedMap[key] ?: continue
+            points.add(StorageDayPoint(key, label, time, recorded, currentTotal))
         }
 
         return points

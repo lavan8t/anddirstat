@@ -6,9 +6,9 @@ object NavPillHelper {
 
     fun getDestinationIndex(destination: String): Int {
         return when (destination) {
-            AppDestinations.EXPLORER -> 0
-            AppDestinations.TYPES -> 1
-            AppDestinations.DISCOVER -> 2
+            AppDestinations.TREE -> 0
+            AppDestinations.EXPLORER -> 1
+            AppDestinations.TYPES -> 2
             else -> -1
         }
     }
@@ -28,4 +28,10 @@ object NavPillHelper {
         }
     }
 
+    fun calculateIndicatorOffsetPx(
+        effectiveIndex: Float,
+        slotPitchPx: Float
+    ): Float {
+        return effectiveIndex * slotPitchPx
+    }
 }

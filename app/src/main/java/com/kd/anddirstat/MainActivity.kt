@@ -25,6 +25,8 @@ import com.kd.anddirstat.viewmodel.StorageFilterSettings
 import com.kd.anddirstat.viewmodel.StorageTreeViewModel
 import com.kd.anddirstat.viewmodel.StorageTreeViewModelFactory
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -44,7 +46,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -69,10 +73,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -92,8 +96,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -103,6 +110,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -131,12 +139,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.kd.anddirstat.cleanup.CleanupQueueHelper
 import com.kd.anddirstat.cleanup.StagedQueueItem
 import com.kd.anddirstat.ui.components.CleanupQueueReviewSheet
-import com.kd.anddirstat.ui.components.PredictiveSlideBackContainer
+import com.kd.anddirstat.ui.components.TreemapNavPill
 import com.kd.anddirstat.ui.components.ScanningBanner
 import com.kd.anddirstat.ui.components.TreeDeleteDialog
-import com.kd.anddirstat.ui.components.TreemapNavPill
-import com.kd.anddirstat.ui.components.TreemapNavRail
-import com.kd.anddirstat.ui.components.TreemapTilePopup
 import com.kd.anddirstat.ui.components.VolumeSelectionBottomSheet
 import com.kd.anddirstat.ui.screens.DiscoverView
 import com.kd.anddirstat.ui.screens.ExplorerView
@@ -168,6 +173,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.kd.anddirstat.util.StorageSnapshotScheduler.scheduleDailySnapshot(applicationContext)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -249,7 +255,8 @@ fun MainApp(
             AppTheme.LIGHT -> false
             AppTheme.DARK -> true
         }
-        val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+        val localConfiguration = androidx.compose.ui.platform.LocalConfiguration.current
+        val configuration = localConfiguration
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val activity = (context as? ComponentActivity)
 
@@ -302,6 +309,22 @@ fun MainApp(
         var activePopupOffset by remember { mutableStateOf(Offset.Zero) }
         var activePopupTileRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         var activePopupTileColor by remember { mutableStateOf<Color?>(null) }
+        val scrimAlpha = remember { Animatable(0f) }
+        val scrimSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+        var popupBackProgress by remember { mutableFloatStateOf(0f) }
+
+        fun dismissPopupAnimated() {
+            scope.launch {
+                scrimAlpha.animateTo(0f, scrimSpec)
+                mainAppViewModel.dismissPopup()
+                activePopupTileRect = null
+                popupBackProgress = 0f
+            }
+        }
+
+        LaunchedEffect(uiState.activePopupNode) {
+            if (uiState.activePopupNode == null) scrimAlpha.snapTo(0f)
+        }
 
         LaunchedEffect(uiState.selectedNode, uiState.selectedPath, selectedTouchOffset, selectedTileRect, selectedTileColor) {
             if (uiState.selectedNode != null && uiState.selectedPath != null) {
@@ -313,15 +336,20 @@ fun MainApp(
         }
         val isPopupVisible = uiState.selectedNode != null && uiState.selectedPath != null
 
-        val stagedReclaimableBytes = remember(uiState.stagedQueue) {
-            CleanupQueueHelper.calculateTotalReclaimable(uiState.stagedQueue.values)
+        fun openNode(node: CompactNode, path: String) {
+            val pkg = FileUtils.extractPackageName(node, path, context)
+            if (pkg != null) {
+                val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) try { context.startActivity(intent) } catch (_: Exception) {}
+            } else {
+                FileUtils.openFile(context, FileUtils.resolveActualFile(path, context) ?: File(path))
+            }
         }
-        var pillBackProgress by remember { mutableStateOf(0f) }
-        var isPillBackActive by remember { mutableStateOf(false) }
 
         val navController = rememberNavController()
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry?.destination?.route ?: AppDestinations.TREE
+
 
         var isTreemapZoomed by remember { mutableStateOf(false) }
         var resetZoomKey by remember { mutableStateOf(0) }
@@ -444,12 +472,16 @@ fun MainApp(
 
         PredictiveBackHandler(enabled = backTarget == BackTarget.NODE_POPUP) { progress ->
             try {
-                progress.collect {}
-                mainAppViewModel.onNodeSelected(null, null)
+                progress.collect { popupBackProgress = it.progress }
+                mainAppViewModel.dismissPopup()
+                activePopupTileRect = null
                 selectedTouchOffset = null
                 selectedTileRect = null
                 selectedTileColor = null
-            } catch (_: CancellationException) {}
+                popupBackProgress = 0f
+            } catch (_: CancellationException) {
+                popupBackProgress = 0f
+            }
         }
         PredictiveBackHandler(enabled = backTarget == BackTarget.TREE_SELECTION) { progress ->
             try { progress.collect {}; clearTreeSelection() } catch (_: CancellationException) {}
@@ -504,12 +536,6 @@ fun MainApp(
                 }
                 isLoading -> ScanProgressLoadingScreen(scanProgress)
                 rootNode != null -> {
-                    val showNavPill = currentRoute == AppDestinations.TREE ||
-                                      currentRoute == AppDestinations.EXPLORER ||
-                                      currentRoute == AppDestinations.TYPES ||
-                                      currentRoute == AppDestinations.DISCOVER ||
-                                      currentRoute == AppDestinations.SETTINGS
-
                     LaunchedEffect(currentRoute) {
                         mainAppViewModel.onNodeSelected(null, null)
                         selectedTouchOffset = null
@@ -560,7 +586,7 @@ fun MainApp(
                     val explorerContent: @Composable () -> Unit = {
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
+                            color = MaterialTheme.colorScheme.surfaceContainer
                         ) {
                             Box(
                                 modifier = Modifier
@@ -588,7 +614,7 @@ fun MainApp(
                     val typesContent: @Composable () -> Unit = {
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
+                            color = MaterialTheme.colorScheme.surfaceContainer
                         ) {
                             Box(
                                 modifier = Modifier
@@ -611,10 +637,17 @@ fun MainApp(
                         }
                     }
 
+                    val explorerContentWithBack: @Composable (triggerBack: () -> Unit) -> Unit = { triggerBack ->
+                        explorerContent()
+                    }
+                    val typesContentWithBack: @Composable (triggerBack: () -> Unit) -> Unit = { triggerBack ->
+                        typesContent()
+                    }
+
                     val discoverContent: @Composable (triggerBack: (() -> Unit)?) -> Unit = { triggerBack ->
                         Scaffold(
                             modifier = Modifier.fillMaxSize().padding(start = if (isLandscape) WindowInsets.displayCutout.asPaddingValues().calculateStartPadding(LocalLayoutDirection.current) else 0.dp),
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
                             contentWindowInsets = if (isLandscape) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBars,
                             topBar = {
                                 DiscoverSearchTopAppBar(
@@ -662,28 +695,16 @@ fun MainApp(
                             startDestination = AppDestinations.TREE,
                             modifier = Modifier.fillMaxSize(),
                             enterTransition = {
-                                slideInHorizontally(
-                                    initialOffsetX = { fullWidth -> fullWidth },
-                                    animationSpec = spring(
-                                        dampingRatio = 0.8f,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                )
+                                slideInHorizontally(initialOffsetX = { it })
                             },
                             exitTransition = {
-                                slideOutHorizontally(
-                                    targetOffsetX = { fullWidth -> -fullWidth / 3 },
-                                    animationSpec = spring(
-                                        dampingRatio = 0.8f,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                )
+                                slideOutHorizontally(targetOffsetX = { -it / 3 })
                             },
                             popEnterTransition = {
-                                EnterTransition.None
+                                slideInHorizontally(initialOffsetX = { -it / 3 })
                             },
                             popExitTransition = {
-                                ExitTransition.None
+                                slideOutHorizontally(targetOffsetX = { it })
                             }
                         ) {
                             composable(AppDestinations.TREE) {
@@ -691,109 +712,59 @@ fun MainApp(
                             }
 
                             composable(AppDestinations.EXPLORER) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = homeContent
-                                ) { triggerBack ->
-                                    explorerContent()
-                                }
+                                explorerContentWithBack({ navController.popBackStack() })
                             }
 
                             composable(AppDestinations.TYPES) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = homeContent
-                                ) { triggerBack ->
-                                    typesContent()
-                                }
+                                typesContentWithBack({ navController.popBackStack() })
                             }
 
                             composable(AppDestinations.DISCOVER) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = homeContent,
-                                    enabled = !uiState.isDiscoverSearchActive && uiState.discoverSearchQuery.isEmpty()
-                                ) { triggerBack ->
-                                    discoverContent(triggerBack)
-                                }
+                                discoverContent({ navController.popBackStack() })
                             }
 
                             composable(AppDestinations.SETTINGS) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = homeContent
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
-                                        SettingsScreen(onBack = triggerBack)
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        SettingsScreen(onBack = { navController.popBackStack() })
                                     }
-                                }
                             }
 
                             composable(AppDestinations.CLEANER_DUPLICATES) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = { discoverContent(null) }
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
-                                        DuplicatesCleanerView(onBack = triggerBack)
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        DuplicatesCleanerView(onBack = { navController.popBackStack() })
                                     }
-                                }
                             }
 
                             composable(AppDestinations.CLEANER_EMPTY_FOLDERS) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = { discoverContent(null) }
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
-                                        EmptyFoldersCleanerView(onBack = triggerBack)
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        EmptyFoldersCleanerView(onBack = { navController.popBackStack() })
                                     }
-                                }
                             }
 
                             composable(AppDestinations.CLEANER_SCREENSHOTS) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = { discoverContent(null) }
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
-                                        ScreenshotsCleanerView(onBack = triggerBack)
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        ScreenshotsCleanerView(onBack = { navController.popBackStack() })
                                     }
-                                }
                             }
 
                             composable(AppDestinations.CLEANER_RECYCLE_BIN) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = { discoverContent(null) }
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
-                                        RecycleBinCleanerView(onBack = triggerBack)
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        RecycleBinCleanerView(onBack = { navController.popBackStack() })
                                     }
-                                }
                             }
 
                             composable(AppDestinations.STARRED) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = homeContent
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
-                                        StarredFilesScreen(onBack = triggerBack)
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        StarredFilesScreen(onBack = { navController.popBackStack() })
                                     }
-                                }
                             }
 
                             composable(AppDestinations.LARGEST_FILES) {
-                                PredictiveSlideBackContainer(
-                                    onBackPressed = { navController.popBackStack() },
-                                    backgroundContent = { discoverContent(null) }
-                                ) { triggerBack ->
-                                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)) {
+                                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainer) {
                                         LargestFilesScreen(
                                             rootNode = (rawScannedNode ?: rootNode)!!,
                                             topFiles = topFiles,
-                                            onBack = triggerBack,
+                                            onBack = { navController.popBackStack() },
                                             onNodeClick = { node, path ->
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 val realFile = FileUtils.resolveActualFile(path, context)
@@ -801,7 +772,6 @@ fun MainApp(
                                             }
                                         )
                                     }
-                                }
                             }
                         }
                     }
@@ -825,27 +795,38 @@ fun MainApp(
                                 selectedTileColor = tileColor
                             },
                             onDismissPopup = {
-                                mainAppViewModel.onNodeSelected(null, null)
+                                dismissPopupAnimated()
                                 selectedTouchOffset = null
                                 selectedTileRect = null
                                 selectedTileColor = null
                             },
+                            onFocusRectChanged = { rect -> activePopupTileRect = rect },
                             onToggleSelectNode = { node, path ->
-                                setTreeSelection(
-                                    if (uiState.selectedTreeNodes.containsKey(node)) {
-                                        uiState.selectedTreeNodes - node
-                                    } else {
-                                        uiState.selectedTreeNodes + (node to path)
-                                    }
-                                )
+                                setTreeSelection(uiState.selectedTreeNodes + (node to path))
                             },
                             modifier = Modifier.fillMaxSize()
                         )
 
-                        if (isLandscape && showNavPill) {
-                            Row(modifier = Modifier.fillMaxSize()) {
-                                TreemapNavRail(
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            navHostContent()
+
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .navigationBarsPadding()
+                                    .padding(bottom = 14.dp)
+                            ) {
+                                TreemapNavPill(
+                                    isLandscape = isLandscape,
                                     currentDestination = currentRoute,
+                                    onBack = { navController.popBackStack() },
+                                    stagedQueueCount = uiState.stagedQueue.size,
+                                    stagedReclaimableBytes = CleanupQueueHelper.calculateTotalReclaimable(uiState.stagedQueue.values),
+                                    onOpenReviewSheet = { mainAppViewModel.showCleanupReviewSheet() },
+                                    onClearStaged = { mainAppViewModel.clearStaged() },
+                                    predictiveBackProgress = 0f,
+                                    isPredictiveBackActive = false,
+                                    predictiveBackTargetDestination = AppDestinations.TREE,
                                     onNavigate = { dest ->
                                         if (dest == currentRoute) {
                                             if (dest == AppDestinations.TREE) {
@@ -861,79 +842,21 @@ fun MainApp(
                                                 restoreState = true
                                             }
                                         }
-                                    },
-                                    selectedTreeNodes = uiState.selectedTreeNodes,
-                                    stagedQueueCount = uiState.stagedQueue.size,
-                                    stagedReclaimableBytes = stagedReclaimableBytes,
-                                    onOpenReviewSheet = { mainAppViewModel.showCleanupReviewSheet() },
-                                    onClearStaged = { mainAppViewModel.clearStaged() },
-                                    onClearSelection = { clearTreeSelection() },
-                                    onDeleteSelected = { mainAppViewModel.showTreeDeleteDialog() }
-                                )
-
-                                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                    navHostContent()
-                                }
-                            }
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                navHostContent()
-
-                                if (showNavPill) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .navigationBarsPadding()
-                                            .padding(bottom = 14.dp)
-                                    ) {
-                                        TreemapNavPill(
-                                            isLandscape = isLandscape,
-                                            currentDestination = currentRoute,
-                                            onBack = { navController.popBackStack() },
-                                            stagedQueueCount = uiState.stagedQueue.size,
-                                            stagedReclaimableBytes = stagedReclaimableBytes,
-                                            onOpenReviewSheet = { mainAppViewModel.showCleanupReviewSheet() },
-                                            onClearStaged = { mainAppViewModel.clearStaged() },
-                                            selectedTreeNodes = uiState.selectedTreeNodes,
-                                            onClearSelection = { clearTreeSelection() },
-                                            onDeleteSelected = { mainAppViewModel.showTreeDeleteDialog() },
-                                            predictiveBackProgress = pillBackProgress,
-                                            isPredictiveBackActive = isPillBackActive,
-                                            predictiveBackTargetDestination = AppDestinations.TREE,
-                                            onNavigate = { dest ->
-                                                if (dest == currentRoute) {
-                                                    if (dest == AppDestinations.TREE) {
-                                                        resetZoomKey++
-                                                        isTreemapZoomed = false
-                                                    } else {
-                                                        navController.popBackStack(AppDestinations.TREE, inclusive = false)
-                                                    }
-                                                } else {
-                                                    navController.navigate(dest) {
-                                                        popUpTo(AppDestinations.TREE) {
-                                                            saveState = true
-                                                        }
-                                                        launchSingleTop = true
-                                                        restoreState = true
-                                                    }
-                                                }
-                                            }
-                                        )
                                     }
-                                }
-
-                                ScanProgressBanner(
-                                    progress = scanProgress,
-                                    visible = isBackgroundScanning,
-                                    onCancelScan = {
-                                        viewModel.cancelScan()
-                                        AppNotifier.finishActivity(context)
-                                    },
-                                    modifier = Modifier
-                                        .align(Alignment.TopCenter)
-                                        .statusBarsPadding()
                                 )
                             }
+
+                            ScanProgressBanner(
+                                progress = scanProgress,
+                                visible = isBackgroundScanning,
+                                onCancelScan = {
+                                    viewModel.cancelScan()
+                                    AppNotifier.finishActivity(context)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .statusBarsPadding()
+                            )
                         }
                     }
                 }
@@ -1012,73 +935,98 @@ fun MainApp(
                 )
             }
 
-            if (uiState.activePopupNode != null && uiState.activePopupPath != null) {
-                TreemapTilePopup(
-                    node = uiState.activePopupNode!!,
-                    path = uiState.activePopupPath!!,
-                    tileRect = activePopupTileRect,
-                    tileColor = activePopupTileColor,
-                    touchOffset = activePopupOffset,
-                    visible = isPopupVisible,
-                    onDismiss = {
-                        mainAppViewModel.dismissPopup()
-                        selectedTouchOffset = null
-                        selectedTileRect = null
-                        selectedTileColor = null
-                        activePopupTileRect = null
-                        activePopupTileColor = null
-                    },
-                    stagedQueue = uiState.stagedQueue,
-                    onToggleStaged = { n, p, size, isApp, pkg ->
-                        mainAppViewModel.onToggleStaged(
-                            StagedQueueItem(
-                                node = n,
-                                path = p,
-                                reclaimableBytes = size,
-                                isApp = isApp,
-                                pkgName = pkg
-                            )
-                        )
-                    },
-                    isSelected = uiState.selectedTreeNodes.containsKey(uiState.activePopupNode),
-                    onToggleSelect = {
-                        val n = uiState.activePopupNode ?: return@TreemapTilePopup
-                        val p = uiState.activePopupPath ?: return@TreemapTilePopup
-                        setTreeSelection(
-                            if (uiState.selectedTreeNodes.containsKey(n)) {
-                                uiState.selectedTreeNodes - n
-                            } else {
-                                uiState.selectedTreeNodes + (n to p)
+            if (uiState.activePopupNode != null && activePopupTileRect != null) {
+                val r = activePopupTileRect!!
+                val screenW = with(LocalDensity.current) { localConfiguration.screenWidthDp.dp.toPx() }
+                val screenH = with(LocalDensity.current) { localConfiguration.screenHeightDp.dp.toPx() }
+                val node = uiState.activePopupNode!!
+                val path = uiState.activePopupPath!!
+                val isApp = remember(node, path) { FileUtils.extractPackageName(node, path, context) != null }
+                val pkg = remember(node, path) { FileUtils.extractPackageName(node, path, context) }
+
+                LaunchedEffect(Unit) {
+                    popupBackProgress = 0f
+                    scrimAlpha.animateTo(1f, scrimSpec)
+                }
+                val popupAlpha = scrimAlpha.value * (1f - popupBackProgress)
+
+                val blockMaxW = with(LocalDensity.current) { minOf(screenW - 32f, 640f).toDp() }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = popupAlpha
+                                compositingStrategy = CompositingStrategy.Offscreen
                             }
+                    ) {
+                        drawRect(Color.Black.copy(alpha = 0.70f), size = size)
+                        drawRect(
+                            Color.Transparent,
+                            topLeft = Offset(r.left, r.top),
+                            size = Size(r.width, r.height),
+                            blendMode = BlendMode.Clear
                         )
-                    },
-                    onOpenFile = { file ->
-                        FileUtils.openFile(context, file)
-                    },
-                    onOpenApp = { pkg ->
-                        val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
-                        if (launchIntent != null) {
-                            try { context.startActivity(launchIntent) } catch (_: Exception) {}
-                        }
-                    },
-                    onOpenAppInfo = { pkg ->
-                        try {
-                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
-                        } catch (_: Exception) {}
-                    },
-                    onUninstallApp = { pkg ->
-                        scope.launch { FileMaintenanceEngine.uninstallAppGuarded(context, pkg) }
-                    },
-                    onNavigateToExplorer = { p ->
-                        mainAppViewModel.setExplorerTargetPath(p)
-                        navController.navigate(AppDestinations.EXPLORER)
-                    },
-                    onRequestDelete = {
-                        val n = uiState.activePopupNode ?: return@TreemapTilePopup
-                        val p = uiState.activePopupPath ?: return@TreemapTilePopup
-                        mainAppViewModel.requestNodeDelete(n, p)
                     }
-                )
+                    Layout(
+                        content = {
+                            Column(
+                                modifier = Modifier
+                                    .widthIn(max = blockMaxW)
+                                    .graphicsLayer {
+                                        alpha = popupAlpha
+                                        translationY = 24f * popupBackProgress
+                                        val s = 1f - 0.04f * popupBackProgress
+                                        scaleX = s
+                                        scaleY = s
+                                    },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = node.name,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal),
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.widthIn(max = 280.dp)
+                                )
+                                Text(
+                                    text = FileUtils.formatFileSize(node.size),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                                ) {
+                                    val onSurface = MaterialTheme.colorScheme.onSecondaryContainer
+                                    val error = MaterialTheme.colorScheme.error
+                                    ExpressiveIcon("open_in_new", onSurface) { openNode(node, path) }
+                                    if (isApp) {
+                                        ExpressiveIcon("info", onSurface) {
+                                            try {
+                                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+                                            } catch (_: Exception) {}
+                                        }
+                                        ExpressiveIcon("delete_forever", error) {
+                                            scope.launch { FileMaintenanceEngine.uninstallAppGuarded(context, pkg ?: "") }
+                                        }
+                                    }
+                                    ExpressiveIcon("delete", error) { mainAppViewModel.requestNodeDelete(node, path) }
+                                }
+                            }
+                        }
+                    ) { measurables, constraints ->
+                        val block = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+                        val y = (screenH * 2f / 3f)
+                            .coerceAtMost((screenH - block.height - 16f).coerceAtLeast(16f))
+                            .toInt()
+                        val x = ((screenW - block.width) / 2f).toInt().coerceAtLeast(16)
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            block.place(x.toInt(), y.toInt())
+                        }
+                    }
+                }
             }
 
             if (uiState.nodeToDelete != null) {
@@ -1122,5 +1070,30 @@ fun MainApp(
                     )
             )
         }
+    }
+
+}
+
+@Composable
+private fun ExpressiveIcon(name: String, tint: Color, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = ExpressiveMotionTokens.SpatialFloatSpring,
+        label = "action_press"
+    )
+    IconButton(
+        onClick = onClick,
+        interactionSource = interaction,
+        modifier = Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .size(52.dp),
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = tint
+        )
+    ) {
+        MaterialSymbol(name, active = true, size = 24.dp, tint = tint)
     }
 }

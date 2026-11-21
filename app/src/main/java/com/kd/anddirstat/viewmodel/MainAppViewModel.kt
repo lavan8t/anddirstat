@@ -77,7 +77,18 @@ class MainAppViewModel(
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     fun onNodeSelected(node: CompactNode?, path: String?) {
-        _uiState.update { it.copy(selectedNode = node, selectedPath = path) }
+        _uiState.update {
+            if (node == null) {
+                it.copy(
+                    selectedNode = null,
+                    selectedPath = null,
+                    activePopupNode = null,
+                    activePopupPath = null
+                )
+            } else {
+                it.copy(selectedNode = node, selectedPath = path)
+            }
+        }
     }
 
     fun onActivePopupChanged(node: CompactNode?, path: String?) {

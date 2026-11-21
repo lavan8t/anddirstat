@@ -39,8 +39,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +52,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,10 +78,16 @@ import com.kd.anddirstat.ui.components.AppIconView
 import com.kd.anddirstat.ui.components.MaterialSymbol
 import com.kd.anddirstat.ui.components.MediaThumbnailView
 import com.kd.anddirstat.ui.components.StorageTrendCard
+import com.kd.anddirstat.ui.components.WhatsappTrendCard
 import com.kd.anddirstat.util.FileUtils
 import com.kd.anddirstat.util.StorageTrendManager
+import com.kd.anddirstat.util.WhatsappTrendManager
+import com.kd.anddirstat.util.WhatsappCleaner
+import com.kd.anddirstat.util.WhatsappMediaKind
+import com.kd.anddirstat.util.BulkFileDeleter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -98,7 +108,8 @@ data class StorageOverviewData(
 data class StorageTrendState(
     val history: List<com.kd.anddirstat.util.StorageDayPoint> = emptyList(),
     val recentChanges: List<com.kd.anddirstat.util.StorageChangeItem> = emptyList(),
-    val lifetimeFreed: Long = 0L
+    val lifetimeFreed: Long = 0L,
+    val whatsapp: List<com.kd.anddirstat.util.WhatsappDayPoint> = emptyList()
 )
 
 fun calculateStorageOverview(rootNode: CompactNode, totalDeviceSize: Long): StorageOverviewData {
@@ -218,6 +229,7 @@ fun FileTypesView(
     val context = LocalContext.current
     val isDark = isSystemInDarkTheme()
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     var expandedCategories by remember(rootNode) { mutableStateOf(setOf<String>()) }
     var expandedExtensions by remember(rootNode) { mutableStateOf(setOf<String>()) }
     val initialOverview = remember(rootNode, totalDeviceSize) {
@@ -506,6 +518,18 @@ fun FileTypesView(
         }
     }
 
+    var keepKinds by rememberSaveable { mutableStateOf(setOf(WhatsappMediaKind.DOCUMENT, WhatsappMediaKind.IMAGE)) }
+    var cleanupCandidates by remember { mutableStateOf<List<com.kd.anddirstat.util.WhatsappCleanupCandidate>>(emptyList()) }
+    var isDeletingWhatsapp by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(keepKinds) {
+        withContext(Dispatchers.IO) {
+            cleanupCandidates = WhatsappCleaner.findOldCandidates(context, keepKinds = keepKinds)
+        }
+    }
+
     val trendState by produceState(
         initialValue = StorageTrendState(),
         key1 = rootNode,
@@ -516,7 +540,8 @@ fun FileTypesView(
             val hist = StorageTrendManager.getHistory(context, overview.usedSpace, overview.totalCapacity)
             val changes = StorageTrendManager.findRecentChanges(rootNode, limit = 5)
             val freed = StorageTrendManager.getLifetimeFreedBytes(context)
-            StorageTrendState(hist, changes, freed)
+            val whatsapp = WhatsappTrendManager.getHistory(context)
+            StorageTrendState(hist, changes, freed, whatsapp)
         }
     }
 
@@ -1168,8 +1193,55 @@ fun FileTypesView(
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                WhatsappTrendCard(
+                    history = trendState.whatsapp,
+                    candidateCount = cleanupCandidates.size,
+                    candidateBytes = cleanupCandidates.sumOf { it.size },
+                    keepKinds = keepKinds,
+                    isDeleting = isDeletingWhatsapp,
+                    onToggleKeep = { kind ->
+                        keepKinds = if (keepKinds.contains(kind)) keepKinds - kind else keepKinds + kind
+                    },
+                    onDeleteOld = { showDeleteConfirmation = true }
+                )
             }
         }
     }
+
+    if (showDeleteConfirmation && !isDeletingWhatsapp) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete old WhatsApp media?") },
+            text = {
+                Text(
+                    "This permanently deletes ${cleanupCandidates.size} files older than one year " +
+                        "(${FileUtils.formatFileSize(cleanupCandidates.sumOf { it.size })}). " +
+                        "Kept file types and user-sent files are excluded. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirmation = false
+                    isDeletingWhatsapp = true
+                    scope.launch {
+                        val result = BulkFileDeleter.delete(context, cleanupCandidates.map { it.file })
+                        val blockedPaths = result.blockedPaths.toSet()
+                        cleanupCandidates = cleanupCandidates.filterNot { it.file.absolutePath in blockedPaths || it.file.exists().not() }
+                        isDeletingWhatsapp = false
+                        val message = if (result.blockedPaths.isNotEmpty()) {
+                            "Deleted ${result.deletedCount} files, freed ${FileUtils.formatFileSize(result.freedBytes)}. ${result.blockedPaths.size} protected files kept."
+                        } else {
+                            "Deleted ${result.deletedCount} files, freed ${FileUtils.formatFileSize(result.freedBytes)}."
+                        }
+                        snackbarHostState.showSnackbar(message)
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirmation = false }) { Text("Cancel") } }
+        )
+    }
+
+    SnackbarHost(hostState = snackbarHostState)
 }
 }

@@ -9,10 +9,10 @@ class NavPillHelperTest {
 
     @Test
     fun testDestinationIndices() {
-        assertEquals(-1, NavPillHelper.getDestinationIndex(AppDestinations.TREE))
-        assertEquals(0, NavPillHelper.getDestinationIndex(AppDestinations.EXPLORER))
-        assertEquals(1, NavPillHelper.getDestinationIndex(AppDestinations.TYPES))
-        assertEquals(2, NavPillHelper.getDestinationIndex(AppDestinations.DISCOVER))
+        assertEquals(0, NavPillHelper.getDestinationIndex(AppDestinations.TREE))
+        assertEquals(1, NavPillHelper.getDestinationIndex(AppDestinations.EXPLORER))
+        assertEquals(2, NavPillHelper.getDestinationIndex(AppDestinations.TYPES))
+        assertEquals(-1, NavPillHelper.getDestinationIndex(AppDestinations.DISCOVER))
         assertEquals(-1, NavPillHelper.getDestinationIndex("unknown"))
     }
 
